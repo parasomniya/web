@@ -1,0 +1,15 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Telemetry {
+  id        Int      @id @default(autoincrement())
+  timestamp DateTime
+  weight    Float
+  lat       Float
+  lon       Float
+}
