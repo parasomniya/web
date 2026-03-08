@@ -9,7 +9,9 @@ datasource db {
 model Telemetry {
   id        Int      @id @default(autoincrement())
   timestamp DateTime
+  deviceId  String
   weight    Float
   lat       Float
   lon       Float
+  createdAt DateTime @default(now())
 }
