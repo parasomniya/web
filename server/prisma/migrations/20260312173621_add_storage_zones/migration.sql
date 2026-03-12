@@ -1,0 +1,11 @@
+-- CreateTable
+CREATE TABLE "StorageZone" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "name" TEXT NOT NULL,
+    "lat" REAL NOT NULL,
+    "lon" REAL NOT NULL,
+    "radius" REAL NOT NULL DEFAULT 15.0,
+    "ingredient" TEXT NOT NULL,
+    "active" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

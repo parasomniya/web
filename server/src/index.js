@@ -1,16 +1,18 @@
+// src/index.js
 import express from 'express'
 import telemetryRouter from './modules/telemetry/telemetry.routes.js'
+import storageZonesRouter from './modules/storage-zones/storage-zones.routes.js'
 import { authMiddleware } from './middleware/auth.js'
 
 const app = express()
 
 app.use(express.json())
 
-// Защити GET-запросы (POST оставь открытым для устройства)
-app.use('/api/telemetry', authMiddleware, telemetryRouter)
+// Телеметрия (POST без токена, GET с токеном)
+app.use('/api/telemetry', telemetryRouter)
 
-// Или защити только GET:
-// app.get('/api/telemetry', authMiddleware, ...)
+// Зоны (только с токеном)
+app.use('/api/storage-zones', authMiddleware, storageZonesRouter)
 
 app.get("/", (req, res) => {
   res.send("Farm Server is running 🚀")

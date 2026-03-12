@@ -51,7 +51,9 @@ export const AnyNull = runtime.AnyNull
 
 
 export const ModelName = {
-  Telemetry: 'Telemetry'
+  Telemetry: 'Telemetry',
+  User: 'User',
+  StorageZone: 'StorageZone'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -78,6 +80,31 @@ export const TelemetryScalarFieldEnum = {
 } as const
 
 export type TelemetryScalarFieldEnum = (typeof TelemetryScalarFieldEnum)[keyof typeof TelemetryScalarFieldEnum]
+
+
+export const UserScalarFieldEnum = {
+  id: 'id',
+  username: 'username',
+  passwordHash: 'passwordHash',
+  role: 'role',
+  createdAt: 'createdAt'
+} as const
+
+export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum]
+
+
+export const StorageZoneScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  lat: 'lat',
+  lon: 'lon',
+  radius: 'radius',
+  ingredient: 'ingredient',
+  active: 'active',
+  createdAt: 'createdAt'
+} as const
+
+export type StorageZoneScalarFieldEnum = (typeof StorageZoneScalarFieldEnum)[keyof typeof StorageZoneScalarFieldEnum]
 
 
 export const SortOrder = {
