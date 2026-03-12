@@ -1,10 +1,11 @@
 {
-  "name": "backend",
+  "name": "farm-server",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/index.ts"
+    "dev": "ts-node-dev --respawn --transpile-only src/index.js",
+    "start": "node dist/index.js"
   },
   "keywords": [],
   "author": "",
@@ -12,13 +13,14 @@
   "type": "commonjs",
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.4.2",
-    "@prisma/client": "^7.4.2",
+    "@prisma/client": "^7.5.0",
     "express": "^5.2.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@types/node": "^25.3.5",
-    "prisma": "^7.4.2",
+    "@types/node": "^25.4.0",
+    "nodemon": "^3.1.14",
+    "prisma": "^7.5.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"
   }

@@ -9,6 +9,6 @@
 - телеметрия (`TelemetryChunk`);
 - нарушения и настройки.
 
-Типы данных 
+Типы данных TypeScripts (интерфейс)
 	
 telemetry.model.ts — интерфейс {weight, lat, lon}

@@ -1,0 +1,1 @@
+index.js - sendFile - отправить фронт
