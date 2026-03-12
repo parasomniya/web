@@ -1,18 +1,19 @@
-// src/index.js
 import express from 'express'
 import telemetryRouter from './modules/telemetry/telemetry.routes.js'
+import { authMiddleware } from './middleware/auth.js'
 
 const app = express()
 
-// Middleware для JSON
 app.use(express.json())
 
-// Подключение роутов
-app.use('/api/telemetry', telemetryRouter)
+// Защити GET-запросы (POST оставь открытым для устройства)
+app.use('/api/telemetry', authMiddleware, telemetryRouter)
 
-// Проверка сервера
+// Или защити только GET:
+// app.get('/api/telemetry', authMiddleware, ...)
+
 app.get("/", (req, res) => {
-  res.send("Server is running")
+  res.send("Farm Server is running 🚀")
 })
 
 app.listen(3000, () => {
