@@ -26,3 +26,14 @@ model User {
   role         String   // "admin", "director", "guest"
   createdAt    DateTime @default(now())
 }
+
+model StorageZone {
+  id         Int      @id @default(autoincrement())
+  name       String
+  lat        Float
+  lon        Float
+  radius     Float    @default(15.0)
+  ingredient String
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+}

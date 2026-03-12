@@ -5,7 +5,7 @@ export const authMiddleware = (req, res, next) => {
     
     // Для MVP: простой хардкод токен
     // В продакшене здесь будет проверка JWT
-    if (token !== 'token') {
+    if (token !== 'Bearer token') {
       return res.status(401).json({ error: 'Unauthorized' })
     }
     

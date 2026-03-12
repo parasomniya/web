@@ -1,6 +1,6 @@
 // src/database.js
 import "dotenv/config"
-import { PrismaClient } from '@prisma/client'  // ← из пакета, не из generated/
+import { PrismaClient } from './generated/client.ts'  // ← путь к сгенерированному клиенту
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 const adapter = new PrismaBetterSqlite3({

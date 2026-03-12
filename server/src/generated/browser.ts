@@ -22,3 +22,13 @@ export * from './enums.ts';
  * 
  */
 export type Telemetry = Prisma.TelemetryModel
+/**
+ * Model User
+ * 
+ */
+export type User = Prisma.UserModel
+/**
+ * Model StorageZone
+ * 
+ */
+export type StorageZone = Prisma.StorageZoneModel

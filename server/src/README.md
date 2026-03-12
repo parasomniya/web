@@ -1,3 +1,3 @@
 index.js - sendFile - отправить фронт
 
-токен - token
+токен - Bearer token
