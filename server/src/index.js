@@ -1,17 +1,20 @@
-const express = require("express");
-const app = express();
+// src/index.js
+import express from 'express'
+import telemetryRouter from './modules/telemetry/telemetry.routes.js'
 
+const app = express()
+
+// Middleware для JSON
+app.use(express.json())
+
+// Подключение роутов
+app.use('/api/telemetry', telemetryRouter)
+
+// Проверка сервера
 app.get("/", (req, res) => {
-    res.send("Hello World");
-});
-
-app.post("/telemetry", (req, res) => {
-    const { lat, lon, weight } = req.body;
-    console.log(lat, lon, weight);
-    res.send({ success: true });
-});
+  res.send("Server is running")
+})
 
 app.listen(3000, () => {
-    console.log("Server is running on port 3000");
-});
-
+  console.log("Server is running on port 3000")
+})
