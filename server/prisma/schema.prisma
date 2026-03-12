@@ -18,3 +18,11 @@ model Telemetry {
   lon       Float
   createdAt DateTime @default(now())
 }
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  role         String   // "admin", "director", "guest"
+  createdAt    DateTime @default(now())
+}

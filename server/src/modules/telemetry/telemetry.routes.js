@@ -15,7 +15,7 @@ router.post('/host', async (req, res) => {
     
     // Сохранение в БД
     const telemetry = await prisma.telemetry.create({
-      data: {  // ← важно!
+      data: {  // ← вот так правильно!
         timestamp: new Date(timestamp || Date.now()),
         weight,
         lat,
