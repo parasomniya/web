@@ -1,27 +1,20 @@
 {
   "name": "farm-server",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "type": "module",
+  "main": "src/index.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/index.js",
-    "start": "node dist/index.js"
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.4.2",
     "@prisma/client": "^7.5.0",
+    "better-sqlite3": "^11.0.0",
     "express": "^5.2.1"
   },
   "devDependencies": {
-    "@types/express": "^5.0.6",
-    "@types/node": "^25.4.0",
     "nodemon": "^3.1.14",
-    "prisma": "^7.5.0",
-    "ts-node-dev": "^2.0.0",
-    "typescript": "^5.9.3"
+    "prisma": "^7.5.0"
   }
 }

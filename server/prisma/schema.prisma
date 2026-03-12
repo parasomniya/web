@@ -1,21 +1,18 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
+// prisma/schema.prisma
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client"  // ← важно: без "-js" для Prisma 7
+  output   = "../src/generated"
 }
 
 datasource db {
   provider = "sqlite"
+  // url не указываем здесь — он в prisma.config.js
 }
 
 model Telemetry {
   id        Int      @id @default(autoincrement())
+  timestamp DateTime
   deviceId  String
-  timestamp DateTime 
   weight    Float
   lat       Float
   lon       Float
