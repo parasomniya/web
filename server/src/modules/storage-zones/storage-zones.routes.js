@@ -10,7 +10,12 @@ router.get('/', async (req, res) => {
     const zones = await prisma.storageZone.findMany({
       where: { active: true }
     })
-    res.json(zones)
+    
+    // Конвертация createdAt в UTC+7 для ответа
+    res.json(zones.map(zone => ({
+      ...zone,
+      createdAt: toUTC7(zone.createdAt).toISOString()
+    })))
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: 'Internal server error' })

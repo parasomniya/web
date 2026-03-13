@@ -1,12 +1,14 @@
+// src/modules/telemetry/telemetry.routes.js
 import { Router } from 'express'
-import prisma from "../../database.js"
+import prisma, { toUTC7 } from "../../database.js"
 import { authMiddleware } from "../../middleware/auth.js"
 
 
 const router = Router()
 
+//Функция расстояния (метры)
 function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
-  const R = 6371000 // Радиус Земли в метрах
+  const R = 6371000
   const dLat = (lat2 - lat1) * Math.PI / 180
   const dLon = (lon2 - lon1) * Math.PI / 180
   const a = 
@@ -17,32 +19,34 @@ function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
   return R * c
 }
 
-
+// POST /api/telemetry/host
 router.post('/host', async (req, res) => {
   try {
     const { timestamp, weight, lat, lon, deviceId } = req.body
     
-    // Валидация
     if (typeof weight !== 'number' || weight <= 0) {
       return res.status(400).json({ error: 'Invalid weight' })
     }
     
-    // Сохранение в БД
+    // 🔥 Конвертация в UTC+7 ПЕРЕД сохранением
+    const inputTimestamp = timestamp ? new Date(timestamp) : new Date()
+    const timestampUTC7 = toUTC7(inputTimestamp)
+    
+    console.log('Original:', inputTimestamp.toISOString())
+    console.log('UTC+7:', timestampUTC7.toISOString())
+    
     const telemetry = await prisma.telemetry.create({
-       date: {
-        timestamp: new Date(timestamp || Date.now()),
+      data: {
+        timestamp: timestampUTC7,  // ← сохраняем в UTC+7
         weight,
         lat,
         lon,
         deviceId: deviceId || 'host_01'
       }
     })
-    
-    // 🔥 ПРОВЕРКА ПОПАДАНИЯ В ЗОНУ
-    const zones = await prisma.storageZone.findMany({
-      where: { active: true }
-    })
-    
+
+    // Проверка зон (баннеры)
+    const zones = await prisma.storageZone.findMany({ where: { active: true } })
     let banner = null
     for (const zone of zones) {
       const distance = getDistanceFromLatLonInMeters(lat, lon, zone.lat, zone.lon)
@@ -57,25 +61,18 @@ router.post('/host', async (req, res) => {
       }
     }
     
-    // Возвращаем ответ с баннером
-    res.status(201).json({ 
-      status: 'ok', 
-      id: telemetry.id,
-      banner // ← если null — вне зоны
-    })
+    res.status(201).json({ status: 'ok', id: telemetry.id, banner })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
-// GET /api/telemetry (все записи)
-router.get('/', async (req, res) => {
+// GET /api/telemetry/latest
+router.get('/latest', authMiddleware, async (req, res) => {
   try {
-    const data = await prisma.telemetry.findMany({
-      orderBy: { timestamp: 'desc' },
-      take: 100
-    })
+    const data = await prisma.telemetry.findFirst({ orderBy: { timestamp: 'desc' } })
+    if (!data) return res.status(404).json({ error: 'No data found' })
     res.json(data)
   } catch (error) {
     console.error(error)
@@ -83,35 +80,20 @@ router.get('/', async (req, res) => {
   }
 })
 
-// GET /api/telemetry/latest (последняя запись)
-router.get('/latest', async (req, res) => {
-  try {
-    const data = await prisma.telemetry.findFirst({
-      orderBy: { timestamp: 'desc' }
-    })
-    res.json(data)
-  } catch (error) {
-    console.error(error)
-    res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// GET /api/telemetry/history (история за период)
+// GET /api/telemetry/history
 router.get('/history', authMiddleware, async (req, res) => {
   try {
-    const { startDate, endDate } = req.query
-    
+    const { startDate, endDate, limit = 100 } = req.query
     const history = await prisma.telemetry.findMany({
       where: {
         timestamp: {
-          gte: startDate ? new Date(startDate) : new Date(Date.now() - 24 * 60 * 60 * 1000),
-          lte: endDate ? new Date(endDate) : new Date()
+          gte: startDate ? toUTC7(new Date(startDate)) : toUTC7(new Date(Date.now() - 24 * 60 * 60 * 1000)),
+          lte: endDate ? toUTC7(new Date(endDate)) : toUTC7(new Date())
         }
       },
       orderBy: { timestamp: 'asc' },
-      take: 1000
+      take: parseInt(limit)
     })
-    
     res.json(history)
   } catch (error) {
     console.error(error)

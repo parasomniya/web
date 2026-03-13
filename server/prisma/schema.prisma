@@ -27,6 +27,7 @@ model User {
   createdAt    DateTime @default(now())
 }
 
+// prisma/schema.prisma
 model StorageZone {
   id         Int      @id @default(autoincrement())
   name       String
