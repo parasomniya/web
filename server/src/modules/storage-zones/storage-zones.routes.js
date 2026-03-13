@@ -10,12 +10,7 @@ router.get('/', async (req, res) => {
     const zones = await prisma.storageZone.findMany({
       where: { active: true }
     })
-    
-    // Конвертация createdAt в UTC+7 для ответа
-    res.json(zones.map(zone => ({
-      ...zone,
-      createdAt: toUTC7(zone.createdAt).toISOString()
-    })))
+    res.json(zones)  // ← без map и toUTC7
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: 'Internal server error' })
@@ -51,4 +46,4 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   }
 })
 
-export default router  // ← ОБЯЗАТЕЛЬНО в самом конце!
+export default router

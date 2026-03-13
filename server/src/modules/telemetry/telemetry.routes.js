@@ -32,8 +32,8 @@ router.post('/host', async (req, res) => {
     const inputTimestamp = timestamp ? new Date(timestamp) : new Date()
     const timestampUTC7 = toUTC7(inputTimestamp)
     
-    console.log('Original:', inputTimestamp.toISOString())
-    console.log('UTC+7:', timestampUTC7.toISOString())
+    // console.log('Original:', inputTimestamp.toISOString())
+    // console.log('UTC+7:', timestampUTC7.toISOString())
     
     const telemetry = await prisma.telemetry.create({
       data: {
