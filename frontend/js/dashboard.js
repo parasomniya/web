@@ -1,58 +1,68 @@
-document.addEventListener("DOMContentLoaded", function () {
-    loadBatches();
-});
+const API_URL = "http://localhost:3000/api/storage-zones";
 
-async function loadBatches() {
+let map;
 
-    const table = document.querySelector("#batchesTable tbody");
-    table.innerHTML = "";
+ymaps.ready(init);
+
+function init() {
+
+    map = new ymaps.Map("map", {
+        center: [55.75, 37.57],
+        zoom: 12
+    });
+
+    // ТЕСТОВАЯ ЗОНА
+    const testCircle = new ymaps.Circle(
+        [[55.75, 37.57], 500],
+        {
+            balloonContent: "Тестовая зона"
+        },
+        {
+            fillColor: "#00FF0088",
+            strokeColor: "#008800",
+            strokeWidth: 2
+        }
+    );
+
+    map.geoObjects.add(testCircle);
+
+}
+
+async function loadStorageZones() {
 
     try {
 
-        const response = await fetch("http://localhost:3000/api/batches");
+        const res = await fetch(API_URL);
+        const zones = await res.json();
 
-        let data = [];
+        drawZones(zones);
 
-        if (response.ok) {
-            data = await response.json();
-        }
+    } catch (err) {
 
-        if (!data || data.length === 0) {
-            // временные данные если API не работает
-            data = [
-                { id: 1, date: "2026-03-07 10:00", group: "Дойные", weight: 1200 },
-                { id: 2, date: "2026-03-07 12:00", group: "Сухостой", weight: 980 }
-            ];
-        }
+        console.error("Ошибка загрузки зон", err);
 
-        const rows = data.map(batch => `
-            <tr>
-                <td>${batch.id}</td>
-                <td>${batch.date}</td>
-                <td>${batch.group}</td>
-                <td>${batch.weight}</td>
-            </tr>
-        `).join("");
-
-        table.innerHTML = rows;
-
-    } catch (error) {
-        console.error("Ошибка API:", error);
     }
+
 }
-ymaps.ready(initMap);
 
-function initMap() {
+function drawZones(zones) {
 
-    const map = new ymaps.Map("map", {
-        center: [54.983123, 82.901234], // координаты центра
-        zoom: 20
+    zones.forEach(zone => {
+
+        const circle = new ymaps.Circle(
+            [[zone.lat, zone.lon], zone.radius],
+            {
+                balloonContent: zone.ingredient
+            },
+            {
+                fillColor: "#00FF0088",
+                strokeColor: "#008800",
+                strokeWidth: 2
+            }
+        );
+
+        map.geoObjects.add(circle);
+
     });
-
-    const placemark = new ymaps.Placemark([54.983123, 82.901234], {
-        balloonContent: "Хозяин тут"
-    });
-
-    map.geoObjects.add(placemark);
 
 }
