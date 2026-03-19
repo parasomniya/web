@@ -1,5 +1,5 @@
 const API_BASE = "http://localhost:3000/api/telemetry/host";
-const ZONES_API = "http://localhost:3000/api/storage-zones";
+const ZONES_API = "http://localhost:3000/api/telemetry/zones";
 
 let map;
 let placemark;
@@ -93,6 +93,7 @@ async function fetchLatest() {
 
         if (data.banner && data.banner.message) {
             showBanner(data.banner.message);
+            console.log("1");
         }
     } catch (error) {
         console.error("Ошибка получения latest:", error);
