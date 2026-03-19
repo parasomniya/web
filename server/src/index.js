@@ -1,23 +1,33 @@
 // src/index.js
 import express from 'express'
+import cors from 'cors'
 import telemetryRouter from './modules/telemetry/telemetry.routes.js'
 import storageZonesRouter from './modules/storage-zones/storage-zones.routes.js'
-import { authMiddleware } from './middleware/auth.js'
 
 const app = express()
+const PORT = process.env.PORT || 3000
 
+// Middleware
+app.use(cors())
 app.use(express.json())
 
-// Телеметрия (POST без токена, GET с токеном)
-app.use('/api/telemetry', telemetryRouter)
+// Роуты телеметрии
+app.use('/api/telemetry/host', telemetryRouter)
 
-// Зоны (только с токеном)
-app.use('/api/storage-zones', authMiddleware, storageZonesRouter)
+// Роуты зон (для фронтенда)
+app.use('/api/telemetry/zones', storageZonesRouter)
 
-app.get("/", (req, res) => {
-  res.send("Farm Server is running 🚀")
+// Health check
+app.get('/', (req, res) => {
+  res.json({ status: 'Farm Server is running 🚀' })
 })
 
-app.listen(3000, () => {
-  console.log("Server is running on port 3000")
+// Запуск
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`)
+  console.log(`http://localhost:${PORT}`)
+  console.log(`POST: http://localhost:${PORT}/api/telemetry/host`)
+  console.log(`GET:  http://localhost:${PORT}/api/telemetry/host/latest`)
+  console.log(`GET:  http://localhost:${PORT}/api/telemetry/host/history`)
+  console.log(`GET:  http://localhost:${PORT}/api/telemetry/zones`)
 })

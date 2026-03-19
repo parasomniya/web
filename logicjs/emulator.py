@@ -2,36 +2,27 @@ import time
 import requests
 from datetime import datetime, timedelta
 
-# Настройки API
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://localhost:3000"  # ← порт 3000
+ENDPOINT = "/api/telemetry/host"
 
-# Координаты зон (должны совпадать с zones.py)
+# Координаты зон ← ЗАМЕНИТЬ НА РЕАЛЬНЫЕ
 ZONES = {
-    "corn": {"lat": 55.7558, "lon": 37.6173},
-    "wheat": {"lat": 55.7658, "lon": 37.6273},
-    "soy": {"lat": 55.7458, "lon": 37.6073},
-    "unload": {"lat": 55.7358, "lon": 37.5973},
-    "road": {"lat": 55.7500, "lon": 37.6000} # Просто точка между зонами
+    "ngu": {"lat": 55.030, "lon": 82.950},      # НГУ
+    "gas": {"lat": 55.015, "lon": 82.940},      # Заправка
+    "home": {"lat": 55.008, "lon": 82.935},     # Дом
 }
 
-# Идеальные веса (для справки, чтобы понимать логику эмуляции)
-IDEAL_WEIGHTS = {
-    "corn": 5000.0,
-    "wheat": 4500.0,
-    "soy": 3000.0
-}
-DELTA_PERCENT = 5.0 # 5%
-
+# В функции send_telemetry ← ИСПРАВИТЬ ПОЛЯ
 def send_telemetry(lat, lon, weight):
-    """Отправляет данные телеметрии на сервер"""
     payload = {
-        "latitude": lat,
-        "longitude": lon,
+        "lat": lat,              # ← было "latitude"
+        "lon": lon,              # ← было "longitude"
         "weight": weight,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "deviceId": "host_01"    # ← добавить
     }
     try:
-        resp = requests.post(f"{BASE_URL}/telemetry", json=payload)
+        resp = requests.post(f"{BASE_URL}{ENDPOINT}", json=payload)  # ← добавить ENDPOINT
         resp.raise_for_status()
         return resp.json()
     except requests.exceptions.RequestException as e:

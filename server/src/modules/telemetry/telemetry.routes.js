@@ -1,12 +1,10 @@
 // src/modules/telemetry/telemetry.routes.js
 import { Router } from 'express'
-import prisma, { toUTC7 } from "../../database.js"
-import { authMiddleware } from "../../middleware/auth.js"
-
+import prisma from "../../database.js"
 
 const router = Router()
 
-//Функция расстояния (метры)
+// Функция расстояния (метры)
 function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000
   const dLat = (lat2 - lat1) * Math.PI / 180
@@ -19,84 +17,87 @@ function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
   return R * c
 }
 
+// ============================================
 // POST /api/telemetry/host
-router.post('/host', async (req, res) => {
+// ============================================
+router.post('/', async (req, res) => {
+  console.log('📩 POST /host received:', req.body)
+  
   try {
     const { timestamp, weight, lat, lon, deviceId } = req.body
     
-    if (typeof weight !== 'number' || weight <= 0) {
-      return res.status(400).json({ error: 'Invalid weight' })
+    // Валидация
+    if (typeof lat !== 'number' || typeof lon !== 'number') {
+      return res.status(400).json({ error: 'Invalid coordinates' })
     }
     
-    // 🔥 Конвертация в UTC+7 ПЕРЕД сохранением
-    const inputTimestamp = timestamp ? new Date(timestamp) : new Date()
-    const timestampUTC7 = toUTC7(inputTimestamp)
-    
-    // console.log('Original:', inputTimestamp.toISOString())
-    // console.log('UTC+7:', timestampUTC7.toISOString())
-    
+    // Сохранение в БД
     const telemetry = await prisma.telemetry.create({
       data: {
-        timestamp: timestampUTC7,  // ← сохраняем в UTC+7
-        weight,
+        timestamp: new Date(),
+        weight: weight || 0,
         lat,
         lon,
         deviceId: deviceId || 'host_01'
       }
     })
+    console.log('Saved to DB with ID:', telemetry.id)
 
     // Проверка зон (баннеры)
     const zones = await prisma.storageZone.findMany({ where: { active: true } })
     let banner = null
     for (const zone of zones) {
       const distance = getDistanceFromLatLonInMeters(lat, lon, zone.lat, zone.lon)
-      if (distance <= (zone.radius || 15)) {
+      if (distance <= (zone.radius || 50)) {
         banner = {
           type: 'zone_enter',
           zoneName: zone.name,
-          ingredient: zone.ingredient,
           message: `Въезд в зону: ${zone.name}`
         }
+        console.log('Banner:', banner.message)
         break
       }
     }
     
     res.status(201).json({ status: 'ok', id: telemetry.id, banner })
   } catch (error) {
-    console.error(error)
-    res.status(500).json({ error: 'Internal server error' })
+    console.error('ERROR:', error.message)
+    res.status(500).json({ error: 'Internal server error', details: error.message })
   }
 })
 
-// GET /api/telemetry/latest
-router.get('/latest', authMiddleware, async (req, res) => {
+// ============================================
+// GET /api/telemetry/host/latest
+// ============================================
+router.get('/latest', async (req, res) => {
+  console.log('GET /latest requested')
   try {
-    const data = await prisma.telemetry.findFirst({ orderBy: { timestamp: 'desc' } })
+    const data = await prisma.telemetry.findFirst({ 
+      orderBy: { timestamp: 'desc' } 
+    })
+    console.log('Returning:', data)
     if (!data) return res.status(404).json({ error: 'No data found' })
     res.json(data)
   } catch (error) {
-    console.error(error)
+    console.error('ERROR:', error.message)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
-// GET /api/telemetry/history
-router.get('/history', authMiddleware, async (req, res) => {
+// ============================================
+// GET /api/telemetry/host/history
+// ============================================
+router.get('/history', async (req, res) => {
+  console.log('GET /history requested')
   try {
-    const { startDate, endDate, limit = 100 } = req.query
-    const history = await prisma.telemetry.findMany({
-      where: {
-        timestamp: {
-          gte: startDate ? toUTC7(new Date(startDate)) : toUTC7(new Date(Date.now() - 24 * 60 * 60 * 1000)),
-          lte: endDate ? toUTC7(new Date(endDate)) : toUTC7(new Date())
-        }
-      },
-      orderBy: { timestamp: 'asc' },
-      take: parseInt(limit)
+    const limit = parseInt(req.query.limit) || 10
+    const data = await prisma.telemetry.findMany({ 
+      orderBy: { timestamp: 'desc' },
+      take: limit
     })
-    res.json(history)
+    res.json(data)
   } catch (error) {
-    console.error(error)
+    console.error('ERROR:', error.message)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
