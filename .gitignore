@@ -21,3 +21,19 @@ Thumbs.db
 logs/
 *.log
 
+# База данных
+server/dev.db
+server/*.db
+server/data/*.db
+
+# Зависимости
+node_modules/
+__pycache__/
+*.pyc
+
+# Переменные окружения
+.env
+
+# Логи
+*.log
+server.log
