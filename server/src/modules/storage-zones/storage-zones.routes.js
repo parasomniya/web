@@ -18,7 +18,7 @@ router.get('/', async (req, res) => {
 })
 
 // POST создать зону
-router.post('/', authMiddleware, async (req, res) => {
+router.post('/', /*authMiddleware*/ async (req, res) => {
   try {
     const { name, lat, lon, radius, ingredient } = req.body
     const zone = await prisma.storageZone.create({
@@ -32,7 +32,7 @@ router.post('/', authMiddleware, async (req, res) => {
 })
 
 // DELETE деактивировать зону
-router.delete('/:id', authMiddleware, async (req, res) => {
+router.delete('/:id', /*authMiddleware*/ async (req, res) => {
   try {
     const { id } = req.params
     await prisma.storageZone.update({
