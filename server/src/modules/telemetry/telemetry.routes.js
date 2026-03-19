@@ -21,7 +21,7 @@ function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
 // POST /api/telemetry/host
 // ============================================
 router.post('/', async (req, res) => {
-  console.log('📩 POST /host received:', req.body)
+  // console.log('📩 POST /host received:', req.body)
   
   try {
     const { timestamp, weight, lat, lon, deviceId } = req.body
@@ -41,7 +41,7 @@ router.post('/', async (req, res) => {
         deviceId: deviceId || 'host_01'
       }
     })
-    console.log('Saved to DB with ID:', telemetry.id)
+    // console.log('Saved to DB with ID:', telemetry.id)
 
     // Проверка зон (баннеры)
     const zones = await prisma.storageZone.findMany({ where: { active: true } })
@@ -54,14 +54,14 @@ router.post('/', async (req, res) => {
           zoneName: zone.name,
           message: `Въезд в зону: ${zone.name}`
         }
-        console.log('Banner:', banner.message)
+        // console.log('Banner:', banner.message)
         break
       }
     }
     
     res.status(201).json({ status: 'ok', id: telemetry.id, banner })
   } catch (error) {
-    console.error('ERROR:', error.message)
+    // console.error('ERROR:', error.message)
     res.status(500).json({ error: 'Internal server error', details: error.message })
   }
 })
@@ -70,16 +70,16 @@ router.post('/', async (req, res) => {
 // GET /api/telemetry/host/latest
 // ============================================
 router.get('/latest', async (req, res) => {
-  console.log('GET /latest requested')
+  // console.log('GET /latest requested')
   try {
     const data = await prisma.telemetry.findFirst({ 
       orderBy: { timestamp: 'desc' } 
     })
-    console.log('Returning:', data)
+    // console.log('Returning:', data)
     if (!data) return res.status(404).json({ error: 'No data found' })
     res.json(data)
   } catch (error) {
-    console.error('ERROR:', error.message)
+    // console.error('ERROR:', error.message)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
@@ -88,7 +88,7 @@ router.get('/latest', async (req, res) => {
 // GET /api/telemetry/host/history
 // ============================================
 router.get('/history', async (req, res) => {
-  console.log('GET /history requested')
+  // console.log('GET /history requested')
   try {
     const limit = parseInt(req.query.limit) || 10
     const data = await prisma.telemetry.findMany({ 
@@ -97,7 +97,7 @@ router.get('/history', async (req, res) => {
     })
     res.json(data)
   } catch (error) {
-    console.error('ERROR:', error.message)
+    // console.error('ERROR:', error.message)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
