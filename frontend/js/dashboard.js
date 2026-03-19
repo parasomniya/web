@@ -1,206 +1,223 @@
-// Настройки
-const API_BASE = 'http://localhost:3000/api/telemetry/host';
-let map, placemark;
+const API_BASE = "http://localhost:3000/api/telemetry/host";
+const ZONES_API = "http://localhost:3000/api/storage-zones";
+
+let map;
+let placemark;
+let zoneObjects = [];
 let bannerTimeout = null;
 
-//Инициализация карты
+function getToken() {
+    return localStorage.getItem("token");
+}
+
+function authHeaders() {
+    const token = getToken();
+
+    if (!token) {
+        return {};
+    }
+
+    return {
+        Authorization: "Bearer " + token
+    };
+}
+
 ymaps.ready(init);
 
 function init() {
-  // Создаём карту
-  map = new ymaps.Map("map", {
-    center: [54.843243, 83.088801],  // НГУ (координаты эмулятора)
-    zoom: 15,
-    controls: ['zoomControl', 'fullscreenControl']
-  });
-
-  //Создаём маркер "Хозяин"
-  placemark = new ymaps.Placemark(
-    [54.843243, 83.088801],  // Начальные координаты
-    { 
-      hintContent: '"Хозяин" здесь',
-      balloonContent: 'Последнее обновление: --:--:--'
-    },
-    { 
-      preset: 'islands#blueAutoIcon',
-      draggable: false
-    }
-  );
-  
-  // Добавляем маркер на карту
-  map.geoObjects.add(placemark);
-  
-  console.log('Карта и метка созданы');
-
-  // Загружаем зоны
-  loadStorageZones();
-  
-  // Запускаем опрос сервера
-  startPolling();
-}
-
-// Опрос сервера каждые 5 секунд
-function startPolling() {
-  // Сразу при запуске
-  fetchLatest();
-  fetchHistory();
-  
-  // ️ Карта: каждые 0.5 сек (2 раза в секунду)
-  setInterval(() => {
-    fetchLatest();
-  }, 500);
-  
-  //Таблица: каждые 5 сек
-  setInterval(() => {
-    fetchHistory();
-  }, 5000);
-}
-
-// Получить последнюю точку и обновить карту
-async function fetchLatest() {
-  try {
-    const response = await fetch(`${API_BASE}/latest`);
-    
-    // Проверка что ответ OK
-    if (!response.ok) {
-      console.error('Server error:', response.status);
-      return;
-    }
-    
-    const data = await response.json();
-    console.log('Получены данные:', data);
-
-    if (data && data.lat && data.lon) {
-      const coords = [data.lat, data.lon];
-      
-      // Обновляем позицию маркера
-      placemark.geometry.setCoordinates(coords);
-      
-      // Обновляем подсказку
-      placemark.properties.set('hintContent', 
-        `Обновлено: ${new Date(data.timestamp).toLocaleTimeString('ru-RU')}`
-      );
-      placemark.properties.set('balloonContent', 
-        `Вес: ${data.weight || 0} кг<br>ID: ${data.deviceId || '-'}`
-      );
-      
-      // Центрируем карту на метке
-      map.setCenter(coords, 15, { duration: 300 });
-      
-      console.log('Метка обновлена:', coords);
-
-      // Показываем баннер если есть
-      if (data.banner) {
-        showBanner(data.banner.message);
-      }
-    }
-  } catch (error) {
-    console.error('Ошибка получения данных:', error);
-  }
-}
-
-// 📋 Получить историю для таблицы
-async function fetchHistory() {
-  try {
-    const response = await fetch(`${API_BASE}/history?limit=10`);
-    const data = await response.json();
-
-    const tbody = document.querySelector('#batchesTable tbody');
-    if (!tbody) {
-      console.warn('Таблица #batchesTable не найдена');
-      return;
-    }
-
-    tbody.innerHTML = '';
-
-    data.slice().reverse().forEach(item => {
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td>${item.id}</td>
-        <td>${new Date(item.timestamp).toLocaleString('ru-RU')}</td>
-        <td>${item.deviceId || '-'}</td>
-        <td>${item.weight?.toFixed(1) || '0'} кг</td>
-      `;
-      tbody.appendChild(row);
+    map = new ymaps.Map("map", {
+        center: [54.843243, 83.088801],
+        zoom: 15,
+        controls: ["zoomControl", "fullscreenControl"]
     });
-    
-    console.log('Таблица обновлена, строк:', data.length);
-  } catch (error) {
-    console.error('Ошибка получения истории:', error);
-  }
-}
 
-// 🗺️ Загрузить зоны хранения
-async function loadStorageZones() {
-  try {
-    const res = await fetch('http://localhost:3000/api/telemetry/zones');
-    const zones = await res.json();
-    console.log('🗺️ Зоны загружены:', zones.length);
-    drawZones(zones);
-  } catch (err) {
-    console.error('Ошибка загрузки зон:', err);
-  }
-}
-
-// 🗺️ Отрисовать зоны на карте (круги)
-function drawZones(zones) {
-  zones.forEach((zone, index) => {
-    const circle = new ymaps.Circle(
-      [[zone.lat, zone.lon], zone.radius || 50],
-      {
-        balloonContent: `<strong>${zone.name}</strong><br>${zone.ingredient || ''}`
-      },
-      {
-        fillColor: "#00FF0033",  // Зелёный полупрозрачный
-        strokeColor: "#00FF00",  // Зелёная обводка
-        strokeWidth: 2
-      }
+    placemark = new ymaps.Placemark(
+        [54.843243, 83.088801],
+        {
+            hintContent: '"Хозяин" здесь',
+            balloonContent: "Последнее обновление: --:--:--"
+        },
+        {
+            preset: "islands#blueAutoIcon",
+            draggable: false
+        }
     );
-    map.geoObjects.add(circle);
-    console.log(`Зона ${index + 1} добавлена: ${zone.name}`);
-  });
+
+    map.geoObjects.add(placemark);
+
+    loadStorageZones();
+    startPolling();
 }
 
-// 🎉 Показать баннер
+function startPolling() {
+    fetchLatest();
+    fetchHistory();
+
+    setInterval(fetchLatest, 5000);
+    setInterval(fetchHistory, 5000);
+    setInterval(loadStorageZones, 15000);
+}
+
+async function fetchLatest() {
+    try {
+        const response = await fetch(`${API_BASE}/latest`, {
+            headers: authHeaders()
+        });
+
+        if (!response.ok) {
+            console.error("Ошибка latest:", response.status);
+            return;
+        }
+
+        const data = await response.json();
+
+        if (!data || data.lat == null || data.lon == null) {
+            return;
+        }
+
+        const coords = [Number(data.lat), Number(data.lon)];
+
+        placemark.geometry.setCoordinates(coords);
+
+        placemark.properties.set(
+            "hintContent",
+            `Обновлено: ${data.timestamp ? new Date(data.timestamp).toLocaleTimeString("ru-RU") : "--:--:--"}`
+        );
+
+        placemark.properties.set(
+            "balloonContent",
+            `Вес: ${Number(data.weight || 0).toFixed(1)} кг<br>ID: ${data.deviceId || "-"}`
+        );
+
+        map.setCenter(coords, 15, { duration: 300 });
+
+        if (data.banner && data.banner.message) {
+            showBanner(data.banner.message);
+        }
+    } catch (error) {
+        console.error("Ошибка получения latest:", error);
+    }
+}
+
+async function fetchHistory() {
+    try {
+        const response = await fetch(`${API_BASE}/history?limit=10`, {
+            headers: authHeaders()
+        });
+
+        if (!response.ok) {
+            console.error("Ошибка history:", response.status);
+            return;
+        }
+
+        const data = await response.json();
+
+        const tbody = document.querySelector("#batchesTable tbody");
+        if (!tbody) {
+            return;
+        }
+
+        tbody.innerHTML = "";
+
+        if (!Array.isArray(data)) {
+            return;
+        }
+
+        data.slice().reverse().forEach((item) => {
+            const row = document.createElement("tr");
+
+            row.innerHTML = `
+                <td>${item.id ?? "-"}</td>
+                <td>${item.timestamp ? new Date(item.timestamp).toLocaleString("ru-RU") : "-"}</td>
+                <td>${item.deviceId || "-"}</td>
+                <td>${item.weight != null ? Number(item.weight).toFixed(1) + " кг" : "0 кг"}</td>
+            `;
+
+            tbody.appendChild(row);
+        });
+    } catch (error) {
+        console.error("Ошибка получения history:", error);
+    }
+}
+
+async function loadStorageZones() {
+    try {
+        const response = await fetch(ZONES_API, {
+            headers: authHeaders()
+        });
+
+        if (!response.ok) {
+            console.error("Ошибка зон:", response.status);
+            return;
+        }
+
+        const zones = await response.json();
+        drawZones(Array.isArray(zones) ? zones : []);
+    } catch (error) {
+        console.error("Ошибка загрузки зон:", error);
+    }
+}
+
+function drawZones(zones) {
+    zoneObjects.forEach((obj) => map.geoObjects.remove(obj));
+    zoneObjects = [];
+
+    zones.forEach((zone) => {
+        if (zone.active === false) {
+            return;
+        }
+
+        if (zone.lat == null || zone.lon == null || zone.radius == null) {
+            return;
+        }
+
+        const circle = new ymaps.Circle(
+            [[Number(zone.lat), Number(zone.lon)], Number(zone.radius)],
+            {
+                balloonContent: `
+                    <strong>${escapeHtml(zone.ingredient || zone.name || "Зона")}</strong><br>
+                    Радиус: ${Number(zone.radius)} м
+                `
+            },
+            {
+                fillColor: "#00c85333",
+                strokeColor: "#1e88e5",
+                strokeWidth: 2
+            }
+        );
+
+        map.geoObjects.add(circle);
+        zoneObjects.push(circle);
+    });
+}
+
 function showBanner(message) {
-  // Скрыть предыдущий если есть
-  if (bannerTimeout) clearTimeout(bannerTimeout);
+    let banner = document.getElementById("zone-entry-banner");
 
-  // Проверить есть ли уже баннер
-  let banner = document.getElementById('zone-banner');
-  
-  if (!banner) {
-    // Создать баннер
-    banner = document.createElement('div');
-    banner.id = 'zone-banner';
-    banner.style.cssText = `
-      position: fixed;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 9999;
-      min-width: 300px;
-      text-align: center;
-      padding: 12px 20px;
-      border-radius: 8px;
-      background: #d4edda;
-      color: #155724;
-      border: 1px solid #c3e6cb;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      font-weight: 500;
-      font-size: 16px;
-    `;
-    document.body.insertBefore(banner, document.body.firstChild);
-  }
+    if (!banner) {
+        banner = document.createElement("div");
+        banner.id = "zone-entry-banner";
+        banner.className = "zone-entry-banner hidden";
+        document.body.appendChild(banner);
+    }
 
-  // Показать сообщение
-  banner.innerHTML = `<strong> ${message}</strong>`;
-  banner.style.display = 'block';
+    banner.textContent = message;
+    banner.classList.remove("hidden");
 
-  // Скрыть через 5 секунд
-  bannerTimeout = setTimeout(() => {
-    banner.style.display = 'none';
-  }, 5000);
-  
-  console.log('Баннер показан:', message);
+    if (bannerTimeout) {
+        clearTimeout(bannerTimeout);
+    }
+
+    bannerTimeout = setTimeout(() => {
+        banner.classList.add("hidden");
+    }, 3000);
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
 }
