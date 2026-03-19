@@ -7,7 +7,7 @@ from datetime import datetime
 # НАСТРОЙКИ
 INPUT_FILE = "test_data.txt"
 OUTPUT_FILE = "test_result.txt"
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://127.0.0.1:3000"
 
 def main():
     print(f"🚛 Запуск тестирования из файла {INPUT_FILE}...")

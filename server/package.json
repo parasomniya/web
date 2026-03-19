@@ -11,7 +11,8 @@
     "@prisma/adapter-better-sqlite3": "^7.4.2",
     "@prisma/client": "^7.5.0",
     "cors": "^2.8.6",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "fetch": "^1.1.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14",
