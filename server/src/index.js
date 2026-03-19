@@ -19,7 +19,7 @@ app.use('/api/telemetry/zones', storageZonesRouter)
 
 // Health check
 app.get('/', (req, res) => {
-  res.json({ status: 'Farm Server is running 🚀' })
+  res.json({ status: 'Farm Server is running' })
 })
 
 // Запуск
