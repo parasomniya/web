@@ -1,4 +1,4 @@
-const API_HOST = "http://localhost:3000";
+const API_HOST = "https://hostnamesrostkiserver.tail0cd01d.ts.net";
 
 const ZONES_API = API_HOST + "/api/telemetry/zones";
 const TELEMETRY_API = API_HOST + "/api/telemetry/host/latest";

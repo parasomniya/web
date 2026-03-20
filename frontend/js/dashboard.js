@@ -1,5 +1,5 @@
-const API_BASE = "http://localhost:3000/api/telemetry/host";
-const ZONES_API = "http://localhost:3000/api/telemetry/zones";
+const API_BASE = "https://hostnamesrostkiserver.tail0cd01d.ts.net/api/telemetry/host";
+const ZONES_API = "https://hostnamesrostkiserver.tail0cd01d.ts.net/api/telemetry/zones";
 
 let map;
 let placemark;
