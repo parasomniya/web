@@ -1,6 +1,6 @@
 let map
 let marker
-const API_URL = "http://localhost:3000/api/telemetry/latest"
+const API_URL = "https://hostnamesrostkiserver.tail0cd01d.ts.net/api/telemetry/latest"
 
 // токен из localStorage
 function getToken() {

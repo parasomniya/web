@@ -70,6 +70,7 @@ async function fetchLatest() {
         }
 
         const data = await response.json();
+    if (data.banner) { console.log("[ZONE EVENT] " + data.banner.message); }
 
         if (!data || data.lat == null || data.lon == null) {
             return;
@@ -222,3 +223,7 @@ function escapeHtml(value) {
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
 }
+
+
+
+
