@@ -1,4 +1,4 @@
-const API_HOST = "https://hostnamesrostkiserver.tail0cd01d.ts.net";
+const API_HOST = "";
 
 const ZONES_API = API_HOST + "/api/telemetry/zones";
 const TELEMETRY_API = API_HOST + "/api/telemetry/host/latest";

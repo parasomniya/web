@@ -34,7 +34,7 @@ async function checkZones(lat, lon, deviceId) {
 
   // Логика "Только один раз":
   // Если вошли в новую зону (которой не было в прошлый раз)
-  if (currentZoneName && currentZoneName !== lastZone) {
+  if (currentZoneName) {
     banner = {
       type: 'zone_enter',
       zoneName: currentZoneName,
@@ -69,7 +69,6 @@ router.post('/', async (req, res) => {
 
     const banner = await checkZones(lat, lon, deviceId)
     if (banner) {
-      console.log(`[ZONE EVENT] Device: ${deviceId} | ${banner.message}`)
     }
     
     res.status(201).json({ status: 'ok', id: telemetry.id, banner })

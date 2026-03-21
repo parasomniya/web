@@ -1,5 +1,5 @@
-const API_BASE = "https://hostnamesrostkiserver.tail0cd01d.ts.net/api/telemetry/host";
-const ZONES_API = "https://hostnamesrostkiserver.tail0cd01d.ts.net/api/telemetry/zones";
+const API_BASE = "/api/telemetry/host";
+const ZONES_API = "/api/telemetry/zones";
 
 let map;
 let placemark;
@@ -53,9 +53,9 @@ function startPolling() {
     fetchLatest();
     fetchHistory();
 
-    setInterval(fetchLatest, 5000);
-    setInterval(fetchHistory, 5000);
-    setInterval(loadStorageZones, 15000);
+    setInterval(fetchLatest, 1000);
+    setInterval(fetchHistory, 1000);
+    setInterval(loadStorageZones, 11000);
 }
 
 async function fetchLatest() {
@@ -65,12 +65,10 @@ async function fetchLatest() {
         });
 
         if (!response.ok) {
-            console.error("Ошибка latest:", response.status);
             return;
         }
 
         const data = await response.json();
-    if (data.banner) { console.log("[ZONE EVENT] " + data.banner.message); }
 
         if (!data || data.lat == null || data.lon == null) {
             return;
@@ -94,10 +92,8 @@ async function fetchLatest() {
 
         if (data.banner && data.banner.message) {
             showBanner(data.banner.message);
-            console.log("1");
         }
     } catch (error) {
-        console.error("Ошибка получения latest:", error);
     }
 }
 
@@ -108,7 +104,6 @@ async function fetchHistory() {
         });
 
         if (!response.ok) {
-            console.error("Ошибка history:", response.status);
             return;
         }
 
@@ -138,7 +133,6 @@ async function fetchHistory() {
             tbody.appendChild(row);
         });
     } catch (error) {
-        console.error("Ошибка получения history:", error);
     }
 }
 
@@ -149,14 +143,12 @@ async function loadStorageZones() {
         });
 
         if (!response.ok) {
-            console.error("Ошибка зон:", response.status);
             return;
         }
 
         const zones = await response.json();
         drawZones(Array.isArray(zones) ? zones : []);
     } catch (error) {
-        console.error("Ошибка загрузки зон:", error);
     }
 }
 
