@@ -35,7 +35,7 @@ app.get(/\/(.*)/, (req, res, next) => {
 })
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server & Website running on http://100.113.151.27:${PORT}`)
+  console.log(`🚀 Server & Website running on http://127.0.0.1:${PORT}`)
 })
 
 // Запуск

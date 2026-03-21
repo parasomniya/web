@@ -3,7 +3,7 @@ document.getElementById("loginBtn").onclick = async function () {
     const login = document.getElementById("login").value;
     const password = document.getElementById("password").value;
 
-    const response = await fetch("https://hostnamesrostkiserver.tail0cd01d.ts.net/api/auth/login", {
+    const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
