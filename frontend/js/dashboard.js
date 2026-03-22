@@ -31,6 +31,7 @@ function init() {
     fetchLatest();
     fetchHistory();
     fetchZones();
+    fetchZones();
     setInterval(fetchLatest, 1000); // Опрос последней точки
     setInterval(fetchHistory, 5000); // Опрос таблицы раз в 5 сек
 }
@@ -62,6 +63,7 @@ async function fetchLatest() {
         const response = await fetch(`${API_BASE}/latest`, { headers: getHeaders() });
         if (!response.ok) return;
         const data = await response.json();
+        if (data && typeof data === "object" && !Array.isArray(data)) showBanner(data.banner || null);
         
         if (data.lat && data.lon) {
             const newCoords = [Number(data.lat), Number(data.lon)];
@@ -75,6 +77,7 @@ async function fetchHistory() {
         const response = await fetch(`${API_BASE}/history?limit=10`, { headers: getHeaders() });
         if (!response.ok) return;
         const data = await response.json();
+        if (data && typeof data === "object" && !Array.isArray(data)) showBanner(data.banner || null);
         updateTable(data);
     } catch (e) { console.error("Error fetching history:", e); }
 }
@@ -114,4 +117,79 @@ async function fetchZones() {
             map.geoObjects.add(circle);
         });
     } catch (e) { console.error("Error fetching zones:", e); }
+}
+
+// --- Отрисовка зон ---
+async function fetchZones() {
+    try {
+        const response = await fetch('/api/telemetry/zones', { headers: getHeaders() });
+        if (!response.ok) return;
+        const zones = await response.json();
+        
+        zones.forEach(zone => {
+            const circle = new ymaps.Circle([
+                [Number(zone.lat), Number(zone.lon)], 
+                zone.radius || 50
+            ], {
+                balloonContent: `Зона: ${zone.name}`
+            }, {
+                fillColor: 'rgba(0, 150, 255, 0.3)',
+                strokeColor: '#0066ff',
+                strokeOpacity: 0.8,
+                strokeWidth: 2
+            });
+            map.geoObjects.add(circle);
+        });
+    } catch (e) { console.error("Error fetching zones:", e); }
+}
+
+// --- Постоянный баннер ---
+let lastShownZone = null;
+let currentBannerElement = null;
+
+function showBanner(banner) {
+    if (!banner) {
+        if (currentBannerElement) {
+            currentBannerElement.style.animation = 'bannerOutFinal 0.5s ease-in forwards';
+            const elToRemove = currentBannerElement;
+            setTimeout(() => { if (elToRemove) elToRemove.remove(); }, 500);
+            currentBannerElement = null;
+        }
+        lastShownZone = null;
+        return;
+    }
+
+    const zoneName = banner.zoneName || banner.name || '';
+    if (lastShownZone === zoneName) return; 
+
+    if (currentBannerElement) {
+        currentBannerElement.remove();
+    }
+
+    lastShownZone = zoneName;
+
+    let container = document.getElementById('banner-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'banner-container';
+        container.style.cssText = 'position: fixed; top: 15px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;';
+        document.body.appendChild(container);
+    }
+
+    if (!document.getElementById('banner-styles-final')) {
+        const style = document.createElement('style');
+        style.id = 'banner-styles-final';
+        style.innerHTML = `
+            @keyframes bannerInFinal { from { opacity: 0; transform: translateY(-15px); } to { opacity: 1; transform: translateY(0); } }
+            @keyframes bannerOutFinal { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.9); } }
+        `;
+        document.head.appendChild(style);
+    }
+
+    const alert = document.createElement('div');
+    alert.style.cssText = 'background-color: #1a6b3d; color: white; padding: 10px 18px; border-radius: 20px; box-shadow: 0 5px 12px rgba(0,50,0,0.35); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; font-weight: 500; opacity: 0; animation: bannerInFinal 0.4s ease-out forwards; cursor: default;';
+    alert.textContent = `Въезд в зону: ${zoneName}`;
+    
+    container.appendChild(alert);
+    currentBannerElement = alert;
 }
