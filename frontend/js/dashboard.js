@@ -30,6 +30,7 @@ function init() {
     // Запускаем циклы обновления
     fetchLatest();
     fetchHistory();
+    fetchZones();
     setInterval(fetchLatest, 1000); // Опрос последней точки
     setInterval(fetchHistory, 5000); // Опрос таблицы раз в 5 сек
 }
@@ -90,4 +91,27 @@ function updateTable(data) {
             <td>${row.weight || 0} кг</td>
         </tr>
     `).join('');
+}
+
+async function fetchZones() {
+    try {
+        const response = await fetch('/api/telemetry/zones', { headers: getHeaders() });
+        if (!response.ok) return;
+        const zones = await response.json();
+        
+        zones.forEach(zone => {
+            const circle = new ymaps.Circle([
+                [Number(zone.lat), Number(zone.lon)], 
+                zone.radius || 50
+            ], {
+                balloonContent: `Зона: ${zone.name}`
+            }, {
+                fillColor: 'rgba(0, 150, 255, 0.3)',
+                strokeColor: '#0066ff',
+                strokeOpacity: 0.8,
+                strokeWidth: 2
+            });
+            map.geoObjects.add(circle);
+        });
+    } catch (e) { console.error("Error fetching zones:", e); }
 }
