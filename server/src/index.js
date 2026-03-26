@@ -4,6 +4,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import telemetryRouter from './modules/telemetry/telemetry.routes.js'
 import storageZonesRouter from './modules/storage-zones/storage-zones.routes.js'
+import eventsRouter from './modules/events/events.routes.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -17,6 +18,7 @@ app.use(express.json())
 // API
 app.use('/api/telemetry/host', telemetryRouter)
 app.use('/api/telemetry/zones', storageZonesRouter)
+app.use('/api/events', eventsRouter)
 
 // Static Frontend
 const frontendPath = path.resolve(__dirname, '../../frontend')

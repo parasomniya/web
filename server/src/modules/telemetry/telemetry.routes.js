@@ -49,7 +49,7 @@ async function checkZones(lat, lon, deviceId) {
 }
 
 function isValidLocation(lat, lon) {
-  if (lat == null || lon == null) return false;
+  if (lat == null || lon ==  null) return false;
   if (typeof lat !== 'number' || typeof lon !== 'number') return false;
   if (isNaN(lat) || isNaN(lon)) return false;
   if (lat === 0 && lon === 0) return false;

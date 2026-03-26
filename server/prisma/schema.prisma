@@ -36,3 +36,13 @@ model StorageZone {
   active     Boolean  @default(true)
   createdAt  DateTime @default(now())
 }
+
+model DeviceEvent {
+  id         Int      @id @default(autoincrement())
+  deviceId   String
+  type       String   // Сюда будет падать 'sms' или 'call'
+  timestamp  DateTime // Время с устройства
+  fromNumber String   // Номер телефона, например '+79991234567'
+  text       String?  // Текст (опционально, так как у звонков текста нет)
+  createdAt  DateTime @default(now()) // Время, когда сервер получил пакет
+}
