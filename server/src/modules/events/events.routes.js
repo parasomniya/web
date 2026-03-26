@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import prisma from "../../services/database.js" // Проверь правильность пути к database.js
+import prisma from "../../database.js" // Проверь правильность пути к database.js
 
 const router = Router()
 
