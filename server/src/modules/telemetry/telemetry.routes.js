@@ -48,19 +48,18 @@ async function checkZones(lat, lon, deviceId) {
   return banner;
 }
 
-function isValidLocation(lat, lon) {
-  if (lat == null || lon ==  null) return false;
+function isValidLocation(lat, lon){
+  if (lat == null || lon == null) return false;
   if (typeof lat !== 'number' || typeof lon !== 'number') return false;
   if (isNaN(lat) || isNaN(lon)) return false;
-  if (lat === 0 && lon === 0) return false;
   if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return false;
-  
+
   return true;
 }
 
 router.post('/', async (req, res) => {
   try {
-    // 1. Достаем все поля из прилетающего JSON (
+    // 1. Достаем все поля из прилетающего JSON
     const {
       device_id, timestamp, lat, lon, gps_valid, gps_satellites,
       weight, weight_valid, gps_quality, wifi_clients,
@@ -97,30 +96,27 @@ router.post('/', async (req, res) => {
       }
     })
 
-    // 4. Проверяем геозоны
-    const banner = await checkZones(lat, lon, deviceId)
+    // 4. Проверяем геозоны или отдаем баннеры при нулевых координатах
+    let banner = null;
+    
+    if (lat === 0 && lon === 0) {
+      if (gps_quality === 0) {
+        banner = { type: 'gps_warning', message: 'Ожидание GPS fix' };
+      } 
+      else if (gps_quality === 1) {
+        banner = { type: 'gps_error', message: 'Координаты не распознаны' };
+      }
+    } 
+    else {
+      banner = await checkZones(lat, lon, deviceId);
+    }
     
     res.status(201).json({ status: 'ok', id: telemetry.id, banner })
-  } catch (error) {
-    console.error(error)
-    res.status(500).json({ error: 'Internal server error', details: error.message })
-  }
-})
 
-router.get('/latest', async (req, res) => {
-  try {
-    const data = await prisma.telemetry.findFirst({ 
-      orderBy: { timestamp: 'desc' } 
-    })
-    if (!data) return res.status(404).json({ error: 'No data found' })
-    
-    // В GET мы просто проверяем текущую зону, но баннер для фронтенда 
-    // здесь обычно не нужен (чтобы не спамить при обновлении страницы), 
-    // либо оставляем как есть, если фронтенд сам умеет скрывать.
-    const banner = await checkZones(data.lat, data.lon, data.deviceId)
-    res.json({ ...data, banner })
   } catch (error) {
-    res.status(500).json({ error: 'Internal server error' })
+    // ВЕРНУЛИ CATCH НА МЕСТО
+    console.error('[Ошибка при сохранении телеметрии]:', error)
+    res.status(500).json({ error: 'Internal server error', details: error.message })
   }
 })
 
