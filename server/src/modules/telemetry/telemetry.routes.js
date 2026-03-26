@@ -50,29 +50,49 @@ async function checkZones(lat, lon, deviceId) {
 
 router.post('/', async (req, res) => {
   try {
-    const { weight, lat, lon } = req.body
-    const deviceId = req.body.deviceId || req.body.device_id || 'host_01'
-    
-    if (typeof lat !== 'number' || typeof lon !== 'number') {
+    // 1. Достаем все поля из прилетающего JSON (
+    const {
+      device_id, timestamp, lat, lon, gps_valid, gps_satellites,
+      weight, weight_valid, gps_quality, wifi_clients,
+      cpu_temp_c, lte_rssi_dbm, lte_access_tech, events_reader_ok
+    } = req.body
+
+    const deviceId = device_id || 'host_01'
+
+    // 2. Применяем фильтр координат
+    if (!isValidLocation(lat, lon)) {
+      console.warn(`[Фильтр] Отброшен невалидный пакет от ${deviceId}: lat=${lat}, lon=${lon}`)
       return res.status(400).json({ error: 'Invalid coordinates' })
     }
-    
+
+    // 3. Сохраняем расширенные данные в БД
     const telemetry = await prisma.telemetry.create({
       data: {
-        timestamp: new Date(),
+        deviceId: deviceId,
+        // Если устройство прислало свой timestamp, берем его. Если нет - ставим время сервера
+        timestamp: timestamp ? new Date(timestamp) : new Date(),
+        lat: lat,
+        lon: lon,
+        gpsValid: Boolean(gps_valid),
+        gpsSatellites: gps_satellites || 0,
         weight: weight || 0,
-        lat,
-        lon,
-        deviceId
+        weightValid: Boolean(weight_valid),
+        gpsQuality: gps_quality || 0,
+        // Массив перегоняем в строку для SQLite
+        wifiClients: wifi_clients ? JSON.stringify(wifi_clients) : '[]',
+        cpuTempC: cpu_temp_c || null,
+        lteRssiDbm: lte_rssi_dbm || null,
+        lteAccessTech: lte_access_tech || null,
+        eventsReaderOk: Boolean(events_reader_ok)
       }
     })
 
+    // 4. Проверяем геозоны
     const banner = await checkZones(lat, lon, deviceId)
-    if (banner) {
-    }
     
     res.status(201).json({ status: 'ok', id: telemetry.id, banner })
   } catch (error) {
+    console.error(error)
     res.status(500).json({ error: 'Internal server error', details: error.message })
   }
 })
