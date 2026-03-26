@@ -120,6 +120,32 @@ router.post('/', async (req, res) => {
   }
 })
 
+router.get('/latest', async (req, res) => {
+  try {
+    const data = await prisma.telemetry.findFirst({ 
+      orderBy: { timestamp: 'desc' } 
+    })
+    if (!data) return res.status(404).json({ error: 'No data found' })
+    
+    let banner = null;
+
+    // В базе поле называется в camelCase: data.gpsQuality
+    if (data.lat === 0 && data.lon === 0) {
+      if (data.gpsQuality === 0) {
+        banner = { type: 'gps_warning', message: 'Ожидание GPS fix' };
+      } else if (data.gpsQuality === 1) {
+        banner = { type: 'gps_error', message: 'Координаты не распознаны' };
+      }
+    } else {
+      banner = await checkZones(data.lat, data.lon, data.deviceId)
+    }
+
+    res.json({ ...data, banner })
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 router.get('/history', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10
