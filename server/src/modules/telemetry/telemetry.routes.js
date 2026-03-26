@@ -48,6 +48,16 @@ async function checkZones(lat, lon, deviceId) {
   return banner;
 }
 
+function isValidLocation(lat, lon) {
+  if (lat == null || lon == null) return false;
+  if (typeof lat !== 'number' || typeof lon !== 'number') return false;
+  if (isNaN(lat) || isNaN(lon)) return false;
+  if (lat === 0 && lon === 0) return false;
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return false;
+  
+  return true;
+}
+
 router.post('/', async (req, res) => {
   try {
     // 1. Достаем все поля из прилетающего JSON (
