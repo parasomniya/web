@@ -12,10 +12,14 @@
     "@prisma/adapter-better-sqlite3": "^7.4.2",
     "@prisma/adapter-libsql": "^6.2.1",
     "@prisma/client": "^6.2.1",
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "fetch": "^1.1.0",
-    "prisma": "^6.2.1"
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.1.1",
+    "prisma": "^6.2.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

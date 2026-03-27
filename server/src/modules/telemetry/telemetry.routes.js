@@ -157,6 +157,87 @@ router.get('/history', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' })
   }
-})
+});
+
+
+// POST /seed - Генерация тестовых данных (Инструмент тестировки)
+router.post('/seed', async (req, res) => {
+  try {
+    if (req.headers['x-test-secret'] !== 'kill_all_telemetry_123') {
+      return res.status(403).json({ error: 'Доступ запрещен' });
+    }
+
+    const points = [];
+    let startLat = 52.52; // Стартовая точка из твоего JSON
+    let startLon = 85.12;
+
+    // Генерируем 20 точек с шагом 0.0005 градуса (имитация движения по прямой)
+    for (let i = 0; i < 20; i++) {
+      points.push({
+        deviceId: 'test_seeder_01',
+        // Делаем точки в прошлом, с разницей в 10 секунд
+        timestamp: new Date(Date.now() - (20 - i) * 10000), 
+        lat: startLat + (i * 0.0005),
+        lon: startLon + (i * 0.0005),
+        gpsValid: true,
+        gpsSatellites: 15,
+        weight: 2450.5 + (i * 10), // Вес понемногу растет
+        weightValid: true,
+        gpsQuality: 4,
+        wifiClients: '[]',
+        eventsReaderOk: true
+      });
+    }
+
+    // Сохраняем весь массив разом
+    const created = await prisma.telemetry.createMany({
+      data: points
+    });
+
+    console.log(`[TEST TOOLS] Сгенерировано ${created.count} тестовых точек!`);
+    res.json({ status: 'ok', message: `Успешно добавлено ${created.count} точек маршрута` });
+
+  } catch (error) {
+    console.error('[Ошибка генерации данных]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /truncate - Очистка таблицы событий (Инструмент тестировки)
+router.delete('/truncate', async (req, res) => {
+  try {
+    if (req.headers['x-test-secret'] !== 'kill_all_telemetry_123') {
+      return res.status(403).json({ error: 'Доступ запрещен' });
+    }
+
+    const deleted = await prisma.deviceEvent.deleteMany({});
+    
+    console.warn(`[TEST TOOLS] Таблица событий очищена! Удалено: ${deleted.count}`);
+    res.json({ status: 'ok', message: 'События удалены', count: deleted.count });
+  } catch (error) {
+    console.error('[Ошибка очистки событий]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Скрытый эндпоинт для очистки телеметрии (Инструмент тестировки)
+router.delete('/truncate', async (req, res) => {
+  try {
+    // Двойная защита: проверяем специальный заголовок-пароль
+    const testSecret = req.headers['x-test-secret'];
+    if (testSecret !== 'kill_all_telemetry_123') {
+      return res.status(403).json({ error: 'Ага, попался! Доступ запрещен.' });
+    }
+
+    // В Prisma нет прямого TRUNCATE, поэтому используем deleteMany (удаляет все записи)
+    const deleted = await prisma.telemetry.deleteMany({});
+
+    console.warn(`[TEST TOOLS] Таблица телеметрии очищена! Удалено записей: ${deleted.count}`);
+    res.json({ status: 'ok', message: 'Таблица телеметрии девственно чиста', count: deleted.count });
+  } catch (error) {
+    console.error('[Ошибка при очистке телеметрии]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 export default router
