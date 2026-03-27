@@ -37,3 +37,4 @@ __pycache__/
 # Логи
 *.log
 server.log
+tools/
