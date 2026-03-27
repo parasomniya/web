@@ -102,33 +102,42 @@
                     </div>
 
 
-                    <!-- ПОТОМ ТАБЛИЦА -->
-                    <h1 class="h3 mb-4 text-gray-800">Последние замесы</h1>
+                    <!-- ТЕКУЩЕЕ СОСТОЯНИЕ -->
+                    <h1 class="h3 mb-4 text-gray-800">Текущее состояние</h1>
 
                     <div class="card shadow mb-4">
 
                         <div class="card-header py-3">
-                            <h6 class="m-0 font-weight-bold text-primary">Последние данные</h6>
+                            <h6 class="m-0 font-weight-bold text-primary">Сводка по технике</h6>
                         </div>
 
-                        <div class="card-body">
+                        <div class="card-body dashboard-status-card">
+                            <div class="row">
+                                <div class="col-lg-3 col-md-6 mb-4 mb-lg-0">
+                                    <div class="text-xs font-weight-bold text-primary text-uppercase mb-2">Статус</div>
+                                    <div id="dashboardVehicleStatus" class="dashboard-status-pill offline">Оффлайн</div>
+                                </div>
 
-                            <table class="table table-bordered" id="batchesTable">
+                                <div class="col-lg-3 col-md-6 mb-4 mb-lg-0">
+                                    <div class="text-xs font-weight-bold text-primary text-uppercase mb-2">Текущая зона</div>
+                                    <div id="dashboardCurrentZone" class="dashboard-status-value">--</div>
+                                </div>
 
-                                <thead>
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>Дата</th>
-                                        <th>Группа</th>
-                                        <th>Вес</th>
-                                    </tr>
-                                </thead>
+                                <div class="col-lg-3 col-md-6 mb-4 mb-md-0">
+                                    <div class="text-xs font-weight-bold text-primary text-uppercase mb-2">Скорость</div>
+                                    <div id="dashboardCurrentSpeed" class="dashboard-status-value">--</div>
+                                </div>
 
-                                <tbody>
-                                </tbody>
+                                <div class="col-lg-3 col-md-6">
+                                    <div class="text-xs font-weight-bold text-primary text-uppercase mb-2">Вес</div>
+                                    <div id="dashboardCurrentWeight" class="dashboard-status-value">--</div>
+                                </div>
+                            </div>
 
-                            </table>
+                            <hr>
 
+                            <div class="small text-muted mb-1">Последнее обновление по timestamp пакета</div>
+                            <div id="dashboardLastPacketTime" class="font-weight-bold text-gray-800">--</div>
                         </div>
 
                     </div>
