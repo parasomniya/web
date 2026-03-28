@@ -59,7 +59,6 @@ function isValidLocation(lat, lon){
 
 router.post('/', async (req, res) => {
   try {
-    // 1. Достаем все поля из прилетающего JSON
     const {
       device_id, timestamp, lat, lon, gps_valid, gps_satellites,
       weight, weight_valid, gps_quality, wifi_clients,
@@ -68,35 +67,12 @@ router.post('/', async (req, res) => {
 
     const deviceId = device_id || 'host_01'
 
-    // 2. Применяем фильтр координат
     if (!isValidLocation(lat, lon)) {
       console.warn(`[Фильтр] Отброшен невалидный пакет от ${deviceId}: lat=${lat}, lon=${lon}`)
       return res.status(400).json({ error: 'Invalid coordinates' })
     }
 
-    // 3. Сохраняем расширенные данные в БД
-    const telemetry = await prisma.telemetry.create({
-      data: {
-        deviceId: deviceId,
-        // Если устройство прислало свой timestamp, берем его. Если нет - ставим время сервера
-        timestamp: timestamp ? new Date(timestamp) : new Date(),
-        lat: lat,
-        lon: lon,
-        gpsValid: Boolean(gps_valid),
-        gpsSatellites: gps_satellites || 0,
-        weight: weight || 0,
-        weightValid: Boolean(weight_valid),
-        gpsQuality: gps_quality || 0,
-        // Массив перегоняем в строку для SQLite
-        wifiClients: wifi_clients ? JSON.stringify(wifi_clients) : '[]',
-        cpuTempC: cpu_temp_c || null,
-        lteRssiDbm: lte_rssi_dbm || null,
-        lteAccessTech: lte_access_tech || null,
-        eventsReaderOk: Boolean(events_reader_ok)
-      }
-    })
-
-    // 4. Проверяем геозоны или отдаем баннеры при нулевых координатах
+    // СНАЧАЛА определяем баннер
     let banner = null;
     
     if (lat === 0 && lon === 0) {
@@ -110,11 +86,30 @@ router.post('/', async (req, res) => {
     else {
       banner = await checkZones(lat, lon, deviceId);
     }
-    
+
+    // ПОТОМ сохраняем в БД
+    const telemetry = await prisma.telemetry.create({
+      data: {
+        deviceId: deviceId,
+        timestamp: timestamp ? new Date(timestamp) : new Date(),
+        lat: lat,
+        lon: lon,
+        gpsValid: Boolean(gps_valid),
+        gpsSatellites: gps_satellites || 0,
+        weight: weight || 0,
+        weightValid: Boolean(weight_valid),
+        gpsQuality: gps_quality || 0,
+        wifiClients: wifi_clients ? JSON.stringify(wifi_clients) : '[]',
+        cpuTempC: cpu_temp_c || null,
+        lteRssiDbm: lte_rssi_dbm || null,
+        lteAccessTech: lte_access_tech || null,
+        eventsReaderOk: Boolean(events_reader_ok)
+      }
+    })
+
     res.status(201).json({ status: 'ok', id: telemetry.id, banner })
 
   } catch (error) {
-    // ВЕРНУЛИ CATCH НА МЕСТО
     console.error('[Ошибка при сохранении телеметрии]:', error)
     res.status(500).json({ error: 'Internal server error', details: error.message })
   }
@@ -129,7 +124,6 @@ router.get('/latest', async (req, res) => {
     
     let banner = null;
 
-    // В базе поле называется в camelCase: data.gpsQuality
     if (data.lat === 0 && data.lon === 0) {
       if (data.gpsQuality === 0) {
         banner = { type: 'gps_warning', message: 'Ожидание GPS fix' };
@@ -159,8 +153,7 @@ router.get('/history', async (req, res) => {
   }
 });
 
-
-// POST /seed - Генерация тестовых данных (Инструмент тестировки)
+// POST /seed - Генерация тестовых данных
 router.post('/seed', async (req, res) => {
   try {
     if (req.headers['x-test-secret'] !== 'kill_all_telemetry_123') {
@@ -168,20 +161,18 @@ router.post('/seed', async (req, res) => {
     }
 
     const points = [];
-    let startLat = 52.52; // Стартовая точка из твоего JSON
+    let startLat = 52.52;
     let startLon = 85.12;
 
-    // Генерируем 20 точек с шагом 0.0005 градуса (имитация движения по прямой)
     for (let i = 0; i < 20; i++) {
       points.push({
         deviceId: 'test_seeder_01',
-        // Делаем точки в прошлом, с разницей в 10 секунд
         timestamp: new Date(Date.now() - (20 - i) * 10000), 
         lat: startLat + (i * 0.0005),
         lon: startLon + (i * 0.0005),
         gpsValid: true,
         gpsSatellites: 15,
-        weight: 2450.5 + (i * 10), // Вес понемногу растет
+        weight: 2450.5 + (i * 10),
         weightValid: true,
         gpsQuality: 4,
         wifiClients: '[]',
@@ -189,7 +180,6 @@ router.post('/seed', async (req, res) => {
       });
     }
 
-    // Сохраняем весь массив разом
     const created = await prisma.telemetry.createMany({
       data: points
     });
@@ -203,37 +193,18 @@ router.post('/seed', async (req, res) => {
   }
 });
 
-// DELETE /truncate - Очистка таблицы событий (Инструмент тестировки)
+// Скрытый эндпоинт для очистки ТОЛЬКО телеметрии
 router.delete('/truncate', async (req, res) => {
   try {
-    if (req.headers['x-test-secret'] !== 'kill_all_telemetry_123') {
-      return res.status(403).json({ error: 'Доступ запрещен' });
-    }
-
-    const deleted = await prisma.deviceEvent.deleteMany({});
-    
-    console.warn(`[TEST TOOLS] Таблица событий очищена! Удалено: ${deleted.count}`);
-    res.json({ status: 'ok', message: 'События удалены', count: deleted.count });
-  } catch (error) {
-    console.error('[Ошибка очистки событий]:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Скрытый эндпоинт для очистки телеметрии (Инструмент тестировки)
-router.delete('/truncate', async (req, res) => {
-  try {
-    // Двойная защита: проверяем специальный заголовок-пароль
     const testSecret = req.headers['x-test-secret'];
     if (testSecret !== 'kill_all_telemetry_123') {
-      return res.status(403).json({ error: 'Ага, попался! Доступ запрещен.' });
+      return res.status(403).json({ error: 'Доступ запрещен.' });
     }
 
-    // В Prisma нет прямого TRUNCATE, поэтому используем deleteMany (удаляет все записи)
     const deleted = await prisma.telemetry.deleteMany({});
 
     console.warn(`[TEST TOOLS] Таблица телеметрии очищена! Удалено записей: ${deleted.count}`);
-    res.json({ status: 'ok', message: 'Таблица телеметрии девственно чиста', count: deleted.count });
+    res.json({ status: 'ok', message: 'Таблица телеметрии чиста', count: deleted.count });
   } catch (error) {
     console.error('[Ошибка при очистке телеметрии]:', error);
     res.status(500).json({ error: 'Internal server error' });
