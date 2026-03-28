@@ -1,45 +1,123 @@
-const API_BASE = '/api/telemetry/host'; // Путь из твоего роутера
+const API_BASE = "/api/telemetry/host";
+const ZONES_API = "/api/telemetry/zones";
+const DEFAULT_COORDS = [54.84, 83.09];
+const LATEST_POLL_INTERVAL_MS = 1000;
+const OFFLINE_THRESHOLD_MS = 5000;
+
+let map;
+let placemark;
+let latestTelemetry = null;
+let storageZones = [];
+let zoneCircles = [];
+let hasLiveCoordinates = false;
 
 function getHeaders() {
     const token = localStorage.getItem("token");
-    return {
-        "Authorization": "Bearer " + token,
-        "Content-Type": "application/json"
+    const headers = {
+        "Content-Type": "application/json",
     };
+
+    if (token) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+
+    return headers;
 }
 
-let map, placemark;
-
-ymaps.ready(init);
-
-function init() {
-    // Создаем карту. Если координат нет, ставим дефолт (например, Новосибирск)
-    map = new ymaps.Map("map", {
-        center: [54.84, 83.09], 
-        zoom: 12,
-        controls: ['zoomControl', 'fullscreenControl']
-    });
-    
-    // Создаем метку (машинку)
-    placemark = new ymaps.Placemark(map.getCenter(), {}, {
-        preset: 'islands#blueAutoIcon'
-    });
-    
-    map.geoObjects.add(placemark);
-    
-    // Запускаем циклы обновления
-    fetchLatest();
-    fetchHistory();
-    fetchZones();
-    fetchZones();
-    setInterval(fetchLatest, 1000); // Опрос последней точки
-    setInterval(fetchHistory, 5000); // Опрос таблицы раз в 5 сек
+function setText(id, value) {
+    const element = document.getElementById(id);
+    if (element) {
+        element.textContent = value;
+    }
 }
 
-// Функция для ПЛАВНОГО движения метки
+function formatDateTime(value) {
+    if (!value) return "--";
+
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "--" : date.toLocaleString("ru-RU");
+}
+
+function formatMetric(value, digits = 1) {
+    if (value === null || value === undefined || value === "") return "--";
+
+    const number = Number(value);
+    return Number.isNaN(number) ? "--" : number.toFixed(digits);
+}
+
+function setVehicleStatus(isOnline) {
+    const element = document.getElementById("dashboardVehicleStatus");
+    if (!element) return;
+
+    element.textContent = isOnline ? "Онлайн" : "Оффлайн";
+    element.classList.toggle("online", isOnline);
+    element.classList.toggle("offline", !isOnline);
+}
+
+function getPlacemarkPreset(isOnline) {
+    return isOnline ? "islands#blueAutoIcon" : "islands#grayAutoIcon";
+}
+
+function updatePlacemarkStatus(isOnline) {
+    if (!placemark) return;
+    placemark.options.set("preset", getPlacemarkPreset(isOnline));
+}
+
+function isPacketOnline(timestamp) {
+    if (!timestamp) return false;
+
+    const packetTime = new Date(timestamp).getTime();
+    if (Number.isNaN(packetTime)) return false;
+
+    return (Date.now() - packetTime) < OFFLINE_THRESHOLD_MS;
+}
+
+function hasValidCoordinates(lat, lon) {
+    const parsedLat = Number(lat);
+    const parsedLon = Number(lon);
+
+    if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLon)) {
+        return false;
+    }
+
+    return !(parsedLat === 0 && parsedLon === 0);
+}
+
+function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
+    const earthRadius = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return earthRadius * c;
+}
+
+function getCurrentZoneName(lat, lon) {
+    for (const zone of storageZones) {
+        const zoneLat = Number(zone.lat);
+        const zoneLon = Number(zone.lon);
+        const zoneRadius = Number(zone.radius) || 50;
+
+        if (!Number.isFinite(zoneLat) || !Number.isFinite(zoneLon)) {
+            continue;
+        }
+
+        const distance = getDistanceFromLatLonInMeters(lat, lon, zoneLat, zoneLon);
+        if (distance <= zoneRadius) {
+            return zone.name;
+        }
+    }
+
+    return null;
+}
+
 function smoothMove(newCoords) {
     const startCoords = placemark.geometry.getCoordinates();
-    const duration = 1000; // 1 секунда на движение
+    const duration = 1000;
     const startTime = performance.now();
 
     function animate(currentTime) {
@@ -55,130 +133,155 @@ function smoothMove(newCoords) {
             requestAnimationFrame(animate);
         }
     }
+
     requestAnimationFrame(animate);
+}
+
+function updateMapPosition(data, isOnline) {
+    updatePlacemarkStatus(isOnline);
+
+    if (!hasValidCoordinates(data?.lat, data?.lon)) {
+        return;
+    }
+
+    const newCoords = [Number(data.lat), Number(data.lon)];
+
+    if (!hasLiveCoordinates) {
+        placemark.geometry.setCoordinates(newCoords);
+        map.setCenter(newCoords);
+        hasLiveCoordinates = true;
+        return;
+    }
+
+    smoothMove(newCoords);
+}
+
+function renderDashboard(data) {
+    if (!data) {
+        setVehicleStatus(false);
+        setText("dashboardCurrentZone", "--");
+        setText("dashboardCurrentSpeed", "--");
+        setText("dashboardCurrentWeight", "--");
+        setText("dashboardLastPacketTime", "--");
+        updatePlacemarkStatus(false);
+        return;
+    }
+
+    const isOnline = isPacketOnline(data.timestamp);
+    const hasCoordinates = hasValidCoordinates(data.lat, data.lon);
+    const parsedLat = Number(data.lat);
+    const parsedLon = Number(data.lon);
+    const zoneName = hasCoordinates
+        ? (getCurrentZoneName(parsedLat, parsedLon) || data?.banner?.zoneName || "Вне зоны")
+        : "--";
+
+    setVehicleStatus(isOnline);
+    setText("dashboardCurrentZone", zoneName);
+    setText("dashboardCurrentSpeed", data.speed != null ? `${formatMetric(data.speed, 1)} км/ч` : "--");
+    setText("dashboardCurrentWeight", data.weight != null ? `${formatMetric(data.weight, 1)} кг` : "--");
+    setText("dashboardLastPacketTime", formatDateTime(data.timestamp));
+
+    updateMapPosition(data, isOnline);
+}
+
+function clearZoneCircles() {
+    zoneCircles.forEach((circle) => map.geoObjects.remove(circle));
+    zoneCircles = [];
+}
+
+function renderZones() {
+    if (!map) return;
+
+    clearZoneCircles();
+
+    zoneCircles = storageZones.map((zone) => {
+        const circle = new ymaps.Circle([
+            [Number(zone.lat), Number(zone.lon)],
+            Number(zone.radius) || 50,
+        ], {
+            balloonContent: `Зона: ${zone.name}`,
+        }, {
+            fillColor: "rgba(0, 150, 255, 0.3)",
+            strokeColor: "#0066ff",
+            strokeOpacity: 0.8,
+            strokeWidth: 2,
+        });
+
+        map.geoObjects.add(circle);
+        return circle;
+    });
 }
 
 async function fetchLatest() {
     try {
         const response = await fetch(`${API_BASE}/latest`, { headers: getHeaders() });
-        if (!response.ok) return;
-        const data = await response.json();
-        if (data && typeof data === "object" && !Array.isArray(data)) showBanner(data.banner || null);
-        
-        if (data.lat && data.lon) {
-            const newCoords = [Number(data.lat), Number(data.lon)];
-            smoothMove(newCoords); // Едем плавно
+        if (!response.ok) {
+            renderDashboard(latestTelemetry);
+            return;
         }
-    } catch (e) { console.error("Error fetching latest:", e); }
-}
 
-async function fetchHistory() {
-    try {
-        const response = await fetch(`${API_BASE}/history?limit=10`, { headers: getHeaders() });
-        if (!response.ok) return;
-        const data = await response.json();
-        if (data && typeof data === "object" && !Array.isArray(data)) showBanner(data.banner || null);
-        updateTable(data);
-    } catch (e) { console.error("Error fetching history:", e); }
-}
-
-function updateTable(data) {
-    const tableBody = document.querySelector("table tbody"); 
-    if (!tableBody) return;
-
-    tableBody.innerHTML = data.map(row => `
-        <tr>
-            <td>${row.id}</td>
-            <td>${new Date(row.timestamp).toLocaleString('ru-RU')}</td>
-            <td>${row.deviceId || 'host_01'}</td>
-            <td>${row.weight || 0} кг</td>
-        </tr>
-    `).join('');
+        latestTelemetry = await response.json();
+        showBanner(latestTelemetry.banner || null);
+        renderDashboard(latestTelemetry);
+    } catch (error) {
+        console.error("Error fetching latest:", error);
+        renderDashboard(latestTelemetry);
+    }
 }
 
 async function fetchZones() {
     try {
-        const response = await fetch('/api/telemetry/zones', { headers: getHeaders() });
+        const response = await fetch(ZONES_API, { headers: getHeaders() });
         if (!response.ok) return;
-        const zones = await response.json();
-        
-        zones.forEach(zone => {
-            const circle = new ymaps.Circle([
-                [Number(zone.lat), Number(zone.lon)], 
-                zone.radius || 50
-            ], {
-                balloonContent: `Зона: ${zone.name}`
-            }, {
-                fillColor: 'rgba(0, 150, 255, 0.3)',
-                strokeColor: '#0066ff',
-                strokeOpacity: 0.8,
-                strokeWidth: 2
-            });
-            map.geoObjects.add(circle);
-        });
-    } catch (e) { console.error("Error fetching zones:", e); }
+
+        storageZones = await response.json();
+        renderZones();
+        renderDashboard(latestTelemetry);
+    } catch (error) {
+        console.error("Error fetching zones:", error);
+    }
 }
 
-// --- Отрисовка зон ---
-async function fetchZones() {
-    try {
-        const response = await fetch('/api/telemetry/zones', { headers: getHeaders() });
-        if (!response.ok) return;
-        const zones = await response.json();
-        
-        zones.forEach(zone => {
-            const circle = new ymaps.Circle([
-                [Number(zone.lat), Number(zone.lon)], 
-                zone.radius || 50
-            ], {
-                balloonContent: `Зона: ${zone.name}`
-            }, {
-                fillColor: 'rgba(0, 150, 255, 0.3)',
-                strokeColor: '#0066ff',
-                strokeOpacity: 0.8,
-                strokeWidth: 2
-            });
-            map.geoObjects.add(circle);
-        });
-    } catch (e) { console.error("Error fetching zones:", e); }
-}
-
-// --- Постоянный баннер ---
 let lastShownZone = null;
 let currentBannerElement = null;
 
 function showBanner(banner) {
     if (!banner) {
         if (currentBannerElement) {
-            currentBannerElement.style.animation = 'bannerOutFinal 0.5s ease-in forwards';
-            const elToRemove = currentBannerElement;
-            setTimeout(() => { if (elToRemove) elToRemove.remove(); }, 500);
+            currentBannerElement.style.animation = "bannerOutFinal 0.5s ease-in forwards";
+            const elementToRemove = currentBannerElement;
+            setTimeout(() => {
+                if (elementToRemove) {
+                    elementToRemove.remove();
+                }
+            }, 500);
             currentBannerElement = null;
         }
         lastShownZone = null;
         return;
     }
 
-    const zoneName = banner.zoneName || banner.name || '';
-    if (lastShownZone === zoneName) return; 
+    const zoneName = banner.zoneName || banner.name || "";
+    const bannerText = zoneName ? `Въезд в зону: ${zoneName}` : (banner.message || "Новое уведомление");
+    if (lastShownZone === bannerText) return;
 
     if (currentBannerElement) {
         currentBannerElement.remove();
     }
 
-    lastShownZone = zoneName;
+    lastShownZone = bannerText;
 
-    let container = document.getElementById('banner-container');
+    let container = document.getElementById("banner-container");
     if (!container) {
-        container = document.createElement('div');
-        container.id = 'banner-container';
-        container.style.cssText = 'position: fixed; top: 15px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;';
+        container = document.createElement("div");
+        container.id = "banner-container";
+        container.style.cssText = "position: fixed; top: 15px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;";
         document.body.appendChild(container);
     }
 
-    if (!document.getElementById('banner-styles-final')) {
-        const style = document.createElement('style');
-        style.id = 'banner-styles-final';
+    if (!document.getElementById("banner-styles-final")) {
+        const style = document.createElement("style");
+        style.id = "banner-styles-final";
         style.innerHTML = `
             @keyframes bannerInFinal { from { opacity: 0; transform: translateY(-15px); } to { opacity: 1; transform: translateY(0); } }
             @keyframes bannerOutFinal { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.9); } }
@@ -186,10 +289,31 @@ function showBanner(banner) {
         document.head.appendChild(style);
     }
 
-    const alert = document.createElement('div');
-    alert.style.cssText = 'background-color: #1a6b3d; color: white; padding: 10px 18px; border-radius: 20px; box-shadow: 0 5px 12px rgba(0,50,0,0.35); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; font-weight: 500; opacity: 0; animation: bannerInFinal 0.4s ease-out forwards; cursor: default;';
-    alert.textContent = `Въезд в зону: ${zoneName}`;
-    
+    const alert = document.createElement("div");
+    alert.style.cssText = "background-color: #1a6b3d; color: white; padding: 10px 18px; border-radius: 20px; box-shadow: 0 5px 12px rgba(0,50,0,0.35); font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; font-size: 14px; font-weight: 500; opacity: 0; animation: bannerInFinal 0.4s ease-out forwards; cursor: default;";
+    alert.textContent = bannerText;
+
     container.appendChild(alert);
     currentBannerElement = alert;
 }
+
+function init() {
+    map = new ymaps.Map("map", {
+        center: DEFAULT_COORDS,
+        zoom: 12,
+        controls: ["zoomControl", "fullscreenControl"],
+    });
+
+    placemark = new ymaps.Placemark(DEFAULT_COORDS, {}, {
+        preset: getPlacemarkPreset(false),
+    });
+
+    map.geoObjects.add(placemark);
+
+    renderDashboard(null);
+    fetchZones();
+    fetchLatest();
+    setInterval(fetchLatest, LATEST_POLL_INTERVAL_MS);
+}
+
+ymaps.ready(init);

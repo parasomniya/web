@@ -15,6 +15,41 @@
     display: none;
 }
 
+.dashboard-status-card {
+    padding-top: 1.5rem;
+    padding-bottom: 1.5rem;
+}
+
+.dashboard-status-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 120px;
+    padding: 0.55rem 1rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.dashboard-status-pill.online {
+    color: #0f6848;
+    background: #d9f7ea;
+}
+
+.dashboard-status-pill.offline {
+    color: #6c757d;
+    background: #e9ecef;
+}
+
+.dashboard-status-value {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #5a5c69;
+    line-height: 1.35;
+    word-break: break-word;
+}
+
 .telemetry-page-meta {
     display: flex;
     align-items: center;
