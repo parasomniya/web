@@ -14,3 +14,124 @@
 .zone-entry-banner.hidden {
     display: none;
 }
+
+.telemetry-page-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.telemetry-switch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.telemetry-switch__button {
+    border: 1px solid #d1d3e2;
+    background: #fff;
+    color: #5a5c69;
+    border-radius: 0.35rem;
+    padding: 0.5rem 0.9rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.telemetry-switch__button:hover {
+    background: #f8f9fc;
+    color: #2e59d9;
+}
+
+.telemetry-switch__button.active {
+    background: #4e73df;
+    color: #fff;
+    border-color: #4e73df;
+}
+
+.telemetry-panel {
+    display: none;
+}
+
+.telemetry-panel.active {
+    display: block;
+}
+
+.telemetry-panel-status {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #6c757d;
+}
+
+.telemetry-table-wrap {
+    overflow: auto;
+}
+
+.telemetry-table {
+    min-width: 1400px;
+    margin-bottom: 0;
+}
+
+.telemetry-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #eef3ff;
+    color: #44506d;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
+.telemetry-table td {
+    vertical-align: middle;
+    white-space: nowrap;
+    font-size: 0.88rem;
+}
+
+.telemetry-empty-state {
+    padding: 26px 18px !important;
+    text-align: center;
+    color: #858796;
+    background: #fff;
+}
+
+.telemetry-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 72px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.telemetry-badge.ok {
+    color: #0f6848;
+    background: #d9f7ea;
+}
+
+.telemetry-badge.warn {
+    color: #8a5a00;
+    background: #fff1cc;
+}
+
+.telemetry-badge.offline {
+    color: #842029;
+    background: #f8d7da;
+}
+
+.telemetry-extra {
+    max-width: 280px;
+    white-space: normal;
+    color: #6b7280;
+    line-height: 1.4;
+}
+
+@media (max-width: 768px) {
+    .telemetry-page-meta {
+        width: 100%;
+    }
+}
