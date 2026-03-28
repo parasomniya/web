@@ -18,45 +18,51 @@ router.get('/', async (req, res) => {
 })
 
 // PUT /:id - Обновление существующей зоны
-router.put('/:id', async (req, res) => {
+// Обновить зону (теперь с поддержкой координат)
+router.put('/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, lat, lon, radius, ingredient, active } = req.body;
+    // Достаем lat и lon из тела запроса
+    const { name, radius, lat, lon, active } = req.body;
 
-    // Проверяем, что ID - это число
-    const zoneId = parseInt(id, 10);
-    if (isNaN(zoneId)) {
-      return res.status(400).json({ error: 'Неверный формат ID зоны' });
-    }
-
-    // Собираем объект с новыми данными. 
-    // Если поле не передали в запросе (undefined), мы его не меняем.
+    // Подготавливаем объект с данными для обновления
     const updateData = {};
+
     if (name !== undefined) updateData.name = name;
-    if (lat !== undefined) updateData.lat = parseFloat(lat);
-    if (lon !== undefined) updateData.lon = parseFloat(lon);
-    if (radius !== undefined) updateData.radius = parseFloat(radius);
-    if (ingredient !== undefined) updateData.ingredient = ingredient;
+    if (radius !== undefined) updateData.radius = parseInt(radius, 10);
     if (active !== undefined) updateData.active = Boolean(active);
 
-    // Обновляем запись в базе
+    // Валидация и добавление координат, если фронтенд их прислал
+    if (lat !== undefined) {
+      const parsedLat = parseFloat(lat);
+      if (isNaN(parsedLat) || parsedLat < -90 || parsedLat > 90) {
+        return res.status(400).json({ error: 'Неверный формат широты (lat)' });
+      }
+      updateData.lat = parsedLat;
+    }
+
+    if (lon !== undefined) {
+      const parsedLon = parseFloat(lon);
+      if (isNaN(parsedLon) || parsedLon < -180 || parsedLon > 180) {
+        return res.status(400).json({ error: 'Неверный формат долготы (lon)' });
+      }
+      updateData.lon = parsedLon;
+    }
+
+    // Записываем изменения в базу
     const updatedZone = await prisma.storageZone.update({
-      where: { id: zoneId },
+      where: { id: parseInt(id, 10) },
       data: updateData
     });
 
-    console.log(`[Зоны] Обновлена зона #${zoneId}`);
     res.json({ status: 'ok', zone: updatedZone });
-
   } catch (error) {
-    console.error('[Ошибка обновления зоны]:', error);
-    
-    // P2025 — это специфичная ошибка Prisma: "Запись не найдена"
+    // Если Prisma не нашла зону по ID, она выкинет ошибку с кодом P2025
     if (error.code === 'P2025') {
       return res.status(404).json({ error: 'Зона с таким ID не найдена' });
     }
-    
-    res.status(500).json({ error: 'Internal server error', details: error.message });
+    console.error('[Ошибка обновления зоны]:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

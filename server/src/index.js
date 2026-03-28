@@ -69,11 +69,11 @@ app.listen(PORT, '0.0.0.0', () => {
 })
 
 // Запуск
-app.listen(PORT, () => {
+//app.listen(PORT, () => {
   // console.log(`Server is running on port ${PORT}`)
   // console.log(`http://localhost:${PORT}`)
   // console.log(`POST: http://localhost:${PORT}/api/telemetry/host`)
   // console.log(`GET:  http://localhost:${PORT}/api/telemetry/host/latest`)
   // console.log(`GET:  http://localhost:${PORT}/api/telemetry/host/history`)
   // console.log(`GET:  http://localhost:${PORT}/api/telemetry/zones`)
-})
+//})
