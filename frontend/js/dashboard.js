@@ -1,11 +1,13 @@
 const API_BASE = "/api/telemetry/host";
 const ZONES_API = "/api/telemetry/zones";
+const HISTORY_API = `${API_BASE}/history?limit=100000`;
 const DEFAULT_COORDS = [54.84, 83.09];
 const LATEST_POLL_INTERVAL_MS = 1000;
 const OFFLINE_THRESHOLD_MS = 5000;
 
 let map;
 let placemark;
+let routePolyline = null;
 let latestTelemetry = null;
 let storageZones = [];
 let zoneCircles = [];
@@ -80,7 +82,7 @@ function hasValidCoordinates(lat, lon) {
         return false;
     }
 
-    return !(parsedLat === 0 && parsedLon === 0);
+    return parsedLat !== 0 && parsedLon !== 0;
 }
 
 function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
@@ -212,6 +214,43 @@ function renderZones() {
     });
 }
 
+function clearRoutePolyline() {
+    if (!routePolyline) return;
+
+    map.geoObjects.remove(routePolyline);
+    routePolyline = null;
+}
+
+function renderRoute(historyRows) {
+    if (!map) return;
+
+    clearRoutePolyline();
+
+    if (!Array.isArray(historyRows)) {
+        return;
+    }
+
+    const routeCoords = historyRows
+        .filter((row) => hasValidCoordinates(row?.lat, row?.lon))
+        .slice()
+        .reverse()
+        .map((row) => [Number(row.lat), Number(row.lon)]);
+
+    if (routeCoords.length < 2) {
+        return;
+    }
+
+    routePolyline = new ymaps.Polyline(routeCoords, {
+        balloonContent: "Маршрут техники",
+    }, {
+        strokeColor: "#2e59d9",
+        strokeWidth: 4,
+        strokeOpacity: 0.75,
+    });
+
+    map.geoObjects.add(routePolyline);
+}
+
 async function fetchLatest() {
     try {
         const response = await fetch(`${API_BASE}/latest`, { headers: getHeaders() });
@@ -226,6 +265,22 @@ async function fetchLatest() {
     } catch (error) {
         console.error("Error fetching latest:", error);
         renderDashboard(latestTelemetry);
+    }
+}
+
+async function fetchHistory() {
+    try {
+        const response = await fetch(HISTORY_API, { headers: getHeaders() });
+        if (!response.ok) {
+            clearRoutePolyline();
+            return;
+        }
+
+        const historyRows = await response.json();
+        renderRoute(historyRows);
+    } catch (error) {
+        console.error("Error fetching history:", error);
+        clearRoutePolyline();
     }
 }
 
@@ -312,7 +367,9 @@ function init() {
 
     renderDashboard(null);
     fetchZones();
+    fetchHistory();
     fetchLatest();
+    setInterval(fetchHistory, LATEST_POLL_INTERVAL_MS);
     setInterval(fetchLatest, LATEST_POLL_INTERVAL_MS);
 }
 
