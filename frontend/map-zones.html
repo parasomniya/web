@@ -250,6 +250,60 @@
         </div>
     </div>
 
+    <div class="modal fade" id="edit-zone-modal" tabindex="-1" role="dialog" aria-labelledby="edit-zone-modal-title" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <form id="edit-zone-form">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="edit-zone-modal-title">Редактирование зоны</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Закрыть">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+
+                    <div class="modal-body">
+                        <input id="edit-zone-id" type="hidden">
+
+                        <div class="form-group">
+                            <label for="edit-ingredient">Ингредиент</label>
+                            <input id="edit-ingredient" class="form-control" type="text" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="edit-lat">Lat</label>
+                            <input id="edit-lat" class="form-control" type="number" step="any" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="edit-lon">Lon</label>
+                            <input id="edit-lon" class="form-control" type="number" step="any" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="edit-radius">Радиус (метры)</label>
+                            <input id="edit-radius" class="form-control" type="number" min="1" required>
+                        </div>
+
+                        <div class="form-group mb-0">
+                            <label for="edit-active">Статус</label>
+                            <select id="edit-active" class="form-control">
+                                <option value="true">Активна</option>
+                                <option value="false">Неактивна</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Отмена</button>
+                        <button id="save-zone-btn" type="submit" class="btn btn-primary">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="vendor/jquery/jquery.min.js"></script>
+    <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="js/storage-zones.js"></script>
 </body>
 

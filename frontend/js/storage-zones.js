@@ -10,13 +10,29 @@ let zones = [];
 let zoneCircles = [];
 let selectedZoneId = null;
 let lastTelemetry = null;
+let suppressNextMapClick = false;
 
 ymaps.ready(init);
+
+function getHeaders(includeJson = false) {
+    const token = localStorage.getItem("token");
+    const headers = {};
+
+    if (includeJson) {
+        headers["Content-Type"] = "application/json";
+    }
+
+    if (token) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+
+    return headers;
+}
 
 function init() {
     map = new ymaps.Map("map", {
         center: [55.75, 37.57],
-        zoom: 12
+        zoom: 12,
     });
 
     bindUI();
@@ -32,14 +48,21 @@ function bindUI() {
     const addZoneForm = document.getElementById("add-zone-form");
     const deleteZoneBtn = document.getElementById("delete-zone-btn");
     const goToDeviceBtn = document.getElementById("go-to-device-btn");
+    const editZoneForm = document.getElementById("edit-zone-form");
 
     addZoneForm.addEventListener("submit", onAddZoneSubmit);
     deleteZoneBtn.addEventListener("click", onDeleteZoneClick);
     goToDeviceBtn.addEventListener("click", goToCurrentPoint);
+    editZoneForm.addEventListener("submit", onEditZoneSubmit);
 }
 
 function bindMapClick() {
     map.events.add("click", function (e) {
+        if (suppressNextMapClick) {
+            suppressNextMapClick = false;
+            return;
+        }
+
         const coords = e.get("coords");
         const latInput = document.getElementById("lat");
         const lonInput = document.getElementById("lon");
@@ -53,7 +76,9 @@ function bindMapClick() {
 
 async function loadZones() {
     try {
-        const response = await fetch(ZONES_API);
+        const response = await fetch(ZONES_API, {
+            headers: getHeaders(),
+        });
 
         if (!response.ok) {
             const errorText = await response.text();
@@ -72,10 +97,10 @@ async function loadZones() {
 }
 
 function drawZones() {
-    zoneCircles.forEach(circle => map.geoObjects.remove(circle));
+    zoneCircles.forEach((circle) => map.geoObjects.remove(circle));
     zoneCircles = [];
 
-    zones.forEach(zone => {
+    zones.forEach((zone) => {
         const isSelected = String(zone.id) === String(selectedZoneId);
 
         const circle = new ymaps.Circle(
@@ -86,17 +111,19 @@ function drawZones() {
                     Lat: ${zone.lat}<br>
                     Lon: ${zone.lon}<br>
                     Радиус: ${zone.radius} м
-                `
+                `,
             },
             {
                 fillColor: isSelected ? "#4e73df55" : "#00c85355",
                 strokeColor: isSelected ? "#1c3faa" : "#1e88e5",
-                strokeWidth: isSelected ? 4 : 2
+                strokeWidth: isSelected ? 4 : 2,
             }
         );
 
         circle.events.add("click", function () {
+            suppressNextMapClick = true;
             selectZone(zone.id);
+            openEditZoneModal(zone.id);
         });
 
         map.geoObjects.add(circle);
@@ -119,7 +146,7 @@ function renderTable() {
         return;
     }
 
-    zones.forEach(zone => {
+    zones.forEach((zone) => {
         const row = document.createElement("tr");
         row.className = "zone-row";
         row.dataset.zoneId = zone.id;
@@ -152,7 +179,7 @@ function renderTable() {
 function selectZone(zoneId) {
     selectedZoneId = zoneId;
 
-    const zone = zones.find(item => String(item.id) === String(zoneId));
+    const zone = zones.find((item) => String(item.id) === String(zoneId));
 
     drawZones();
     renderTable();
@@ -186,8 +213,80 @@ function focusZone(zone) {
 
     map.setCenter([Number(zone.lat), Number(zone.lon)], 15, {
         checkZoomRange: true,
-        duration: 300
+        duration: 300,
     });
+}
+
+function openEditZoneModal(zoneId) {
+    const zone = zones.find((item) => String(item.id) === String(zoneId));
+    if (!zone) {
+        setStatus("Не удалось открыть выбранную зону");
+        return;
+    }
+
+    document.getElementById("edit-zone-id").value = zone.id;
+    document.getElementById("edit-ingredient").value = zone.ingredient || "";
+    document.getElementById("edit-lat").value = Number(zone.lat).toFixed(6);
+    document.getElementById("edit-lon").value = Number(zone.lon).toFixed(6);
+    document.getElementById("edit-radius").value = zone.radius;
+    document.getElementById("edit-active").value = String(Boolean(zone.active));
+
+    $("#edit-zone-modal").modal("show");
+}
+
+async function onEditZoneSubmit(event) {
+    event.preventDefault();
+
+    const zoneId = document.getElementById("edit-zone-id").value;
+    const ingredient = document.getElementById("edit-ingredient").value.trim();
+    const lat = Number(document.getElementById("edit-lat").value);
+    const lon = Number(document.getElementById("edit-lon").value);
+    const radius = Number(document.getElementById("edit-radius").value);
+    const active = document.getElementById("edit-active").value === "true";
+    const saveButton = document.getElementById("save-zone-btn");
+
+    if (!zoneId || !ingredient || Number.isNaN(lat) || Number.isNaN(lon) || Number.isNaN(radius)) {
+        setStatus("Заполните все поля редактирования корректно");
+        return;
+    }
+
+    saveButton.disabled = true;
+
+    try {
+        const response = await fetch(`${ZONES_API}/${zoneId}`, {
+            method: "PUT",
+            headers: getHeaders(true),
+            body: JSON.stringify({
+                name: ingredient,
+                ingredient: ingredient,
+                lat: lat,
+                lon: lon,
+                radius: radius,
+                active: active,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Ошибка обновления зоны: ${response.status} ${errorText}`);
+        }
+
+        $("#edit-zone-modal").modal("hide");
+        setStatus(`Зона "${ingredient}" сохранена`);
+
+        await loadZones();
+
+        const updatedZone = zones.find((item) => String(item.id) === String(zoneId));
+        if (updatedZone) {
+            selectZone(updatedZone.id);
+            focusZone(updatedZone);
+        }
+    } catch (error) {
+        console.error(error);
+        setStatus("Не удалось сохранить изменения зоны");
+    } finally {
+        saveButton.disabled = false;
+    }
 }
 
 async function onAddZoneSubmit(event) {
@@ -206,16 +305,14 @@ async function onAddZoneSubmit(event) {
     try {
         const response = await fetch(ZONES_API, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
+            headers: getHeaders(true),
             body: JSON.stringify({
                 name: ingredient,
                 ingredient: ingredient,
                 lat: lat,
                 lon: lon,
-                radius: radius
-            })
+                radius: radius,
+            }),
         });
 
         if (!response.ok) {
@@ -245,7 +342,7 @@ async function onDeleteZoneClick() {
         return;
     }
 
-    const zone = zones.find(item => String(item.id) === String(selectedZoneId));
+    const zone = zones.find((item) => String(item.id) === String(selectedZoneId));
     const zoneName = zone ? zone.ingredient : "выбранную зону";
 
     const isConfirmed = window.confirm(`Удалить зону "${zoneName}"?`);
@@ -255,7 +352,8 @@ async function onDeleteZoneClick() {
 
     try {
         const response = await fetch(`${ZONES_API}/${selectedZoneId}`, {
-            method: "DELETE"
+            method: "DELETE",
+            headers: getHeaders(),
         });
 
         if (!response.ok) {
@@ -277,7 +375,9 @@ async function onDeleteZoneClick() {
 
 async function loadTelemetry() {
     try {
-        const response = await fetch(TELEMETRY_API);
+        const response = await fetch(TELEMETRY_API, {
+            headers: getHeaders(),
+        });
 
         if (!response.ok) {
             const errorText = await response.text();
@@ -304,10 +404,10 @@ function updateDeviceMarker(data) {
         deviceMarker = new ymaps.Placemark(
             coords,
             {
-                balloonContent: "Текущая точка кормораздатчика"
+                balloonContent: "Текущая точка кормораздатчика",
             },
             {
-                preset: "islands#redIcon"
+                preset: "islands#redIcon",
             }
         );
 
@@ -325,7 +425,7 @@ function goToCurrentPoint() {
 
     map.setCenter([Number(lastTelemetry.lat), Number(lastTelemetry.lon)], 16, {
         checkZoomRange: true,
-        duration: 300
+        duration: 300,
     });
 
     setStatus("Карта перемещена к текущей точке");
@@ -338,7 +438,7 @@ function restoreSelectionAfterReload() {
         return;
     }
 
-    const zone = zones.find(item => String(item.id) === String(selectedZoneId));
+    const zone = zones.find((item) => String(item.id) === String(selectedZoneId));
 
     if (!zone) {
         selectedZoneId = null;
@@ -356,7 +456,7 @@ function restoreSelectionAfterReload() {
 }
 
 function findBestMatchingZone(newZone) {
-    return zones.find(zone =>
+    return zones.find((zone) =>
         zone.ingredient === newZone.ingredient &&
         Number(zone.lat) === Number(newZone.lat) &&
         Number(zone.lon) === Number(newZone.lon) &&
