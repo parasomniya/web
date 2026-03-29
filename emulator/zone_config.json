@@ -1,0 +1,36 @@
+{
+  "_comment": "Держи в соответствии с logicjs/zones.js (UNLOAD, пороги) и logicjs/test_zones.js (центры загрузки).",
+  "WEIGHT_THRESHOLD_W": 100.0,
+  "WEIGHT_EPSILON": 0.5,
+  "BATCH_END_DELAY_SEC": 10,
+  "ACCEPTABLE_DELTA_PERCENT": 5.0,
+  "ACCEPTABLE_REMAINING_WEIGHT": 200.0,
+  "UNLOAD_ZONE": {
+    "center": [55.7358, 37.5973],
+    "radius": 100
+  },
+  "LOADING_ZONES": [
+    {
+      "feed_key": "1",
+      "ideal_kg": 5000,
+      "center": [55.7558, 37.6173],
+      "radius": 100
+    },
+    {
+      "feed_key": "2",
+      "ideal_kg": 4500,
+      "center": [55.7658, 37.6273],
+      "radius": 100
+    },
+    {
+      "feed_key": "3",
+      "ideal_kg": 3000,
+      "center": [55.7458, 37.6073],
+      "radius": 100
+    }
+  ],
+  "PARKING_OUTSIDE": {
+    "lat": 55.82,
+    "lon": 37.68
+  }
+}

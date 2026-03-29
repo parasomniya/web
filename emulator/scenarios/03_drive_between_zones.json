@@ -1,0 +1,53 @@
+[
+  {
+    "delay_ms": 0,
+    "device_id": "emu_loader_01",
+    "timestamp": "2026-03-29T12:00:00.000Z",
+    "lat": 55.7558,
+    "lon": 37.6173,
+    "gps_valid": true,
+    "gps_satellites": 10,
+    "weight": 4000.0,
+    "weight_valid": true,
+    "gps_quality": 3,
+    "wifi_clients": [],
+    "cpu_temp_c": 48.0,
+    "lte_rssi_dbm": -80,
+    "lte_access_tech": "LTE",
+    "events_reader_ok": true
+  },
+  {
+    "delay_ms": 400,
+    "device_id": "emu_loader_01",
+    "timestamp": "2026-03-29T12:00:05.000Z",
+    "lat": 55.7600,
+    "lon": 37.6200,
+    "gps_valid": true,
+    "gps_satellites": 9,
+    "weight": 4000.0,
+    "weight_valid": true,
+    "gps_quality": 2,
+    "wifi_clients": [],
+    "cpu_temp_c": 48.5,
+    "lte_rssi_dbm": -82,
+    "lte_access_tech": "LTE",
+    "events_reader_ok": true
+  },
+  {
+    "delay_ms": 400,
+    "device_id": "emu_loader_01",
+    "timestamp": "2026-03-29T12:00:10.000Z",
+    "lat": 55.7658,
+    "lon": 37.6273,
+    "gps_valid": true,
+    "gps_satellites": 12,
+    "weight": 4000.0,
+    "weight_valid": true,
+    "gps_quality": 4,
+    "wifi_clients": ["tablet-01"],
+    "cpu_temp_c": 49.0,
+    "lte_rssi_dbm": -68,
+    "lte_access_tech": "LTE",
+    "events_reader_ok": true
+  }
+]
