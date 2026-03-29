@@ -8,7 +8,8 @@ const {
     FeedType,
     IDEAL_WEIGHTS,
     ACCEPTABLE_DELTA_PERCENT,
-    ACCEPTABLE_REMAINING_WEIGHT // Импортируем новую константу
+    ACCEPTABLE_REMAINING_WEIGHT,
+    emptyBatchFeeds,
 } = require('./zones');
 
 // ... (функции haversineDistance и checkZone без изменений) ...
@@ -51,13 +52,27 @@ class FeedBatchTracker {
         this.unload_detected_time = null;
         this.weight_stable_time = null;
         
-        this.batch_feeds = {
-            [FeedType.CORN]: 0.0,
-            [FeedType.WHEAT]: 0.0,
-            [FeedType.SOY]: 0.0,
-            [FeedType.UNKNOWN]: 0.0
-        };
+        this.batch_feeds = emptyBatchFeeds();
         
+        this.completed_batches = [];
+        this.batch_counter = 0;
+        this.last_batch_final_weight = 0.0;
+    }
+
+    reset() {
+        // Полный сброс состояния трекера при смене рациона/зон.
+        this.is_batch_active = false;
+        this.batch_start_time = null;
+        this.initial_weight_W0 = 0.0;
+        this.current_weight = 0.0;
+        this.previous_weight = 0.0;
+        this.previous_location = null;
+        this.previous_timestamp = null;
+        this.unload_detected_time = null;
+        this.weight_stable_time = null;
+
+        this.batch_feeds = emptyBatchFeeds();
+
         this.completed_batches = [];
         this.batch_counter = 0;
         this.last_batch_final_weight = 0.0;
@@ -89,12 +104,7 @@ class FeedBatchTracker {
         this.initial_weight_W0 = this.last_batch_final_weight;
         this.batch_counter += 1;
         
-        this.batch_feeds = {
-            [FeedType.CORN]: 0.0,
-            [FeedType.WHEAT]: 0.0,
-            [FeedType.SOY]: 0.0,
-            [FeedType.UNKNOWN]: 0.0
-        };
+        this.batch_feeds = emptyBatchFeeds();
 
         const weightDiff = initialWeight - this.initial_weight_W0;
         if (weightDiff > 0) {
@@ -202,11 +212,12 @@ class FeedBatchTracker {
             const absDiff = Math.abs(diff);
 
             if (absDiff > allowedDeltaKg) {
-                let message = "";
+                const label = FeedType[feedType] || feedType;
+                let message = '';
                 if (diff > 0) {
-                    message = `вес ${feedType} превышен. Идеальный вес=${idealWeight}, текущий=${currentWeight.toFixed(2)}`;
+                    message = `вес ${label} превышен. Идеальный вес=${idealWeight}, текущий=${currentWeight.toFixed(2)}`;
                 } else {
-                    message = `вес ${feedType} занижен. Идеальный вес=${idealWeight}, текущий=${currentWeight.toFixed(2)}`;
+                    message = `вес ${label} занижен. Идеальный вес=${idealWeight}, текущий=${currentWeight.toFixed(2)}`;
                 }
                 violations.push(message);
             }

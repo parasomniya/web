@@ -3,24 +3,24 @@ import json
 from datetime import datetime
 
 # Настройки
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://127.0.0.1:3000"
 
 # Данные для отправки (можно менять под свои нужды)
 # Пример: Грузовик в зоне кукурузы, вес 5300 кг (должно вызвать нарушение)
 payload = {
-    "latitude": 55.7558,   # Координаты зоны CORN
-    "longitude": 37.6173,
+    "lat": 55.7558,   # Координаты зоны CORN
+    "lon": 37.6173,
     "weight": 5300.0,      # Вес
     "timestamp": datetime.now().isoformat()
 }
 
 def main():
-    print(f"📡 Отправка данных на {BASE_URL}/telemetry ...")
+    print(f"📡 Отправка данных на {BASE_URL}/api/telemetry/host ...")
     print(f"Данные: {json.dumps(payload, ensure_ascii=False)}")
     
     try:
         # 1. Отправляем телеметрию
-        resp_post = requests.post(f"{BASE_URL}/telemetry", json=payload)
+        resp_post = requests.post(f"{BASE_URL}/api/telemetry/host", json=payload)
         
         if resp_post.status_code == 200:
             print("\n✅ Ответ сервера на телеметрию:")
