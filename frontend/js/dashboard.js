@@ -1,6 +1,6 @@
 const API_BASE = "/api/telemetry/host";
 const ZONES_API = "/api/telemetry/zones";
-const HISTORY_API = `${API_BASE}/history?limit=100000`;
+const HISTORY_API = `${API_BASE}/recent?limit=100000`;
 const DEFAULT_COORDS = [54.84, 83.09];
 const LATEST_POLL_INTERVAL_MS = 1000;
 const OFFLINE_THRESHOLD_MS = 5000;
@@ -253,7 +253,7 @@ function renderRoute(historyRows) {
 
 async function fetchLatest() {
     try {
-        const response = await fetch(`${API_BASE}/latest`, { headers: getHeaders() });
+        const response = await fetch(`${API_BASE}/current`, { headers: getHeaders() });
         if (!response.ok) {
             renderDashboard(latestTelemetry);
             return;

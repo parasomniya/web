@@ -3,16 +3,13 @@ const HISTORY_LIMIT = 20;
 
 const endpoints = {
     host: {
-        latest: "/api/telemetry/host/latest",
-        history: `/api/telemetry/host/history?limit=${HISTORY_LIMIT}`,
+        latest: "/api/telemetry/host/admin/latest",
+        history: `/api/telemetry/host/admin/history?limit=${HISTORY_LIMIT}`,
     },
     events: {
         history: "/api/events?limit=500",
     },
-    rtk: {
-        latest: "/api/telemetry/rtk/latest",
-        history: `/api/telemetry/rtk/history?limit=${HISTORY_LIMIT}`,
-    },
+    rtk: null,
 };
 
 function getHeaders() {
@@ -238,6 +235,13 @@ async function loadHost() {
 }
 
 async function loadRtk() {
+    if (!endpoints.rtk) {
+        renderRtkSummary(null, true);
+        renderRtkTable([], true);
+        setStatus("rtkPanelStatus", "API не подключён", "warn");
+        return;
+    }
+
     try {
         const [latest, history] = await Promise.all([
             fetchJson(endpoints.rtk.latest),
