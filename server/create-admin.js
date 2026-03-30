@@ -10,7 +10,7 @@ async function main() {
     data: {
       username: 'admin',
       password: passwordHash,
-      role: 'ADMIN' // Назначаем роль!
+      role: 'ADMIN' // Используем enum значение
     }
   })
   console.log(`Пользователь ${admin.username} успешно создан с ролью ${admin.role}!`)

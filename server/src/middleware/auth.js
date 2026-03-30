@@ -35,3 +35,24 @@ export const requireDirectorOrAdmin = (req, res, next) => {
   }
   next()
 }
+
+// 4. Для чтения данных (Админ, Директор, Гость)
+export const requireReadAccess = (req, res, next) => {
+  const allowedRoles = ['ADMIN', 'DIRECTOR', 'GUEST']
+  if (!allowedRoles.includes(req.user?.role)) {
+    return res.status(403).json({ error: 'Доступ запрещен: недостаточно прав для чтения' })
+  }
+  next()
+}
+
+// 5. Для записи/редактирования данных (Админ, Директор)
+export const requireWriteAccess = (req, res, next) => {
+  const allowedRoles = ['ADMIN', 'DIRECTOR']
+  if (!allowedRoles.includes(req.user?.role)) {
+    return res.status(403).json({ error: 'Доступ запрещен: недостаточно прав для редактирования' })
+  }
+  next()
+}
+
+// 6. Только для Админа (альтернатива requireAdmin для ясности)
+export const requireAdminOnly = requireAdmin

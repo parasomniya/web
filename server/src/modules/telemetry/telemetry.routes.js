@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import prisma from "../../database.js"
+import { requireAdmin } from "../../middleware/auth.js"
 
 const router = Router()
 
@@ -57,6 +58,7 @@ function isValidLocation(lat, lon){
   return true;
 }
 
+// POST прием телеметрии - открыт для всех (без авторизации)
 router.post('/', async (req, res) => {
   try {
     const {
@@ -115,7 +117,8 @@ router.post('/', async (req, res) => {
   }
 })
 
-router.get('/latest', async (req, res) => {
+// GET /latest - только для админа
+router.get('/latest', requireAdmin, async (req, res) => {
   try {
     const data = await prisma.telemetry.findFirst({ 
       orderBy: { timestamp: 'desc' } 
@@ -140,7 +143,8 @@ router.get('/latest', async (req, res) => {
   }
 })
 
-router.get('/history', async (req, res) => {
+// GET /history - только для админа
+router.get('/history', requireAdmin, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10
     const data = await prisma.telemetry.findMany({ 
@@ -153,8 +157,8 @@ router.get('/history', async (req, res) => {
   }
 });
 
-// POST /seed - Генерация тестовых данных
-router.post('/seed', async (req, res) => {
+// POST /seed - Генерация тестовых данных - только для админа
+router.post('/seed', requireAdmin, async (req, res) => {
   try {
     if (req.headers['x-test-secret'] !== 'kill_all_telemetry_123') {
       return res.status(403).json({ error: 'Доступ запрещен' });
@@ -193,8 +197,8 @@ router.post('/seed', async (req, res) => {
   }
 });
 
-// Скрытый эндпоинт для очистки ТОЛЬКО телеметрии
-router.delete('/truncate', async (req, res) => {
+// DELETE /truncate - только для админа
+router.delete('/truncate', requireAdmin, async (req, res) => {
   try {
     const testSecret = req.headers['x-test-secret'];
     if (testSecret !== 'kill_all_telemetry_123') {
