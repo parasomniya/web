@@ -120,7 +120,7 @@ def main() -> None:
 
     # выгрузка: резкие отрицательные шаги (в зоне разгрузки)
     w = target_after_z3
-    final_residue = 250.0
+    final_residue = 50.0
     unload_step = -450.0
     while w > final_residue + abs(unload_step):
         w += unload_step
