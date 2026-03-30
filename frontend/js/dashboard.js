@@ -1,6 +1,8 @@
 const API_BASE = "/api/telemetry/host";
 const ZONES_API = "/api/telemetry/zones";
 const HISTORY_API = `${API_BASE}/recent?limit=100000`;
+const CLEAR_HISTORY_API = `${API_BASE}/admin/truncate`;
+const TEST_SECRET = "kill_all_telemetry_123";
 const DEFAULT_COORDS = [54.84, 83.09];
 const LATEST_POLL_INTERVAL_MS = 1000;
 const OFFLINE_THRESHOLD_MS = 5000;
@@ -12,6 +14,11 @@ let latestTelemetry = null;
 let storageZones = [];
 let zoneCircles = [];
 let hasLiveCoordinates = false;
+let isPlacemarkVisible = false;
+
+function isAdmin() {
+    return Boolean(window.AppAuth?.isAdmin && window.AppAuth.isAdmin());
+}
 
 function getHeaders() {
     const token = localStorage.getItem("token");
@@ -63,6 +70,24 @@ function getPlacemarkPreset(isOnline) {
 function updatePlacemarkStatus(isOnline) {
     if (!placemark) return;
     placemark.options.set("preset", getPlacemarkPreset(isOnline));
+}
+
+function ensurePlacemarkVisible() {
+    if (!map || !placemark || isPlacemarkVisible) {
+        return;
+    }
+
+    map.geoObjects.add(placemark);
+    isPlacemarkVisible = true;
+}
+
+function hidePlacemark() {
+    if (!map || !placemark || !isPlacemarkVisible) {
+        return;
+    }
+
+    map.geoObjects.remove(placemark);
+    isPlacemarkVisible = false;
 }
 
 function isPacketOnline(timestamp) {
@@ -140,13 +165,15 @@ function smoothMove(newCoords) {
 }
 
 function updateMapPosition(data, isOnline) {
-    updatePlacemarkStatus(isOnline);
-
     if (!hasValidCoordinates(data?.lat, data?.lon)) {
+        hidePlacemark();
+        hasLiveCoordinates = false;
         return;
     }
 
     const newCoords = [Number(data.lat), Number(data.lon)];
+    ensurePlacemarkVisible();
+    updatePlacemarkStatus(isOnline);
 
     if (!hasLiveCoordinates) {
         placemark.geometry.setCoordinates(newCoords);
@@ -165,7 +192,8 @@ function renderDashboard(data) {
         setText("dashboardCurrentSpeed", "--");
         setText("dashboardCurrentWeight", "--");
         setText("dashboardLastPacketTime", "--");
-        updatePlacemarkStatus(false);
+        hidePlacemark();
+        hasLiveCoordinates = false;
         return;
     }
 
@@ -226,6 +254,10 @@ function renderRoute(historyRows) {
 
     clearRoutePolyline();
 
+    if (!isAdmin()) {
+        return;
+    }
+
     if (!Array.isArray(historyRows)) {
         return;
     }
@@ -269,6 +301,11 @@ async function fetchLatest() {
 }
 
 async function fetchHistory() {
+    if (!isAdmin()) {
+        clearRoutePolyline();
+        return;
+    }
+
     try {
         const response = await fetch(HISTORY_API, { headers: getHeaders() });
         if (!response.ok) {
@@ -281,6 +318,55 @@ async function fetchHistory() {
     } catch (error) {
         console.error("Error fetching history:", error);
         clearRoutePolyline();
+    }
+}
+
+async function clearTelemetryHistory() {
+    if (!isAdmin()) {
+        return;
+    }
+
+    const button = document.getElementById("clearTelemetryButton");
+    if (button) {
+        button.disabled = true;
+    }
+
+    try {
+        const response = await fetch(CLEAR_HISTORY_API, {
+            method: "DELETE",
+            headers: {
+                ...getHeaders(),
+                "x-test-secret": TEST_SECRET,
+            },
+        });
+
+        if (!response.ok) {
+            let errorMessage = "Не удалось очистить телеметрию.";
+
+            try {
+                const payload = await response.json();
+                if (payload?.error) {
+                    errorMessage = payload.error;
+                }
+            } catch (error) {
+                // keep generic message when response body is not JSON
+            }
+
+            throw new Error(errorMessage);
+        }
+
+        latestTelemetry = null;
+        showBanner(null);
+        clearRoutePolyline();
+        renderDashboard(null);
+        window.AppAuth?.showAlert?.("История телеметрии очищена.", "success");
+    } catch (error) {
+        console.error("Error clearing telemetry history:", error);
+        window.AppAuth?.showAlert?.(error.message || "Не удалось очистить телеметрию.", "danger");
+    } finally {
+        if (button) {
+            button.disabled = false;
+        }
     }
 }
 
@@ -363,14 +449,20 @@ function init() {
         preset: getPlacemarkPreset(false),
     });
 
-    map.geoObjects.add(placemark);
-
     renderDashboard(null);
     fetchZones();
-    fetchHistory();
     fetchLatest();
-    setInterval(fetchHistory, LATEST_POLL_INTERVAL_MS);
     setInterval(fetchLatest, LATEST_POLL_INTERVAL_MS);
+
+    if (isAdmin()) {
+        fetchHistory();
+        setInterval(fetchHistory, LATEST_POLL_INTERVAL_MS);
+    }
+
+    const clearTelemetryButton = document.getElementById("clearTelemetryButton");
+    if (clearTelemetryButton) {
+        clearTelemetryButton.addEventListener("click", clearTelemetryHistory);
+    }
 }
 
 ymaps.ready(init);
