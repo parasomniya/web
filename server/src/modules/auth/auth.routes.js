@@ -19,11 +19,25 @@ router.post('/login', async (req, res) => {
     // Генерируем токен на 24 часа
     const token = jwt.sign({ id: user.id, role: user.role }, SECRET_KEY, { expiresIn: '24h' })
     
+    // Устанавливаем токен в cookie для доступа к защищенным страницам
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 часа
+    })
+    
     // Возвращаем токен и роль, чтобы фронтенд знал, какие вкладки показывать
     res.json({ token, role: user.role }) 
   } catch (error) {
     res.status(500).json({ error: 'Ошибка сервера' })
   }
+})
+
+// Выход из системы (очистка cookie)
+router.post('/logout', (req, res) => {
+  res.clearCookie('token')
+  res.json({ status: 'ok', message: 'Вы успешно вышли из системы' })
 })
 
 export default router

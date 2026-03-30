@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import prisma from "../../database.js"
-import { requireAdmin } from "../../middleware/auth.js"
+import { requireAdmin, requireReadAccess } from "../../middleware/auth.js"
 
 const router = Router()
 
@@ -117,8 +117,76 @@ router.post('/', async (req, res) => {
   }
 })
 
-// GET /latest - только для админа
-router.get('/latest', requireAdmin, async (req, res) => {
+// ==================== ЭНДПОИНТЫ ДЛЯ ГЛАВНОЙ СТРАНИЦЫ ====================
+// Доступны всем авторизованным пользователям (ADMIN, DIRECTOR, GUEST)
+
+// GET /current - текущие данные для главной страницы
+router.get('/current', requireReadAccess, async (req, res) => {
+  try {
+    const data = await prisma.telemetry.findFirst({ 
+      orderBy: { timestamp: 'desc' } 
+    })
+    if (!data) return res.status(404).json({ error: 'No data found' })
+    
+    let banner = null;
+
+    if (data.lat === 0 && data.lon === 0) {
+      if (data.gpsQuality === 0) {
+        banner = { type: 'gps_warning', message: 'Ожидание GPS fix' };
+      } else if (data.gpsQuality === 1) {
+        banner = { type: 'gps_error', message: 'Координаты не распознаны' };
+      }
+    } else {
+      banner = await checkZones(data.lat, data.lon, data.deviceId)
+    }
+
+    // Возвращаем только необходимые данные для главной страницы
+    res.json({
+      id: data.id,
+      deviceId: data.deviceId,
+      timestamp: data.timestamp,
+      lat: data.lat,
+      lon: data.lon,
+      weight: data.weight,
+      weightValid: data.weightValid,
+      gpsValid: data.gpsValid,
+      gpsSatellites: data.gpsSatellites,
+      banner: banner
+    })
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// GET /recent - недавние данные для главной (ограниченный набор)
+router.get('/recent', requireReadAccess, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 5
+    const data = await prisma.telemetry.findMany({ 
+      orderBy: { timestamp: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        timestamp: true,
+        lat: true,
+        lon: true,
+        weight: true,
+        weightValid: true,
+        gpsValid: true,
+        deviceId: true
+      }
+    })
+    res.json(data)
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+});
+
+// ==================== ЭНДПОИНТЫ ДЛЯ АДМИН-ПАНЕЛИ ====================
+// Доступны только администраторам
+
+// GET /admin/latest - полные данные телеметрии
+router.get('/admin/latest', requireAdmin, async (req, res) => {
   try {
     const data = await prisma.telemetry.findFirst({ 
       orderBy: { timestamp: 'desc' } 
@@ -143,8 +211,8 @@ router.get('/latest', requireAdmin, async (req, res) => {
   }
 })
 
-// GET /history - только для админа
-router.get('/history', requireAdmin, async (req, res) => {
+// GET /admin/history - полная история телеметрии
+router.get('/admin/history', requireAdmin, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10
     const data = await prisma.telemetry.findMany({ 
@@ -157,8 +225,8 @@ router.get('/history', requireAdmin, async (req, res) => {
   }
 });
 
-// POST /seed - Генерация тестовых данных - только для админа
-router.post('/seed', requireAdmin, async (req, res) => {
+// POST /admin/seed - Генерация тестовых данных
+router.post('/admin/seed', requireAdmin, async (req, res) => {
   try {
     if (req.headers['x-test-secret'] !== 'kill_all_telemetry_123') {
       return res.status(403).json({ error: 'Доступ запрещен' });
@@ -197,8 +265,8 @@ router.post('/seed', requireAdmin, async (req, res) => {
   }
 });
 
-// DELETE /truncate - только для админа
-router.delete('/truncate', requireAdmin, async (req, res) => {
+// DELETE /admin/truncate - Очистка телеметрии
+router.delete('/admin/truncate', requireAdmin, async (req, res) => {
   try {
     const testSecret = req.headers['x-test-secret'];
     if (testSecret !== 'kill_all_telemetry_123') {
