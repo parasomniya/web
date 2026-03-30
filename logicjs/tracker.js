@@ -81,42 +81,47 @@ class FeedBatchTracker {
     processTelemetry(lat, lon, weight, timestamp) {
         this.previous_weight = this.current_weight;
         this.current_weight = weight;
-        this.previous_location = [lat, lon];
+        // ← НЕ обновляем previous_location здесь!
         this.previous_timestamp = timestamp;
-
+    
+        const currentLocation = [lat, lon];  // ← Сохраняем текущую
         const weightDiff = weight - this.previous_weight;
-
+    
         if (!this.is_batch_active && weight > this.threshold_W) {
-            this._startBatch(weight);
+            this._startBatch(weight, currentLocation);  // ← Передаём текущую локацию
+            this.previous_location = currentLocation;   // ← Обновляем после старта
             return { status: "batch_started", W0: this.initial_weight_W0 };
         }
-
+    
+        this.previous_location = currentLocation;  // ← Обновляем для обычных кадров
+        
         if (this.is_batch_active) {
-            return this._processActiveBatch([lat, lon], timestamp, weight, weightDiff);
+            return this._processActiveBatch(currentLocation, timestamp, weight, weightDiff);
         }
-
+    
         return { status: "waiting", weight: weight };
     }
 
-    _startBatch(initialWeight) {
+    _startBatch(initialWeight, currentLocation) {  // ← Добавлен параметр
         this.is_batch_active = true;
         this.batch_start_time = new Date();
         this.initial_weight_W0 = this.last_batch_final_weight;
         this.batch_counter += 1;
         
         this.batch_feeds = emptyBatchFeeds();
-
+    
         const weightDiff = initialWeight - this.initial_weight_W0;
-        if (weightDiff > 0) {
-            if (this.previous_location) {
-                const loadingZone = checkZone(this.previous_location, LOADING_ZONES);
+        if (weightDiff > WEIGHT_EPSILON) {  // ← Проверка на минимальную разницу
+            // ← Используем ТЕКУЩУЮ локацию, не previous_location
+            if (currentLocation) {
+                const loadingZone = checkZone(currentLocation, LOADING_ZONES);
                 const feedType = loadingZone || FeedType.UNKNOWN;
                 this.batch_feeds[feedType] += weightDiff;
             } else {
                 this.batch_feeds[FeedType.UNKNOWN] += weightDiff;
             }
         }
-
+    
         this.unload_detected_time = null;
         this.weight_stable_time = null;
     }
@@ -190,7 +195,7 @@ class FeedBatchTracker {
         this.last_batch_final_weight = finalWeight;
         
         this.is_batch_active = false;
-        this.batch_feeds = {};
+        this.batch_feeds = emptyBatchFeeds();
         this.unload_detected_time = null;
         this.weight_stable_time = null;
         
