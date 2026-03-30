@@ -202,10 +202,15 @@
 
     function applyReadOnlyState() {
         const canWrite = hasWriteAccess();
+        const admin = isAdmin();
         const role = getRole();
 
         document.documentElement.setAttribute("data-role", role || "");
         document.documentElement.setAttribute("data-can-write", canWrite ? "true" : "false");
+
+        document.querySelectorAll("[data-requires-admin]").forEach((element) => {
+            element.hidden = !admin;
+        });
 
         document.querySelectorAll("[data-requires-write]").forEach((element) => {
             element.hidden = !canWrite;
