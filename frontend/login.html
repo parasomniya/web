@@ -11,7 +11,33 @@
     <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet" type="text/css">
     <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
-    <script src="js/app-auth.js"></script>
+    <style>
+        .password-toggle-wrap {
+            position: relative;
+        }
+
+        .password-toggle-input {
+            padding-right: 110px;
+        }
+
+        .password-toggle-button {
+            position: absolute;
+            top: 50%;
+            right: 16px;
+            transform: translateY(-50%);
+            border: 0;
+            background: transparent;
+            color: #4e73df;
+            font-weight: 700;
+            font-size: 0.85rem;
+            padding: 0;
+        }
+
+        .password-toggle-button:focus {
+            outline: none;
+        }
+    </style>
+    <script src="js/app-auth.js?v=20260331c"></script>
 </head>
 
 <body class="bg-gradient-primary">
@@ -36,8 +62,11 @@
                                             <input id="login" type="text" class="form-control form-control-user" placeholder="Логин" autocomplete="username">
                                         </div>
 
-                                        <div class="form-group">
-                                            <input id="password" type="password" class="form-control form-control-user" placeholder="Пароль" autocomplete="current-password">
+                                        <div class="form-group password-toggle-wrap">
+                                            <input id="password" type="password" class="form-control form-control-user password-toggle-input" placeholder="Пароль" autocomplete="current-password">
+                                            <button id="togglePasswordBtn" type="button" class="password-toggle-button" aria-label="Показать пароль">
+                                                Показать
+                                            </button>
                                         </div>
 
                                         <button id="loginBtn" type="submit" class="btn btn-primary btn-user btn-block">
@@ -63,7 +92,7 @@
     <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
-    <script src="js/login.js"></script>
+    <script src="js/login.js?v=20260331c"></script>
 </body>
 
 </html>

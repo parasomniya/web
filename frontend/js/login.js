@@ -1,5 +1,7 @@
 const loginForm = document.getElementById("loginForm");
 const loginButton = document.getElementById("loginBtn");
+const passwordInput = document.getElementById("password");
+const togglePasswordButton = document.getElementById("togglePasswordBtn");
 
 async function handleLogin(event) {
     event.preventDefault();
@@ -28,13 +30,19 @@ async function handleLogin(event) {
 
         const payload = await response.json().catch(() => ({}));
 
-        if (!response.ok || !payload?.token || !payload?.role) {
+        if (!response.ok || !payload?.token) {
             const errorMessage = payload?.error || "Неверный логин или пароль.";
             window.AppAuth?.showAlert(errorMessage, "danger");
             return;
         }
 
-        window.AppAuth?.setSession(payload.token, payload.role);
+        window.AppAuth?.setSession(payload.token, payload.role, username);
+
+        if (!window.AppAuth?.isAuthenticated?.()) {
+            window.AppAuth?.clearSession?.();
+            window.AppAuth?.showAlert("Session save failed. Please try again.", "danger");
+            return;
+        }
         window.location.replace("index.html");
     } catch (error) {
         window.AppAuth?.showAlert("Не удалось выполнить вход. Попробуйте снова.", "danger");
@@ -45,4 +53,13 @@ async function handleLogin(event) {
 
 if (loginForm) {
     loginForm.addEventListener("submit", handleLogin);
+}
+
+if (passwordInput && togglePasswordButton) {
+    togglePasswordButton.addEventListener("click", () => {
+        const isVisible = passwordInput.type === "text";
+        passwordInput.type = isVisible ? "password" : "text";
+        togglePasswordButton.textContent = isVisible ? "Показать" : "Скрыть";
+        togglePasswordButton.setAttribute("aria-label", isVisible ? "Показать пароль" : "Скрыть пароль");
+    });
 }

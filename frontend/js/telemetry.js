@@ -13,8 +13,7 @@ const endpoints = {
 };
 
 function getHeaders() {
-    const token = localStorage.getItem("token");
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    return window.AppAuth?.getAuthHeaders?.() || {};
 }
 
 function formatDateTime(value) {

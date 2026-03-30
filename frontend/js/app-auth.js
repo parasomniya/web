@@ -1,6 +1,7 @@
 (function () {
     const TOKEN_KEY = "token";
     const ROLE_KEY = "role";
+    const USERNAME_KEY = "username";
 
     const LOGIN_PAGE = "login.html";
     const ADMIN_TELEMETRY_PAGE = "telemetry-admin.html";
@@ -15,6 +16,7 @@
         "map-zones.html",
         ADMIN_TELEMETRY_PAGE,
     ]);
+    const ADMIN_ONLY_PAGES = new Set([ADMIN_TELEMETRY_PAGE]);
 
     const WRITE_ROLES = new Set([ROLE_ADMIN, ROLE_DIRECTOR]);
 
@@ -25,6 +27,29 @@
     function getToken() {
         const token = localStorage.getItem(TOKEN_KEY);
         return typeof token === "string" ? token.trim() : "";
+    }
+
+    function getUsername() {
+        const username = localStorage.getItem(USERNAME_KEY);
+        return typeof username === "string" ? username.trim() : "";
+    }
+
+    function getAuthHeaders(options) {
+        const settings = options || {};
+        const headers = {
+            ...(settings.headers || {}),
+        };
+        const token = getToken();
+
+        if (settings.includeJson) {
+            headers["Content-Type"] = "application/json";
+        }
+
+        if (token) {
+            headers.Authorization = `Bearer ${token}`;
+        }
+
+        return headers;
     }
 
     function decodeBase64Url(value) {
@@ -80,7 +105,7 @@
         return derivedRole;
     }
 
-    function setSession(token, role) {
+    function setSession(token, role, username) {
         if (token) {
             localStorage.setItem(TOKEN_KEY, token);
         } else {
@@ -93,11 +118,19 @@
         } else {
             localStorage.removeItem(ROLE_KEY);
         }
+
+        const normalizedUsername = typeof username === "string" ? username.trim() : "";
+        if (token && normalizedUsername) {
+            localStorage.setItem(USERNAME_KEY, normalizedUsername);
+        } else if (!token) {
+            localStorage.removeItem(USERNAME_KEY);
+        }
     }
 
     function clearSession() {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(ROLE_KEY);
+        localStorage.removeItem(USERNAME_KEY);
     }
 
     function isAuthenticated() {
@@ -162,6 +195,141 @@
         host.prepend(alert);
     }
 
+    function getRoleLabel(role) {
+        const labels = {
+            [ROLE_ADMIN]: "Администратор",
+            [ROLE_DIRECTOR]: "Директор",
+            [ROLE_GUEST]: "Гость",
+        };
+
+        return labels[normalizeRole(role)] || "Пользователь";
+    }
+
+    function getRoleBadgeClass(role) {
+        const normalizedRole = normalizeRole(role);
+
+        if (normalizedRole === ROLE_ADMIN) {
+            return "app-auth-account__role-badge--admin";
+        }
+
+        if (normalizedRole === ROLE_DIRECTOR) {
+            return "app-auth-account__role-badge--director";
+        }
+
+        return "app-auth-account__role-badge--guest";
+    }
+
+    function ensureAccountPanelStyles() {
+        if (document.getElementById("appAuthAccountStyles")) {
+            return;
+        }
+
+        const style = document.createElement("style");
+        style.id = "appAuthAccountStyles";
+        style.textContent = `
+            .app-auth-account {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+            .app-auth-account__meta {
+                line-height: 1.1;
+                text-align: right;
+            }
+            .app-auth-account__name {
+                font-weight: 700;
+                color: #3a3b45;
+            }
+            .app-auth-account__role {
+                font-size: 0.8rem;
+                color: #858796;
+            }
+            .app-auth-account__role-badge {
+                display: inline-flex;
+                align-items: center;
+                padding: 4px 9px;
+                border-radius: 999px;
+                font-size: 0.75rem;
+                font-weight: 700;
+                letter-spacing: 0.02em;
+                margin-top: 4px;
+            }
+            .app-auth-account__role-badge--admin {
+                background: #fde7e9;
+                color: #a61d24;
+            }
+            .app-auth-account__role-badge--director {
+                background: #e7f4ea;
+                color: #1e7a3b;
+            }
+            .app-auth-account__role-badge--guest {
+                background: #e8efff;
+                color: #2e59d9;
+            }
+            @media (max-width: 576px) {
+                .app-auth-account {
+                    gap: 8px;
+                }
+                .app-auth-account__meta {
+                    display: none;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    async function logout() {
+        try {
+            await fetch("/api/auth/logout", {
+                method: "POST",
+                credentials: "same-origin",
+            });
+        } catch (error) {
+            // local session cleanup below is enough for frontend logout
+        } finally {
+            clearSession();
+            window.location.replace(buildUrl(LOGIN_PAGE));
+        }
+    }
+
+    function renderAccountPanel() {
+        if (getCurrentPageName() === LOGIN_PAGE || document.getElementById("appAuthAccountPanel")) {
+            return;
+        }
+
+        const topbar = document.querySelector(".topbar");
+        if (!topbar) {
+            return;
+        }
+
+        ensureAccountPanelStyles();
+
+        const panel = document.createElement("div");
+        panel.id = "appAuthAccountPanel";
+        panel.className = "app-auth-account ml-auto";
+
+        const meta = document.createElement("div");
+        meta.className = "app-auth-account__meta";
+
+        const name = document.createElement("div");
+        name.className = "app-auth-account__name";
+        name.textContent = getUsername() || "Неизвестный";
+
+        const role = document.createElement("div");
+        role.className = `app-auth-account__role app-auth-account__role-badge ${getRoleBadgeClass(getRole())}`;
+        role.textContent = getRoleLabel(getRole());
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "btn btn-outline-secondary btn-sm";
+        button.textContent = "Выйти";
+        button.addEventListener("click", logout);
+
+        meta.append(name, role);
+        panel.append(meta, button);
+        topbar.append(panel);
+    }
+
     function consumeErrorMessage() {
         const url = new URL(window.location.href);
         const errorCode = url.searchParams.get("error");
@@ -190,7 +358,7 @@
             return;
         }
 
-        document.querySelectorAll('a[href="telemetry-admin.html"], a[href="telemetry.html"]').forEach((link) => {
+        document.querySelectorAll('a[href="telemetry-admin.html"]').forEach((link) => {
             const navItem = link.closest(".nav-item");
             if (navItem) {
                 navItem.style.display = "none";
@@ -254,7 +422,7 @@
             return false;
         }
 
-        if (pageName === ADMIN_TELEMETRY_PAGE && !isAdmin()) {
+        if (ADMIN_ONLY_PAGES.has(pageName) && !isAdmin()) {
             redirectToHome("no-access");
             return false;
         }
@@ -266,6 +434,7 @@
         consumeErrorMessage();
         hideTelemetryNavigation();
         applyReadOnlyState();
+        renderAccountPanel();
     }
 
     const accessAllowed = guardCurrentPage();
@@ -275,11 +444,14 @@
         ROLE_DIRECTOR,
         ROLE_GUEST,
         clearSession,
+        getAuthHeaders,
         getRole,
         getToken,
+        getUsername,
         hasWriteAccess,
         isAdmin,
         isAuthenticated,
+        logout,
         setSession,
         showAlert,
     };

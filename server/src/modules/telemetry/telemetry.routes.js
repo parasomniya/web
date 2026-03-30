@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import prisma from "../../database.js"
-import { requireAdmin, requireReadAccess } from "../../middleware/auth.js"
+import { authenticate, requireAdmin, requireReadAccess } from "../../middleware/auth.js"
 
 const router = Router()
 
@@ -121,7 +121,7 @@ router.post('/', async (req, res) => {
 // Доступны всем авторизованным пользователям (ADMIN, DIRECTOR, GUEST)
 
 // GET /current - текущие данные для главной страницы
-router.get('/current', requireReadAccess, async (req, res) => {
+router.get('/current', authenticate, requireReadAccess, async (req, res) => {
   try {
     const data = await prisma.telemetry.findFirst({ 
       orderBy: { timestamp: 'desc' } 
@@ -159,7 +159,7 @@ router.get('/current', requireReadAccess, async (req, res) => {
 })
 
 // GET /recent - недавние данные для главной (ограниченный набор)
-router.get('/recent', requireReadAccess, async (req, res) => {
+router.get('/recent', authenticate, requireReadAccess, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 5
     const data = await prisma.telemetry.findMany({ 
@@ -186,7 +186,7 @@ router.get('/recent', requireReadAccess, async (req, res) => {
 // Доступны только администраторам
 
 // GET /admin/latest - полные данные телеметрии
-router.get('/admin/latest', requireAdmin, async (req, res) => {
+router.get('/admin/latest', authenticate, requireAdmin, async (req, res) => {
   try {
     const data = await prisma.telemetry.findFirst({ 
       orderBy: { timestamp: 'desc' } 
@@ -212,7 +212,7 @@ router.get('/admin/latest', requireAdmin, async (req, res) => {
 })
 
 // GET /admin/history - полная история телеметрии
-router.get('/admin/history', requireAdmin, async (req, res) => {
+router.get('/admin/history', authenticate, requireAdmin, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10
     const data = await prisma.telemetry.findMany({ 
@@ -226,7 +226,7 @@ router.get('/admin/history', requireAdmin, async (req, res) => {
 });
 
 // POST /admin/seed - Генерация тестовых данных
-router.post('/admin/seed', requireAdmin, async (req, res) => {
+router.post('/admin/seed', authenticate, requireAdmin, async (req, res) => {
   try {
     if (req.headers['x-test-secret'] !== 'kill_all_telemetry_123') {
       return res.status(403).json({ error: 'Доступ запрещен' });
@@ -266,7 +266,7 @@ router.post('/admin/seed', requireAdmin, async (req, res) => {
 });
 
 // DELETE /admin/truncate - Очистка телеметрии
-router.delete('/admin/truncate', requireAdmin, async (req, res) => {
+router.delete('/admin/truncate', authenticate, requireAdmin, async (req, res) => {
   try {
     const testSecret = req.headers['x-test-secret'];
     if (testSecret !== 'kill_all_telemetry_123') {
