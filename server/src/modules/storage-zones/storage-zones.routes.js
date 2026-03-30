@@ -1,11 +1,11 @@
 import { Router } from 'express'
 import prisma from "../../database.js"
-import { authenticate } from "../../middleware/auth.js"
+import { requireReadAccess, requireWriteAccess } from "../../middleware/auth.js"
 
 const router = Router()
 
-// GET все активные зоны
-router.get('/', async (req, res) => {
+// GET все активные зоны - доступно для чтения всем авторизованным
+router.get('/', requireReadAccess, async (req, res) => {
   try {
     const zones = await prisma.storageZone.findMany({
       where: { active: true }
@@ -17,9 +17,8 @@ router.get('/', async (req, res) => {
   }
 })
 
-// PUT /:id - Обновление существующей зоны
-// Обновить зону (теперь с поддержкой координат)
-router.put('/:id', authenticate, async (req, res) => {
+// PUT /:id - Обновление существующей зоны - только для записи
+router.put('/:id', requireWriteAccess, async (req, res) => {
   try {
     const { id } = req.params;
     // Достаем lat и lon из тела запроса
@@ -66,8 +65,8 @@ router.put('/:id', authenticate, async (req, res) => {
   }
 });
 
-// POST создать зону
-router.post('/', /*authMiddleware*/ async (req, res) => {
+// POST создать зону - только для записи
+router.post('/', requireWriteAccess, async (req, res) => {
   try {
     const { name, lat, lon, radius, ingredient } = req.body
     const zone = await prisma.storageZone.create({
@@ -80,8 +79,8 @@ router.post('/', /*authMiddleware*/ async (req, res) => {
   }
 })
 
-// DELETE деактивировать зону
-router.delete('/:id', /*authMiddleware*/ async (req, res) => {
+// DELETE деактивировать зону - только для записи
+router.delete('/:id', requireWriteAccess, async (req, res) => {
   try {
     const { id } = req.params
     await prisma.storageZone.update({

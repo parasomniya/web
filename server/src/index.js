@@ -2,10 +2,11 @@ import express from 'express'
 import cors from 'cors'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import jwt from 'jsonwebtoken'
 import telemetryRouter from './modules/telemetry/telemetry.routes.js'
 import storageZonesRouter from './modules/storage-zones/storage-zones.routes.js'
 import eventsRouter from './modules/events/events.routes.js'
-import { authenticate, requireAdmin, requireDirectorOrAdmin } from './middleware/auth.js'
+import { authenticate, requireAdmin, requireDirectorOrAdmin, requireReadAccess, requireWriteAccess } from './middleware/auth.js'
 import authRouter from './modules/auth/auth.routes.js'
 import rationsRouter from './modules/rations/rations.routes.js'
 import prisma from './database.js'
@@ -15,6 +16,8 @@ const __dirname = path.dirname(__filename)
 
 const app = express()
 const PORT = process.env.PORT || 3000
+
+const SECRET_KEY = process.env.JWT_SECRET || 'super_secret_farm_key_123'
 
 app.use(cors())
 app.use(express.json())
@@ -43,14 +46,44 @@ app.get('/api/health', async (req, res) => {
 
 // API
 app.use('/api/auth', authRouter)
-app.use('/api/telemetry/host', telemetryRouter) //любой 
-app.use('/api/telemetry/zones', authenticate, requireDirectorOrAdmin, storageZonesRouter) // Директор и выше
-app.use('/api/events', authenticate, requireAdmin, eventsRouter) // Только админ
-app.use('/api/rations', authenticate, requireDirectorOrAdmin, rationsRouter)
+
+// Телеметрия: POST открыт для всех, GET защищен
+app.use('/api/telemetry/host', telemetryRouter)
+
+// Зоны: разделяем доступ по ролям
+app.use('/api/telemetry/zones', authenticate, storageZonesRouter)
+
+// События: только админ
+app.use('/api/events', authenticate, requireAdmin, eventsRouter)
+
+// Рационы: разделяем доступ по ролям
+app.use('/api/rations', authenticate, rationsRouter)
 
 // Static Frontend
 const frontendPath = path.resolve(__dirname, '../../frontend')
 app.use(express.static(frontendPath))
+
+// Middleware для защиты telemetry.html
+app.use('/telemetry.html', (req, res, next) => {
+  // Проверяем авторизацию через заголовки
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).send('Доступ запрещен: требуется авторизация');
+  }
+
+  const token = authHeader.split(' ')[1];
+  
+  try {
+    const decoded = jwt.verify(token, SECRET_KEY);
+    // Проверяем, что пользователь ADMIN
+    if (decoded.role !== 'ADMIN') {
+      return res.status(403).send('Доступ запрещен: только для администраторов');
+    }
+    next();
+  } catch (error) {
+    return res.status(403).send('Неверный или просроченный токен');
+  }
+});
 
 // Главная страница
 app.get('/', (req, res) => { //любой

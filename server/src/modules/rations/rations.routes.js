@@ -2,14 +2,15 @@ import { Router } from 'express';
 import multer from 'multer';
 import * as xlsx from 'xlsx';
 import prisma from '../../database.js'; // Убедись, что путь до database.js правильный
+import { requireReadAccess, requireWriteAccess } from '../../middleware/auth.js';
 
 const router = Router();
 
 // Настраиваем multer, чтобы он сохранял загруженный файл прямо в оперативную память (буфер)
 const upload = multer({ storage: multer.memoryStorage() });
 
-// 1. POST /upload - Загрузка Excel и создание рациона
-router.post('/upload', upload.single('file'), async (req, res) => {
+// 1. POST /upload - Загрузка Excel и создание рациона - только для записи
+router.post('/upload', requireWriteAccess, upload.single('file'), async (req, res) => {
   try {
     // Название рациона фронтенд может передать обычным текстовым полем вместе с файлом
     const rationName = req.body.name || 'Новый рацион (без названия)';
@@ -65,8 +66,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// 2. GET / - Получить все рационы
-router.get('/', async (req, res) => {
+// 2. GET / - Получить все рационы - доступно для чтения всем авторизованным
+router.get('/', requireReadAccess, async (req, res) => {
   try {
     const rations = await prisma.ration.findMany({
       include: { ingredients: true }
@@ -77,8 +78,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-// 3. DELETE /:id - Удалить рацион
-router.delete('/:id', async (req, res) => {
+// 3. DELETE /:id - Удалить рацион - только для записи
+router.delete('/:id', requireWriteAccess, async (req, res) => {
   try {
     const { id } = req.params;
     await prisma.ration.delete({
