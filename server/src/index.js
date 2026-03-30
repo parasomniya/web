@@ -61,9 +61,8 @@ app.use('/api/rations', authenticate, rationsRouter)
 
 // Static Frontend
 const frontendPath = path.resolve(__dirname, '../../frontend')
-app.use(express.static(frontendPath))
 
-// Middleware для защиты telemetry.html
+// Middleware для защиты telemetry.html (должен быть ДО express.static)
 app.use('/telemetry.html', (req, res, next) => {
   // Проверяем авторизацию через заголовки
   const authHeader = req.headers.authorization;
@@ -84,6 +83,9 @@ app.use('/telemetry.html', (req, res, next) => {
     return res.status(403).send('Неверный или просроченный токен');
   }
 });
+
+// Статические файлы (после middleware защиты)
+app.use(express.static(frontendPath))
 
 // Главная страница
 app.get('/', (req, res) => { //любой
