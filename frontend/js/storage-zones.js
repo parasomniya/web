@@ -1,7 +1,7 @@
 const API_HOST = "";
 
 const ZONES_API = API_HOST + "/api/telemetry/zones";
-const TELEMETRY_API = API_HOST + "/api/telemetry/host/latest";
+const TELEMETRY_API = API_HOST + "/api/telemetry/host/current";
 
 let map;
 let deviceMarker = null;
@@ -13,6 +13,10 @@ let lastTelemetry = null;
 let suppressNextMapClick = false;
 
 ymaps.ready(init);
+
+function canWrite() {
+    return window.AppAuth?.hasWriteAccess?.() ?? true;
+}
 
 function getHeaders(includeJson = false) {
     const token = localStorage.getItem("token");
@@ -50,23 +54,41 @@ function bindUI() {
     const goToDeviceBtn = document.getElementById("go-to-device-btn");
     const editZoneForm = document.getElementById("edit-zone-form");
 
-    addZoneForm.addEventListener("submit", onAddZoneSubmit);
-    deleteZoneBtn.addEventListener("click", onDeleteZoneClick);
-    goToDeviceBtn.addEventListener("click", goToCurrentPoint);
-    editZoneForm.addEventListener("submit", onEditZoneSubmit);
+    if (addZoneForm) {
+        addZoneForm.addEventListener("submit", onAddZoneSubmit);
+    }
+
+    if (deleteZoneBtn) {
+        deleteZoneBtn.addEventListener("click", onDeleteZoneClick);
+    }
+
+    if (goToDeviceBtn) {
+        goToDeviceBtn.addEventListener("click", goToCurrentPoint);
+    }
+
+    if (editZoneForm) {
+        editZoneForm.addEventListener("submit", onEditZoneSubmit);
+    }
 }
 
 function bindMapClick() {
-    map.events.add("click", function (e) {
+    map.events.add("click", function (event) {
         if (suppressNextMapClick) {
             suppressNextMapClick = false;
             return;
         }
 
-        const coords = e.get("coords");
+        if (!canWrite()) {
+            return;
+        }
+
         const latInput = document.getElementById("lat");
         const lonInput = document.getElementById("lon");
+        if (!latInput || !lonInput) {
+            return;
+        }
 
+        const coords = event.get("coords");
         latInput.value = coords[0].toFixed(6);
         lonInput.value = coords[1].toFixed(6);
 
@@ -123,7 +145,11 @@ function drawZones() {
         circle.events.add("click", function () {
             suppressNextMapClick = true;
             selectZone(zone.id);
-            openEditZoneModal(zone.id);
+            focusZone(zone);
+
+            if (canWrite()) {
+                openEditZoneModal(zone.id);
+            }
         });
 
         map.geoObjects.add(circle);
@@ -191,7 +217,7 @@ function updateSelectedZoneBox(zone) {
     const box = document.getElementById("selected-zone-box");
 
     if (!zone) {
-        box.innerHTML = `Выбранная зона: <strong>не выбрана</strong>`;
+        box.innerHTML = "Выбранная зона: <strong>не выбрана</strong>";
         return;
     }
 
@@ -205,11 +231,22 @@ function updateSelectedZoneBox(zone) {
 
 function updateDeleteButtonState() {
     const deleteZoneBtn = document.getElementById("delete-zone-btn");
+    if (!deleteZoneBtn) {
+        return;
+    }
+
+    if (!canWrite()) {
+        deleteZoneBtn.disabled = true;
+        return;
+    }
+
     deleteZoneBtn.disabled = !selectedZoneId;
 }
 
 function focusZone(zone) {
-    if (!zone) return;
+    if (!zone) {
+        return;
+    }
 
     map.setCenter([Number(zone.lat), Number(zone.lon)], 15, {
         checkZoomRange: true,
@@ -218,6 +255,11 @@ function focusZone(zone) {
 }
 
 function openEditZoneModal(zoneId) {
+    if (!canWrite()) {
+        setStatus("Режим просмотра: редактирование зон недоступно");
+        return;
+    }
+
     const zone = zones.find((item) => String(item.id) === String(zoneId));
     if (!zone) {
         setStatus("Не удалось открыть выбранную зону");
@@ -236,6 +278,11 @@ function openEditZoneModal(zoneId) {
 
 async function onEditZoneSubmit(event) {
     event.preventDefault();
+
+    if (!canWrite()) {
+        setStatus("Режим просмотра: редактирование зон недоступно");
+        return;
+    }
 
     const zoneId = document.getElementById("edit-zone-id").value;
     const ingredient = document.getElementById("edit-ingredient").value.trim();
@@ -258,11 +305,11 @@ async function onEditZoneSubmit(event) {
             headers: getHeaders(true),
             body: JSON.stringify({
                 name: ingredient,
-                ingredient: ingredient,
-                lat: lat,
-                lon: lon,
-                radius: radius,
-                active: active,
+                ingredient,
+                lat,
+                lon,
+                radius,
+                active,
             }),
         });
 
@@ -292,6 +339,11 @@ async function onEditZoneSubmit(event) {
 async function onAddZoneSubmit(event) {
     event.preventDefault();
 
+    if (!canWrite()) {
+        setStatus("Режим просмотра: добавление зон недоступно");
+        return;
+    }
+
     const ingredient = document.getElementById("ingredient").value.trim();
     const lat = Number(document.getElementById("lat").value);
     const lon = Number(document.getElementById("lon").value);
@@ -308,10 +360,10 @@ async function onAddZoneSubmit(event) {
             headers: getHeaders(true),
             body: JSON.stringify({
                 name: ingredient,
-                ingredient: ingredient,
-                lat: lat,
-                lon: lon,
-                radius: radius,
+                ingredient,
+                lat,
+                lon,
+                radius,
             }),
         });
 
@@ -332,11 +384,16 @@ async function onAddZoneSubmit(event) {
         }
     } catch (error) {
         console.error(error);
-        setStatus("Не удалось добавить точку");
+        setStatus("Не удалось добавить зону");
     }
 }
 
 async function onDeleteZoneClick() {
+    if (!canWrite()) {
+        setStatus("Режим просмотра: удаление зон недоступно");
+        return;
+    }
+
     if (!selectedZoneId) {
         setStatus("Сначала выберите зону");
         return;
@@ -466,7 +523,9 @@ function findBestMatchingZone(newZone) {
 
 function setStatus(message) {
     const statusBox = document.getElementById("status-box");
-    statusBox.textContent = message;
+    if (statusBox) {
+        statusBox.textContent = message;
+    }
 }
 
 function escapeHtml(value) {

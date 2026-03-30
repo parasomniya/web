@@ -3,10 +3,11 @@
 
 <head>
     <meta charset="utf-8">
-    <title>Карта компонентов</title>
+    <title>Зоны хранения</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
+    <script src="js/app-auth.js"></script>
     <script src="https://api-maps.yandex.ru/2.1/?apikey=3c050799-23a3-4bd9-a14a-b7eaf2e05511&lang=ru_RU"></script>
 
     <style>
@@ -155,8 +156,10 @@
 
 <body>
     <div class="page-wrapper">
+        <div data-page-alerts></div>
+
         <div class="page-header">
-            <h1 class="page-title">Карта компонентов</h1>
+            <h1 class="page-title">Зоны хранения</h1>
             <a href="index.html" class="btn btn-secondary">На главную</a>
         </div>
 
@@ -169,6 +172,10 @@
             <div class="panel-card">
                 <div class="card-header-custom">Управление</div>
                 <div class="card-body-custom">
+                    <div class="alert alert-info d-none" data-readonly-banner>
+                        Режим просмотра: редактирование зон доступно только директору и администратору.
+                    </div>
+
                     <div id="selected-zone-box" class="selected-zone-box">
                         Выбранная зона: <strong>не выбрана</strong>
                     </div>
@@ -178,49 +185,51 @@
                             К текущей точке
                         </button>
 
-                        <button id="delete-zone-btn" class="btn btn-danger" type="button" disabled>
+                        <button id="delete-zone-btn" class="btn btn-danger" type="button" disabled data-requires-write>
                             Удалить выбранную зону
                         </button>
                     </div>
 
-                    <div class="form-section-title">Добавление зоны</div>
-                    <div class="hint-text">
-                        Нажмите по карте, чтобы автоматически подставить координаты.
+                    <div data-requires-write>
+                        <div class="form-section-title">Добавление зоны</div>
+                        <div class="hint-text">
+                            Нажмите по карте, чтобы автоматически подставить координаты.
+                        </div>
+
+                        <form id="add-zone-form">
+                            <div class="form-group">
+                                <label for="ingredient">Ингредиент</label>
+                                <input id="ingredient" class="form-control" type="text" placeholder="Например: Силос" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="lat">Lat</label>
+                                <input id="lat" class="form-control" type="number" step="any" placeholder="55.75" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="lon">Lon</label>
+                                <input id="lon" class="form-control" type="number" step="any" placeholder="37.57" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="radius">Радиус (метры)</label>
+                                <input id="radius" class="form-control" type="number" min="1" placeholder="100" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="active">Статус</label>
+                                <select id="active" class="form-control">
+                                    <option value="true">Активна</option>
+                                    <option value="false">Неактивна</option>
+                                </select>
+                            </div>
+
+                            <button class="btn btn-success btn-block" type="submit">
+                                Добавить зону
+                            </button>
+                        </form>
                     </div>
-
-                    <form id="add-zone-form">
-                        <div class="form-group">
-                            <label for="ingredient">Ингредиент</label>
-                            <input id="ingredient" class="form-control" type="text" placeholder="Например: Силос" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="lat">Lat</label>
-                            <input id="lat" class="form-control" type="number" step="any" placeholder="55.75" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="lon">Lon</label>
-                            <input id="lon" class="form-control" type="number" step="any" placeholder="37.57" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="radius">Радиус (метры)</label>
-                            <input id="radius" class="form-control" type="number" min="1" placeholder="100" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="active">Статус</label>
-                            <select id="active" class="form-control">
-                                <option value="true">Активна</option>
-                                <option value="false">Неактивна</option>
-                            </select>
-                        </div>
-
-                        <button class="btn btn-success btn-block" type="submit">
-                            Добавить зону
-                        </button>
-                    </form>
 
                     <div id="status-box" class="status-box">
                         Готово к работе
@@ -250,7 +259,7 @@
         </div>
     </div>
 
-    <div class="modal fade" id="edit-zone-modal" tabindex="-1" role="dialog" aria-labelledby="edit-zone-modal-title" aria-hidden="true">
+    <div class="modal fade" id="edit-zone-modal" tabindex="-1" role="dialog" aria-labelledby="edit-zone-modal-title" aria-hidden="true" data-requires-write>
         <div class="modal-dialog" role="document">
             <div class="modal-content">
                 <form id="edit-zone-form">
