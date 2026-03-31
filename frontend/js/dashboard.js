@@ -1,6 +1,6 @@
 const API_BASE = "/api/telemetry/host";
 const ZONES_API = "/api/telemetry/zones";
-const HISTORY_API = `${API_BASE}/recent?limit=100000`;
+const HISTORY_LIMIT = 100000;
 const CLEAR_HISTORY_API = `${API_BASE}/admin/truncate`;
 const TEST_SECRET = "kill_all_telemetry_123";
 const DEFAULT_COORDS = [54.84, 83.09];
@@ -20,17 +20,20 @@ function isAdmin() {
     return Boolean(window.AppAuth?.isAdmin && window.AppAuth.isAdmin());
 }
 
+function getLatestApiUrl() {
+    return isAdmin() ? `${API_BASE}/admin/latest` : `${API_BASE}/current`;
+}
+
+function getHistoryApiUrl() {
+    return isAdmin()
+        ? `${API_BASE}/admin/history?limit=${HISTORY_LIMIT}`
+        : `${API_BASE}/recent?limit=${HISTORY_LIMIT}`;
+}
+
 function getHeaders() {
-    const token = localStorage.getItem("token");
-    const headers = {
+    return window.AppAuth?.getAuthHeaders?.({ includeJson: true }) || {
         "Content-Type": "application/json",
     };
-
-    if (token) {
-        headers.Authorization = `Bearer ${token}`;
-    }
-
-    return headers;
 }
 
 function setText(id, value) {
@@ -285,7 +288,7 @@ function renderRoute(historyRows) {
 
 async function fetchLatest() {
     try {
-        const response = await fetch(`${API_BASE}/current`, { headers: getHeaders() });
+        const response = await fetch(getLatestApiUrl(), { headers: getHeaders() });
         if (!response.ok) {
             renderDashboard(latestTelemetry);
             return;
@@ -307,7 +310,7 @@ async function fetchHistory() {
     }
 
     try {
-        const response = await fetch(HISTORY_API, { headers: getHeaders() });
+        const response = await fetch(getHistoryApiUrl(), { headers: getHeaders() });
         if (!response.ok) {
             clearRoutePolyline();
             return;
@@ -355,10 +358,9 @@ async function clearTelemetryHistory() {
             throw new Error(errorMessage);
         }
 
-        latestTelemetry = null;
         showBanner(null);
         clearRoutePolyline();
-        renderDashboard(null);
+        renderDashboard(latestTelemetry);
         window.AppAuth?.showAlert?.("История телеметрии очищена.", "success");
     } catch (error) {
         console.error("Error clearing telemetry history:", error);

@@ -19,18 +19,38 @@ function canWrite() {
 }
 
 function getHeaders(includeJson = false) {
-    const token = localStorage.getItem("token");
-    const headers = {};
+    return window.AppAuth?.getAuthHeaders?.({ includeJson }) || {};
+}
 
-    if (includeJson) {
-        headers["Content-Type"] = "application/json";
+function normalizeZoneText(value) {
+    if (value === null || value === undefined) {
+        return "";
     }
 
-    if (token) {
-        headers.Authorization = `Bearer ${token}`;
+    return String(value).trim();
+}
+
+function looksBrokenZoneText(value) {
+    if (!value) {
+        return true;
     }
 
-    return headers;
+    return /^[?]+$/.test(value) || /^[�]+$/.test(value);
+}
+
+function getZoneLabel(zone) {
+    const ingredient = normalizeZoneText(zone?.ingredient);
+    const name = normalizeZoneText(zone?.name);
+
+    if (ingredient && !looksBrokenZoneText(ingredient)) {
+        return ingredient;
+    }
+
+    if (name && !looksBrokenZoneText(name)) {
+        return name;
+    }
+
+    return ingredient || name || "Без названия";
 }
 
 function init() {
@@ -129,7 +149,7 @@ function drawZones() {
             [[Number(zone.lat), Number(zone.lon)], Number(zone.radius)],
             {
                 balloonContent: `
-                    <strong>${escapeHtml(zone.ingredient)}</strong><br>
+                    <strong>${escapeHtml(getZoneLabel(zone))}</strong><br>
                     Lat: ${zone.lat}<br>
                     Lon: ${zone.lon}<br>
                     Радиус: ${zone.radius} м
@@ -182,7 +202,7 @@ function renderTable() {
         }
 
         row.innerHTML = `
-            <td>${escapeHtml(zone.ingredient)}</td>
+            <td>${escapeHtml(getZoneLabel(zone))}</td>
             <td>${Number(zone.lat).toFixed(6)}</td>
             <td>${Number(zone.lon).toFixed(6)}</td>
             <td>${zone.radius}</td>
@@ -222,7 +242,7 @@ function updateSelectedZoneBox(zone) {
     }
 
     box.innerHTML = `
-        Выбранная зона: <strong>${escapeHtml(zone.ingredient)}</strong><br>
+        Выбранная зона: <strong>${escapeHtml(getZoneLabel(zone))}</strong><br>
         Lat: ${Number(zone.lat).toFixed(6)}<br>
         Lon: ${Number(zone.lon).toFixed(6)}<br>
         Радиус: ${zone.radius} м
@@ -267,7 +287,7 @@ function openEditZoneModal(zoneId) {
     }
 
     document.getElementById("edit-zone-id").value = zone.id;
-    document.getElementById("edit-ingredient").value = zone.ingredient || "";
+    document.getElementById("edit-ingredient").value = getZoneLabel(zone);
     document.getElementById("edit-lat").value = Number(zone.lat).toFixed(6);
     document.getElementById("edit-lon").value = Number(zone.lon).toFixed(6);
     document.getElementById("edit-radius").value = zone.radius;
@@ -400,7 +420,7 @@ async function onDeleteZoneClick() {
     }
 
     const zone = zones.find((item) => String(item.id) === String(selectedZoneId));
-    const zoneName = zone ? zone.ingredient : "выбранную зону";
+    const zoneName = zone ? getZoneLabel(zone) : "выбранную зону";
 
     const isConfirmed = window.confirm(`Удалить зону "${zoneName}"?`);
     if (!isConfirmed) {
@@ -514,7 +534,7 @@ function restoreSelectionAfterReload() {
 
 function findBestMatchingZone(newZone) {
     return zones.find((zone) =>
-        zone.ingredient === newZone.ingredient &&
+        getZoneLabel(zone) === newZone.ingredient &&
         Number(zone.lat) === Number(newZone.lat) &&
         Number(zone.lon) === Number(newZone.lon) &&
         Number(zone.radius) === Number(newZone.radius)

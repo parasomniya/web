@@ -3,8 +3,8 @@ let marker
 const API_URL = "/api/telemetry/host/current"
 
 // токен из localStorage
-function getToken() {
-    return localStorage.getItem("token")
+function getHeaders() {
+    return window.AppAuth?.getAuthHeaders?.() || {}
 }
 
 ymaps.ready(init)
@@ -26,9 +26,7 @@ async function loadTelemetry() {
     try {
 
         const response = await fetch(API_URL, {
-            headers: {
-                "Authorization": "Bearer " + getToken()
-            }
+            headers: getHeaders()
         })
 
         if (!response.ok) {
