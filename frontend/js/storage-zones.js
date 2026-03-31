@@ -3,6 +3,12 @@ const API_HOST = "";
 const ZONES_API = API_HOST + "/api/telemetry/zones";
 const TELEMETRY_API = API_HOST + "/api/telemetry/host/current";
 
+const CREATE_MODE_TITLE = "Добавление зоны";
+const EDIT_MODE_TITLE = "Редактирование зоны";
+const CREATE_SUBMIT_LABEL = "Добавить зону";
+const EDIT_SUBMIT_LABEL = "Сохранить зону";
+const DEFAULT_ZONE_RADIUS = 20;
+
 let map;
 let deviceMarker = null;
 
@@ -35,7 +41,7 @@ function looksBrokenZoneText(value) {
         return true;
     }
 
-    return /^[?]+$/.test(value) || /^[�]+$/.test(value);
+    return /^[?]+$/.test(value) || /^[\uFFFD]+$/u.test(value);
 }
 
 function getZoneLabel(zone) {
@@ -53,6 +59,14 @@ function getZoneLabel(zone) {
     return ingredient || name || "Без названия";
 }
 
+function getSelectedZone() {
+    return zones.find((item) => String(item.id) === String(selectedZoneId)) || null;
+}
+
+function isCreateMode() {
+    return !selectedZoneId;
+}
+
 function init() {
     map = new ymaps.Map("map", {
         center: [55.75, 37.57],
@@ -61,6 +75,7 @@ function init() {
 
     bindUI();
     bindMapClick();
+    resetZoneEditor();
 
     loadZones();
     loadTelemetry();
@@ -69,13 +84,12 @@ function init() {
 }
 
 function bindUI() {
-    const addZoneForm = document.getElementById("add-zone-form");
+    const zoneForm = document.getElementById("zone-form");
     const deleteZoneBtn = document.getElementById("delete-zone-btn");
     const goToDeviceBtn = document.getElementById("go-to-device-btn");
-    const editZoneForm = document.getElementById("edit-zone-form");
 
-    if (addZoneForm) {
-        addZoneForm.addEventListener("submit", onAddZoneSubmit);
+    if (zoneForm) {
+        zoneForm.addEventListener("submit", onZoneFormSubmit);
     }
 
     if (deleteZoneBtn) {
@@ -84,10 +98,6 @@ function bindUI() {
 
     if (goToDeviceBtn) {
         goToDeviceBtn.addEventListener("click", goToCurrentPoint);
-    }
-
-    if (editZoneForm) {
-        editZoneForm.addEventListener("submit", onEditZoneSubmit);
     }
 }
 
@@ -102,18 +112,27 @@ function bindMapClick() {
             return;
         }
 
-        const latInput = document.getElementById("lat");
-        const lonInput = document.getElementById("lon");
-        if (!latInput || !lonInput) {
-            return;
+        if (!isCreateMode()) {
+            resetZoneEditor();
         }
 
         const coords = event.get("coords");
-        latInput.value = coords[0].toFixed(6);
-        lonInput.value = coords[1].toFixed(6);
+        setFormCoordinates(coords);
 
         setStatus(`Координаты выбраны: ${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}`);
     });
+}
+
+function setFormCoordinates(coords) {
+    const latInput = document.getElementById("lat");
+    const lonInput = document.getElementById("lon");
+
+    if (!latInput || !lonInput) {
+        return;
+    }
+
+    latInput.value = Number(coords[0]).toFixed(6);
+    lonInput.value = Number(coords[1]).toFixed(6);
 }
 
 async function loadZones() {
@@ -128,14 +147,32 @@ async function loadZones() {
         }
 
         zones = await response.json();
-
-        drawZones();
-        renderTable();
-        restoreSelectionAfterReload();
+        syncSelectedZoneAfterReload();
     } catch (error) {
         console.error(error);
         setStatus("Не удалось загрузить зоны");
     }
+}
+
+function syncSelectedZoneAfterReload() {
+    const zone = getSelectedZone();
+
+    if (!zone) {
+        selectedZoneId = null;
+        refreshSelectionUI();
+        return;
+    }
+
+    refreshSelectionUI();
+    if (canWrite()) {
+        fillZoneForm(zone);
+    }
+}
+
+function refreshSelectionUI() {
+    drawZones();
+    renderTable();
+    updateFormMode();
 }
 
 function drawZones() {
@@ -156,20 +193,15 @@ function drawZones() {
                 `,
             },
             {
-                fillColor: isSelected ? "#4e73df55" : "#00c85355",
-                strokeColor: isSelected ? "#1c3faa" : "#1e88e5",
+                fillColor: isSelected ? "#f6c23e55" : "#00c85355",
+                strokeColor: isSelected ? "#d18b00" : "#1e88e5",
                 strokeWidth: isSelected ? 4 : 2,
             }
         );
 
         circle.events.add("click", function () {
             suppressNextMapClick = true;
-            selectZone(zone.id);
-            focusZone(zone);
-
-            if (canWrite()) {
-                openEditZoneModal(zone.id);
-            }
+            selectZone(zone.id, { focusMap: false });
         });
 
         map.geoObjects.add(circle);
@@ -179,6 +211,10 @@ function drawZones() {
 
 function renderTable() {
     const table = document.getElementById("zones-table");
+    if (!table) {
+        return;
+    }
+
     table.innerHTML = "";
 
     if (!zones.length) {
@@ -214,53 +250,102 @@ function renderTable() {
         `;
 
         row.addEventListener("click", function () {
-            selectZone(zone.id);
-            focusZone(zone);
+            selectZone(zone.id, { focusMap: true });
         });
 
         table.appendChild(row);
     });
 }
 
-function selectZone(zoneId) {
+function selectZone(zoneId, options = {}) {
     selectedZoneId = zoneId;
 
-    const zone = zones.find((item) => String(item.id) === String(zoneId));
-
-    drawZones();
-    renderTable();
-    updateSelectedZoneBox(zone);
-    updateDeleteButtonState();
-}
-
-function updateSelectedZoneBox(zone) {
-    const box = document.getElementById("selected-zone-box");
-
+    const zone = getSelectedZone();
     if (!zone) {
-        box.innerHTML = "Выбранная зона: <strong>не выбрана</strong>";
+        resetZoneEditor();
         return;
     }
 
-    box.innerHTML = `
-        Выбранная зона: <strong>${escapeHtml(getZoneLabel(zone))}</strong><br>
-        Lat: ${Number(zone.lat).toFixed(6)}<br>
-        Lon: ${Number(zone.lon).toFixed(6)}<br>
-        Радиус: ${zone.radius} м
-    `;
+    if (canWrite()) {
+        fillZoneForm(zone);
+    }
+
+    refreshSelectionUI();
+
+    if (options.focusMap) {
+        focusZone(zone);
+    }
+
+    setStatus(`Выбрана зона "${getZoneLabel(zone)}"`);
 }
 
-function updateDeleteButtonState() {
-    const deleteZoneBtn = document.getElementById("delete-zone-btn");
-    if (!deleteZoneBtn) {
-        return;
+function updateFormMode() {
+    const title = document.getElementById("zone-form-title");
+    const submitButton = document.getElementById("submit-zone-btn");
+    const deleteButton = document.getElementById("delete-zone-btn");
+    const goToDeviceButton = document.getElementById("go-to-device-btn");
+
+    const createMode = isCreateMode();
+
+    if (title) {
+        title.textContent = createMode ? CREATE_MODE_TITLE : EDIT_MODE_TITLE;
     }
 
-    if (!canWrite()) {
-        deleteZoneBtn.disabled = true;
-        return;
+    if (submitButton) {
+        submitButton.textContent = createMode ? CREATE_SUBMIT_LABEL : EDIT_SUBMIT_LABEL;
+        submitButton.classList.toggle("btn-success", createMode);
+        submitButton.classList.toggle("btn-primary", !createMode);
     }
 
-    deleteZoneBtn.disabled = !selectedZoneId;
+    if (deleteButton) {
+        deleteButton.disabled = !canWrite() || createMode;
+    }
+
+    if (goToDeviceButton) {
+        goToDeviceButton.disabled = !canWrite();
+    }
+}
+
+function fillZoneForm(zone) {
+    const ingredientInput = document.getElementById("ingredient");
+    const latInput = document.getElementById("lat");
+    const lonInput = document.getElementById("lon");
+    const radiusInput = document.getElementById("radius");
+    const activeInput = document.getElementById("active");
+
+    if (ingredientInput) ingredientInput.value = getZoneLabel(zone);
+    if (latInput) latInput.value = Number(zone.lat).toFixed(6);
+    if (lonInput) lonInput.value = Number(zone.lon).toFixed(6);
+    if (radiusInput) radiusInput.value = zone.radius;
+    if (activeInput) activeInput.value = String(Boolean(zone.active));
+}
+
+function resetZoneFormFields() {
+    const zoneForm = document.getElementById("zone-form");
+    if (zoneForm) {
+        zoneForm.reset();
+    }
+
+    const radiusInput = document.getElementById("radius");
+    const activeInput = document.getElementById("active");
+
+    if (radiusInput) {
+        radiusInput.value = String(DEFAULT_ZONE_RADIUS);
+    }
+
+    if (activeInput) {
+        activeInput.value = "true";
+    }
+}
+
+function resetZoneEditor() {
+    selectedZoneId = null;
+
+    if (canWrite()) {
+        resetZoneFormFields();
+    }
+
+    refreshSelectionUI();
 }
 
 function focusZone(zone) {
@@ -274,116 +359,72 @@ function focusZone(zone) {
     });
 }
 
-function openEditZoneModal(zoneId) {
-    if (!canWrite()) {
-        setStatus("Режим просмотра: редактирование зон недоступно");
-        return;
-    }
+function readZoneFormValues() {
+    const radiusValue = document.getElementById("radius")?.value.trim() || "";
 
-    const zone = zones.find((item) => String(item.id) === String(zoneId));
-    if (!zone) {
-        setStatus("Не удалось открыть выбранную зону");
-        return;
-    }
-
-    document.getElementById("edit-zone-id").value = zone.id;
-    document.getElementById("edit-ingredient").value = getZoneLabel(zone);
-    document.getElementById("edit-lat").value = Number(zone.lat).toFixed(6);
-    document.getElementById("edit-lon").value = Number(zone.lon).toFixed(6);
-    document.getElementById("edit-radius").value = zone.radius;
-    document.getElementById("edit-active").value = String(Boolean(zone.active));
-
-    $("#edit-zone-modal").modal("show");
+    return {
+        ingredient: document.getElementById("ingredient")?.value.trim() || "",
+        lat: Number(document.getElementById("lat")?.value),
+        lon: Number(document.getElementById("lon")?.value),
+        radius: radiusValue ? Number(radiusValue) : DEFAULT_ZONE_RADIUS,
+        active: document.getElementById("active")?.value === "true",
+    };
 }
 
-async function onEditZoneSubmit(event) {
+function validateZoneForm(zoneData) {
+    return Boolean(
+        zoneData.ingredient &&
+        !Number.isNaN(zoneData.lat) &&
+        !Number.isNaN(zoneData.lon) &&
+        !Number.isNaN(zoneData.radius) &&
+        zoneData.radius > 0
+    );
+}
+
+async function onZoneFormSubmit(event) {
     event.preventDefault();
 
     if (!canWrite()) {
-        setStatus("Режим просмотра: редактирование зон недоступно");
+        setStatus("Режим просмотра: изменение зон недоступно");
         return;
     }
 
-    const zoneId = document.getElementById("edit-zone-id").value;
-    const ingredient = document.getElementById("edit-ingredient").value.trim();
-    const lat = Number(document.getElementById("edit-lat").value);
-    const lon = Number(document.getElementById("edit-lon").value);
-    const radius = Number(document.getElementById("edit-radius").value);
-    const active = document.getElementById("edit-active").value === "true";
-    const saveButton = document.getElementById("save-zone-btn");
-
-    if (!zoneId || !ingredient || Number.isNaN(lat) || Number.isNaN(lon) || Number.isNaN(radius)) {
-        setStatus("Заполните все поля редактирования корректно");
-        return;
-    }
-
-    saveButton.disabled = true;
-
-    try {
-        const response = await fetch(`${ZONES_API}/${zoneId}`, {
-            method: "PUT",
-            headers: getHeaders(true),
-            body: JSON.stringify({
-                name: ingredient,
-                ingredient,
-                lat,
-                lon,
-                radius,
-                active,
-            }),
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Ошибка обновления зоны: ${response.status} ${errorText}`);
-        }
-
-        $("#edit-zone-modal").modal("hide");
-        setStatus(`Зона "${ingredient}" сохранена`);
-
-        await loadZones();
-
-        const updatedZone = zones.find((item) => String(item.id) === String(zoneId));
-        if (updatedZone) {
-            selectZone(updatedZone.id);
-            focusZone(updatedZone);
-        }
-    } catch (error) {
-        console.error(error);
-        setStatus("Не удалось сохранить изменения зоны");
-    } finally {
-        saveButton.disabled = false;
-    }
-}
-
-async function onAddZoneSubmit(event) {
-    event.preventDefault();
-
-    if (!canWrite()) {
-        setStatus("Режим просмотра: добавление зон недоступно");
-        return;
-    }
-
-    const ingredient = document.getElementById("ingredient").value.trim();
-    const lat = Number(document.getElementById("lat").value);
-    const lon = Number(document.getElementById("lon").value);
-    const radius = Number(document.getElementById("radius").value);
-
-    if (!ingredient || Number.isNaN(lat) || Number.isNaN(lon) || Number.isNaN(radius)) {
+    const zoneData = readZoneFormValues();
+    if (!validateZoneForm(zoneData)) {
         setStatus("Заполните все поля корректно");
         return;
     }
 
+    const submitButton = document.getElementById("submit-zone-btn");
+    if (submitButton) {
+        submitButton.disabled = true;
+    }
+
+    try {
+        if (selectedZoneId) {
+            await updateZone(zoneData);
+        } else {
+            await createZone(zoneData);
+        }
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
+        }
+    }
+}
+
+async function createZone(zoneData) {
     try {
         const response = await fetch(ZONES_API, {
             method: "POST",
             headers: getHeaders(true),
             body: JSON.stringify({
-                name: ingredient,
-                ingredient,
-                lat,
-                lon,
-                radius,
+                name: zoneData.ingredient,
+                ingredient: zoneData.ingredient,
+                lat: zoneData.lat,
+                lon: zoneData.lon,
+                radius: zoneData.radius,
+                active: zoneData.active,
             }),
         });
 
@@ -392,19 +433,50 @@ async function onAddZoneSubmit(event) {
             throw new Error(`Ошибка создания зоны: ${response.status} ${errorText}`);
         }
 
-        setStatus(`Зона "${ingredient}" добавлена`);
-        document.getElementById("add-zone-form").reset();
-
+        setStatus(`Зона "${zoneData.ingredient}" добавлена`);
+        resetZoneEditor();
         await loadZones();
 
-        const createdZone = findBestMatchingZone({ ingredient, lat, lon, radius });
+        const createdZone = findBestMatchingZone(zoneData);
         if (createdZone) {
-            selectZone(createdZone.id);
             focusZone(createdZone);
         }
     } catch (error) {
         console.error(error);
         setStatus("Не удалось добавить зону");
+    }
+}
+
+async function updateZone(zoneData) {
+    const currentZoneId = selectedZoneId;
+
+    try {
+        const response = await fetch(`${ZONES_API}/${currentZoneId}`, {
+            method: "PUT",
+            headers: getHeaders(true),
+            body: JSON.stringify({
+                name: zoneData.ingredient,
+                ingredient: zoneData.ingredient,
+                lat: zoneData.lat,
+                lon: zoneData.lon,
+                radius: zoneData.radius,
+                active: zoneData.active,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Ошибка обновления зоны: ${response.status} ${errorText}`);
+        }
+
+        setStatus(`Зона "${zoneData.ingredient}" сохранена`);
+        resetZoneEditor();
+        await loadZones();
+    } catch (error) {
+        console.error(error);
+        selectedZoneId = currentZoneId;
+        refreshSelectionUI();
+        setStatus("Не удалось сохранить изменения зоны");
     }
 }
 
@@ -414,21 +486,19 @@ async function onDeleteZoneClick() {
         return;
     }
 
-    if (!selectedZoneId) {
+    const zone = getSelectedZone();
+    if (!zone) {
         setStatus("Сначала выберите зону");
         return;
     }
 
-    const zone = zones.find((item) => String(item.id) === String(selectedZoneId));
-    const zoneName = zone ? getZoneLabel(zone) : "выбранную зону";
-
-    const isConfirmed = window.confirm(`Удалить зону "${zoneName}"?`);
-    if (!isConfirmed) {
-        return;
+    const deleteZoneBtn = document.getElementById("delete-zone-btn");
+    if (deleteZoneBtn) {
+        deleteZoneBtn.disabled = true;
     }
 
     try {
-        const response = await fetch(`${ZONES_API}/${selectedZoneId}`, {
+        const response = await fetch(`${ZONES_API}/${zone.id}`, {
             method: "DELETE",
             headers: getHeaders(),
         });
@@ -438,14 +508,12 @@ async function onDeleteZoneClick() {
             throw new Error(`Ошибка удаления зоны: ${response.status} ${errorText}`);
         }
 
-        setStatus(`Зона "${zoneName}" удалена`);
-        selectedZoneId = null;
-        updateSelectedZoneBox(null);
-        updateDeleteButtonState();
-
+        setStatus(`Зона "${getZoneLabel(zone)}" удалена`);
+        resetZoneEditor();
         await loadZones();
     } catch (error) {
         console.error(error);
+        refreshSelectionUI();
         setStatus("Не удалось удалить зону");
     }
 }
@@ -495,41 +563,32 @@ function updateDeviceMarker(data) {
 }
 
 function goToCurrentPoint() {
+    if (!canWrite()) {
+        setStatus("Режим просмотра: изменение зон недоступно");
+        return;
+    }
+
+    if (!isCreateMode()) {
+        setStatus("К текущей точке можно перейти только при создании новой зоны");
+        return;
+    }
+
     if (!lastTelemetry || lastTelemetry.lat == null || lastTelemetry.lon == null) {
         setStatus("Текущая точка пока недоступна");
         return;
     }
 
-    map.setCenter([Number(lastTelemetry.lat), Number(lastTelemetry.lon)], 16, {
+    const lat = Number(lastTelemetry.lat);
+    const lon = Number(lastTelemetry.lon);
+
+    setFormCoordinates([lat, lon]);
+
+    map.setCenter([lat, lon], 16, {
         checkZoomRange: true,
         duration: 300,
     });
 
-    setStatus("Карта перемещена к текущей точке");
-}
-
-function restoreSelectionAfterReload() {
-    if (!selectedZoneId) {
-        updateSelectedZoneBox(null);
-        updateDeleteButtonState();
-        return;
-    }
-
-    const zone = zones.find((item) => String(item.id) === String(selectedZoneId));
-
-    if (!zone) {
-        selectedZoneId = null;
-        updateSelectedZoneBox(null);
-        updateDeleteButtonState();
-        drawZones();
-        renderTable();
-        return;
-    }
-
-    updateSelectedZoneBox(zone);
-    updateDeleteButtonState();
-    drawZones();
-    renderTable();
+    setStatus("Координаты текущей точки подставлены в форму новой зоны");
 }
 
 function findBestMatchingZone(newZone) {

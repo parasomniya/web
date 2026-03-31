@@ -1,5 +1,6 @@
 const POLL_INTERVAL_MS = 5000;
 const HISTORY_LIMIT = 20;
+const OFFLINE_THRESHOLD_MS = 5000;
 
 const endpoints = {
     host: {
@@ -20,6 +21,46 @@ function formatDateTime(value) {
     if (!value) return "--";
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? "--" : date.toLocaleString("ru-RU");
+}
+
+function hasTelemetryTimestamp(value) {
+    if (!value) return false;
+
+    const timestamp = new Date(value).getTime();
+    return !Number.isNaN(timestamp);
+}
+
+function isPacketOnline(timestamp) {
+    if (!hasTelemetryTimestamp(timestamp)) return false;
+
+    return (Date.now() - new Date(timestamp).getTime()) < OFFLINE_THRESHOLD_MS;
+}
+
+function getTelemetryState(latest) {
+    if (!hasTelemetryTimestamp(latest?.timestamp)) {
+        return {
+            label: "Нет данных",
+            panelLabel: "Нет данных",
+            mode: "warn",
+            online: false,
+        };
+    }
+
+    if (isPacketOnline(latest.timestamp)) {
+        return {
+            label: "Онлайн",
+            panelLabel: "Поток активен",
+            mode: "ok",
+            online: true,
+        };
+    }
+
+    return {
+        label: "Оффлайн",
+        panelLabel: "Нет свежих пакетов",
+        mode: "offline",
+        online: false,
+    };
 }
 
 function formatNumber(value, digits = 5) {
@@ -91,7 +132,9 @@ async function fetchJson(url) {
 }
 
 function renderHostSummary(latest) {
-    setText("hostStatus", latest ? "Онлайн" : "Нет данных");
+    const hostState = getTelemetryState(latest);
+
+    setText("hostStatus", hostState.label);
     setText("hostDevice", latest?.deviceId || "--");
     setText("hostTemperature", latest?.cpuTempC != null ? `${formatShortNumber(latest.cpuTempC, 1)} °C` : "--");
     setText("hostWeight", latest?.weight != null ? `${formatShortNumber(latest.weight, 1)} кг` : "--");
@@ -178,7 +221,9 @@ async function loadEvents() {
 }
 
 function renderRtkSummary(latest, missing) {
-    setText("rtkStatus", missing ? "API не подключён" : latest ? "Онлайн" : "Нет данных");
+    const rtkState = getTelemetryState(latest);
+
+    setText("rtkStatus", missing ? "API не подключён" : rtkState.label);
     setText("rtkDevice", latest?.deviceId || "--");
     setText("rtkLastPacket", formatDateTime(latest?.timestamp));
     setText("rtkQuality", latest?.rtkQuality || latest?.gpsQuality || "--");
@@ -223,9 +268,12 @@ async function loadHost() {
             fetchJson(endpoints.host.history),
         ]);
 
-        renderHostSummary(latest.missing ? null : latest);
+        const hostLatest = latest.missing ? null : latest;
+        const hostState = getTelemetryState(hostLatest);
+
+        renderHostSummary(hostLatest);
         renderHostTable(Array.isArray(history) ? history : []);
-        setStatus("hostPanelStatus", latest?.deviceId ? "Поток активен" : "Нет данных", latest?.deviceId ? "ok" : "warn");
+        setStatus("hostPanelStatus", hostState.panelLabel, hostState.mode);
     } catch (error) {
         renderHostSummary(null);
         renderHostTable([]);
@@ -248,9 +296,12 @@ async function loadRtk() {
         ]);
 
         const missing = Boolean(latest.missing || history.missing);
-        renderRtkSummary(missing ? null : latest, missing);
+        const rtkLatest = missing ? null : latest;
+        const rtkState = getTelemetryState(rtkLatest);
+
+        renderRtkSummary(rtkLatest, missing);
         renderRtkTable(Array.isArray(history) ? history : [], missing);
-        setStatus("rtkPanelStatus", missing ? "API не подключён" : "Поток активен", missing ? "warn" : "ok");
+        setStatus("rtkPanelStatus", missing ? "API не подключён" : rtkState.panelLabel, missing ? "warn" : rtkState.mode);
     } catch (error) {
         renderRtkSummary(null, true);
         renderRtkTable([], true);

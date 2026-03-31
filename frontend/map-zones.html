@@ -99,16 +99,6 @@
             border: 1px solid #e3e6f0;
         }
 
-        .selected-zone-box {
-            margin-bottom: 20px;
-            padding: 12px;
-            border-radius: 8px;
-            background: #eef2ff;
-            border: 1px solid #cfd8ff;
-            color: #3a3b45;
-            font-size: 0.95rem;
-        }
-
         .table-card {
             margin-top: 20px;
         }
@@ -141,6 +131,27 @@
         .badge-soft.inactive {
             background: #f8d7da;
             color: #842029;
+        }
+
+        .btn-soft-danger {
+            color: #fff;
+            background-color: #ef8a80;
+            border-color: #ef8a80;
+        }
+
+        .btn-soft-danger:hover,
+        .btn-soft-danger:focus {
+            color: #fff;
+            background-color: #e9786d;
+            border-color: #e9786d;
+        }
+
+        .btn-soft-danger:disabled,
+        .btn-soft-danger.disabled {
+            color: #fff;
+            background-color: #ef8a80;
+            border-color: #ef8a80;
+            opacity: 0.65;
         }
 
         @media (max-width: 992px) {
@@ -214,7 +225,7 @@
                         <i class="fa fa-bars"></i>
                     </button>
 
-                    <span class="ml-3 font-weight-bold">Панель управления</span>
+                    <span class="ml-3 font-weight-bold">Зоны на карте</span>
 
                 </nav>
 
@@ -239,27 +250,16 @@
                                         Режим просмотра: редактирование зон доступно только директору и администратору.
                                     </div>
 
-                                    <div id="selected-zone-box" class="selected-zone-box">
-                                        Выбранная зона: <strong>не выбрана</strong>
-                                    </div>
+                                    <div id="zone-form-title" class="form-section-title">Добавление зоны</div>
 
                                     <div class="panel-actions">
-                                        <button id="go-to-device-btn" class="btn btn-primary" type="button">
+                                        <button id="go-to-device-btn" class="btn btn-primary" type="button" data-requires-write>
                                             К текущей точке
-                                        </button>
-
-                                        <button id="delete-zone-btn" class="btn btn-danger" type="button" disabled data-requires-write>
-                                            Удалить выбранную зону
                                         </button>
                                     </div>
 
                                     <div data-requires-write>
-                                        <div class="form-section-title">Добавление зоны</div>
-                                        <div class="hint-text">
-                                            Нажмите по карте, чтобы автоматически подставить координаты.
-                                        </div>
-
-                                        <form id="add-zone-form">
+                                        <form id="zone-form">
                                             <div class="form-group">
                                                 <label for="ingredient">Ингредиент</label>
                                                 <input id="ingredient" class="form-control" type="text" placeholder="Например: Силос" required>
@@ -277,7 +277,7 @@
 
                                             <div class="form-group">
                                                 <label for="radius">Радиус (метры)</label>
-                                                <input id="radius" class="form-control" type="number" min="1" placeholder="100" required>
+                                                <input id="radius" class="form-control" type="number" min="1" placeholder="20" value="20">
                                             </div>
 
                                             <div class="form-group">
@@ -288,9 +288,14 @@
                                                 </select>
                                             </div>
 
-                                            <button class="btn btn-success btn-block" type="submit">
-                                                Добавить зону
-                                            </button>
+                                            <div class="panel-actions mb-0">
+                                                <button id="submit-zone-btn" class="btn btn-success" type="submit">
+                                                    Добавить зону
+                                                </button>
+                                                <button id="delete-zone-btn" class="btn btn-soft-danger" type="button" disabled>
+                                                    Удалить
+                                                </button>
+                                            </div>
                                         </form>
                                     </div>
 
@@ -321,58 +326,6 @@
                             </div>
                         </div>
                     </div>
-
-                    <div class="modal fade" id="edit-zone-modal" tabindex="-1" role="dialog" aria-labelledby="edit-zone-modal-title" aria-hidden="true" data-requires-write>
-                        <div class="modal-dialog" role="document">
-                            <div class="modal-content">
-                                <form id="edit-zone-form">
-                                    <div class="modal-header">
-                                        <h5 class="modal-title" id="edit-zone-modal-title">Редактирование зоны</h5>
-                                        <button type="button" class="close" data-dismiss="modal" aria-label="Закрыть">
-                                            <span aria-hidden="true">&times;</span>
-                                        </button>
-                                    </div>
-
-                                    <div class="modal-body">
-                                        <input id="edit-zone-id" type="hidden">
-
-                                        <div class="form-group">
-                                            <label for="edit-ingredient">Ингредиент</label>
-                                            <input id="edit-ingredient" class="form-control" type="text" required>
-                                        </div>
-
-                                        <div class="form-group">
-                                            <label for="edit-lat">Lat</label>
-                                            <input id="edit-lat" class="form-control" type="number" step="any" required>
-                                        </div>
-
-                                        <div class="form-group">
-                                            <label for="edit-lon">Lon</label>
-                                            <input id="edit-lon" class="form-control" type="number" step="any" required>
-                                        </div>
-
-                                        <div class="form-group">
-                                            <label for="edit-radius">Радиус (метры)</label>
-                                            <input id="edit-radius" class="form-control" type="number" min="1" required>
-                                        </div>
-
-                                        <div class="form-group mb-0">
-                                            <label for="edit-active">Статус</label>
-                                            <select id="edit-active" class="form-control">
-                                                <option value="true">Активна</option>
-                                                <option value="false">Неактивна</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div class="modal-footer">
-                                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Отмена</button>
-                                        <button id="save-zone-btn" type="submit" class="btn btn-primary">Сохранить</button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -394,7 +347,7 @@
     <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
-    <script src="js/storage-zones.js?v=20260331b"></script>
+    <script src="js/storage-zones.js?v=20260331c"></script>
 </body>
 
 </html>

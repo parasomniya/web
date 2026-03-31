@@ -20,6 +20,10 @@ function isAdmin() {
     return Boolean(window.AppAuth?.isAdmin && window.AppAuth.isAdmin());
 }
 
+function hasWriteAccess() {
+    return Boolean(window.AppAuth?.hasWriteAccess && window.AppAuth.hasWriteAccess());
+}
+
 function getLatestApiUrl() {
     return isAdmin() ? `${API_BASE}/admin/latest` : `${API_BASE}/current`;
 }
@@ -257,10 +261,6 @@ function renderRoute(historyRows) {
 
     clearRoutePolyline();
 
-    if (!isAdmin()) {
-        return;
-    }
-
     if (!Array.isArray(historyRows)) {
         return;
     }
@@ -304,11 +304,6 @@ async function fetchLatest() {
 }
 
 async function fetchHistory() {
-    if (!isAdmin()) {
-        clearRoutePolyline();
-        return;
-    }
-
     try {
         const response = await fetch(getHistoryApiUrl(), { headers: getHeaders() });
         if (!response.ok) {
@@ -325,7 +320,7 @@ async function fetchHistory() {
 }
 
 async function clearTelemetryHistory() {
-    if (!isAdmin()) {
+    if (!hasWriteAccess()) {
         return;
     }
 
@@ -388,6 +383,24 @@ async function fetchZones() {
 let lastShownZone = null;
 let currentBannerElement = null;
 
+function getBannerOffsetTop() {
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) {
+        return 15;
+    }
+
+    const topbarRect = topbar.getBoundingClientRect();
+    return Math.max(15, Math.round(topbarRect.bottom + 12));
+}
+
+function updateBannerContainerPosition(container) {
+    if (!container) {
+        return;
+    }
+
+    container.style.top = `${getBannerOffsetTop()}px`;
+}
+
 function showBanner(banner) {
     if (!banner) {
         if (currentBannerElement) {
@@ -406,7 +419,19 @@ function showBanner(banner) {
 
     const zoneName = banner.zoneName || banner.name || "";
     const bannerText = zoneName ? `Въезд в зону: ${zoneName}` : (banner.message || "Новое уведомление");
-    if (lastShownZone === bannerText) return;
+    let container = document.getElementById("banner-container");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "banner-container";
+        container.style.cssText = "position: fixed; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; width: min(420px, calc(100vw - 32px)); pointer-events: none;";
+        document.body.appendChild(container);
+    }
+
+    updateBannerContainerPosition(container);
+
+    if (lastShownZone === bannerText) {
+        return;
+    }
 
     if (currentBannerElement) {
         currentBannerElement.remove();
@@ -414,26 +439,26 @@ function showBanner(banner) {
 
     lastShownZone = bannerText;
 
-    let container = document.getElementById("banner-container");
-    if (!container) {
-        container = document.createElement("div");
-        container.id = "banner-container";
-        container.style.cssText = "position: fixed; top: 15px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;";
-        document.body.appendChild(container);
-    }
-
     if (!document.getElementById("banner-styles-final")) {
         const style = document.createElement("style");
         style.id = "banner-styles-final";
         style.innerHTML = `
             @keyframes bannerInFinal { from { opacity: 0; transform: translateY(-15px); } to { opacity: 1; transform: translateY(0); } }
             @keyframes bannerOutFinal { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.9); } }
+            @media (max-width: 576px) {
+                #banner-container {
+                    left: 16px;
+                    right: 16px !important;
+                    width: auto !important;
+                    align-items: stretch !important;
+                }
+            }
         `;
         document.head.appendChild(style);
     }
 
     const alert = document.createElement("div");
-    alert.style.cssText = "background-color: #1a6b3d; color: white; padding: 10px 18px; border-radius: 20px; box-shadow: 0 5px 12px rgba(0,50,0,0.35); font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; font-size: 14px; font-weight: 500; opacity: 0; animation: bannerInFinal 0.4s ease-out forwards; cursor: default;";
+    alert.style.cssText = "background-color: #1a6b3d; color: white; padding: 10px 18px; border-radius: 20px; box-shadow: 0 5px 12px rgba(0,50,0,0.35); font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; font-size: 14px; font-weight: 500; line-height: 1.4; opacity: 0; animation: bannerInFinal 0.4s ease-out forwards; cursor: default; pointer-events: none;";
     alert.textContent = bannerText;
 
     container.appendChild(alert);
@@ -456,10 +481,8 @@ function init() {
     fetchLatest();
     setInterval(fetchLatest, LATEST_POLL_INTERVAL_MS);
 
-    if (isAdmin()) {
-        fetchHistory();
-        setInterval(fetchHistory, LATEST_POLL_INTERVAL_MS);
-    }
+    fetchHistory();
+    setInterval(fetchHistory, LATEST_POLL_INTERVAL_MS);
 
     const clearTelemetryButton = document.getElementById("clearTelemetryButton");
     if (clearTelemetryButton) {

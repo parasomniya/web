@@ -1,8 +1,29 @@
 import { Router } from 'express'
 import prisma from "../../database.js"
-import { authenticate, requireAdmin, requireReadAccess } from "../../middleware/auth.js"
+import { authenticate, requireAdmin, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js"
 
 const router = Router()
+
+function buildEmptyLatestResponse() {
+  return {
+    id: null,
+    deviceId: null,
+    timestamp: null,
+    lat: null,
+    lon: null,
+    weight: null,
+    weightValid: false,
+    gpsValid: false,
+    gpsSatellites: 0,
+    gpsQuality: 0,
+    wifiClients: null,
+    cpuTempC: null,
+    lteRssiDbm: null,
+    lteAccessTech: null,
+    eventsReaderOk: false,
+    banner: null
+  }
+}
 
 // Хранилище последних зон в памяти сервера (deviceId -> lastZoneName)
 const deviceState = new Map();
@@ -126,7 +147,7 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
     const data = await prisma.telemetry.findFirst({ 
       orderBy: { timestamp: 'desc' } 
     })
-    if (!data) return res.status(404).json({ error: 'No data found' })
+    if (!data) return res.json(buildEmptyLatestResponse())
     
     let banner = null;
 
@@ -191,7 +212,7 @@ router.get('/admin/latest', authenticate, requireAdmin, async (req, res) => {
     const data = await prisma.telemetry.findFirst({ 
       orderBy: { timestamp: 'desc' } 
     })
-    if (!data) return res.status(404).json({ error: 'No data found' })
+    if (!data) return res.json(buildEmptyLatestResponse())
     
     let banner = null;
 
@@ -266,7 +287,7 @@ router.post('/admin/seed', authenticate, requireAdmin, async (req, res) => {
 });
 
 // DELETE /admin/truncate - Очистка телеметрии
-router.delete('/admin/truncate', authenticate, requireAdmin, async (req, res) => {
+router.delete('/admin/truncate', authenticate, requireWriteAccess, async (req, res) => {
   try {
     const testSecret = req.headers['x-test-secret'];
     if (testSecret !== 'kill_all_telemetry_123') {
