@@ -8,9 +8,6 @@
     if (tbody && !tbody.children.length) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="6" class="text-center text-muted">
-                    Страница замесов на фронтенде пока не подключена к актуальному API.
-                </td>
             </tr>
         `;
     }
