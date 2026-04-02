@@ -3,6 +3,8 @@ import prisma from "../../database.js"
 import { authenticate, requireAdmin, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js"
 
 const router = Router()
+// Временное хранилище для полевых тестов (Замесы)
+const testBatches = new Map();
 
 function buildEmptyLatestResponse() {
   return {
@@ -129,6 +131,130 @@ router.post('/', async (req, res) => {
         eventsReaderOk: Boolean(events_reader_ok)
       }
     })
+
+    const currentZoneName = deviceState.get(deviceId) || null;
+
+    // =======================================================
+  // 🚜 ПОШАГОВЫЙ АЛГОРИТМ ЗАМЕСА (ONLINE СОХРАНЕНИЕ)
+  // =======================================================
+  
+  // 🛠 ПРАВКА: Если геозона не определена, называем её "Вне зоны"
+  let activeZone = currentZoneName;
+  if (!activeZone) {
+      if (lat && lon) {
+          activeZone = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+      } else {
+          activeZone = 'Координаты неизвестны';
+      }
+  }
+
+  let batch = testBatches.get(deviceId) || {
+      dbId: null,
+      isMixing: false,
+      currentZone: activeZone, // Инициализируем сразу с активной зоной
+      zoneStartWeight: weight || 0,
+      peakWeight: weight || 0
+  };
+
+  const currentWeight = weight || 0;
+
+  // Пункты 2 и 3: Смена зоны -> фиксируем дельту
+  if (batch.currentZone !== activeZone) {
+      if (batch.currentZone) {
+          let delta = currentWeight - batch.zoneStartWeight;
+          // Сохраняем, только если вес реально вырос больше чем на 30 кг
+          // Это защитит от ложных записей, если вес просто "прыгнул" на кочке
+          if (delta > 30) {
+              batch.isMixing = true;
+              console.log(`\n📦 [СБОР] Трактор набрал +${delta.toFixed(0)} кг в зоне '${batch.currentZone}'`);
+
+              try {
+                  if (!batch.dbId) {
+                      const newBatch = await prisma.batch.create({
+                          data: {
+                              deviceId: deviceId,
+                              startTime: new Date(),
+                              hasViolations: false,
+                              startWeight: batch.zoneStartWeight
+                          }
+                      });
+                      batch.dbId = newBatch.id;
+                  }
+
+                  await prisma.batchIngredient.create({
+                      data: {
+                          batchId: batch.dbId,
+                          ingredientName: batch.currentZone,
+                          actualWeight: delta
+                      }
+                  });
+                  console.log(`💾 Действие "Загрузка: ${batch.currentZone}" записано в БД!`);
+              } catch (dbErr) {
+                  console.error("Ошибка сохранения шага:", dbErr.message);
+              }
+          }
+      }
+      batch.currentZone = activeZone; // Обновляем текущую зону на новую
+      batch.zoneStartWeight = currentWeight;
+  }
+
+  // Обновляем пиковый вес
+  if (currentWeight > batch.peakWeight) {
+    batch.peakWeight = currentWeight;
+}
+
+// 🛡 ЗАЩИТА ОТ "НЕДОВЫГРУЗКИ": 
+if (batch.isUnloading && currentWeight > batch.lastUnloadWeight + 50) {
+  console.log(`⚠️ Трактор начал новый замес с остатком ${batch.lastUnloadWeight} кг! Старый цикл закрыт.`);
+  
+  // Плавно перерождаем замес, не пропуская текущий шаг
+  batch = {
+      dbId: null, 
+      isMixing: false,
+      currentZone: activeZone,
+      zoneStartWeight: batch.lastUnloadWeight, // ⚓ ВАЖНО: Стартуем строго с того веса, на котором закончилась выгрузка!
+      peakWeight: currentWeight,
+      isUnloading: false,
+      lastUnloadWeight: null
+  };
+  // Мы НЕ пишем здесь return! Код идет дальше и сразу обрабатывает рост веса.
+}
+
+// Пункты 4 и 5: Детектим выгрузку
+if (batch.isMixing && batch.peakWeight > 400 && currentWeight < batch.peakWeight - 200) {
+    batch.isUnloading = true; // Ставим флаг, что мы в процессе разгрузки
+    batch.lastUnloadWeight = currentWeight; // Запоминаем текущую точку веса
+
+    if (batch.dbId) {
+        try {
+            // 💾 ДИНАМИЧЕСКОЕ ОБНОВЛЕНИЕ: перезаписываем остаток при каждом падении веса.
+            // Если разгрузка остановится на 150 кг, в базе останется именно 150.
+            await prisma.batch.update({
+                where: { id: batch.dbId },
+                data: {
+                    endTime: new Date(),
+                    endWeight: currentWeight
+                }
+            });
+            console.log(`📉 Разгрузка: записан текущий остаток ${currentWeight} кг.`);
+        } catch (dbErr) {
+            console.error("Ошибка обновления остатка:", dbErr.message);
+        }
+    }
+
+    // Очищаем память полностью, только если кузов пуст (< 50 кг)
+    if (currentWeight < 50) {
+        console.log(`🚀 ЗАМЕС ОКОНЧАТЕЛЬНО ЗАВЕРШЕН (Кузов пуст)!\n`);
+        testBatches.delete(deviceId);
+    } else {
+        // Если еще не пуст, оставляем в памяти. 
+        // Ждем: либо он доразгрузит остатки, либо начнет новую загрузку (сработает защита выше)
+        testBatches.set(deviceId, batch); 
+    }
+} else {
+    testBatches.set(deviceId, batch);
+}
+// =======================================================
 
     res.status(201).json({ status: 'ok', id: telemetry.id, banner })
 
