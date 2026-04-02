@@ -5,6 +5,7 @@ const CLEAR_HISTORY_API = `${API_BASE}/admin/truncate`;
 const TEST_SECRET = "kill_all_telemetry_123";
 const DEFAULT_COORDS = [54.84, 83.09];
 const LATEST_POLL_INTERVAL_MS = 1000;
+const ZONES_POLL_INTERVAL_MS = 10000;
 const OFFLINE_THRESHOLD_MS = 5000;
 
 let map;
@@ -15,6 +16,7 @@ let storageZones = [];
 let zoneCircles = [];
 let hasLiveCoordinates = false;
 let isPlacemarkVisible = false;
+let isFetchingZones = false;
 
 function isAdmin() {
     return Boolean(window.AppAuth?.isAdmin && window.AppAuth.isAdmin());
@@ -368,8 +370,17 @@ async function clearTelemetryHistory() {
 }
 
 async function fetchZones() {
+    if (isFetchingZones) {
+        return;
+    }
+
+    isFetchingZones = true;
+
     try {
-        const response = await fetch(ZONES_API, { headers: getHeaders() });
+        const response = await fetch(ZONES_API, {
+            headers: getHeaders(),
+            cache: "no-store",
+        });
         if (!response.ok) return;
 
         storageZones = await response.json();
@@ -377,7 +388,18 @@ async function fetchZones() {
         renderDashboard(latestTelemetry);
     } catch (error) {
         console.error("Error fetching zones:", error);
+    } finally {
+        isFetchingZones = false;
     }
+}
+
+function handleVisibilityChange() {
+    if (document.visibilityState !== "visible") {
+        return;
+    }
+
+    fetchZones();
+    fetchLatest();
 }
 
 let lastShownZone = null;
@@ -478,6 +500,7 @@ function init() {
 
     renderDashboard(null);
     fetchZones();
+    setInterval(fetchZones, ZONES_POLL_INTERVAL_MS);
     fetchLatest();
     setInterval(fetchLatest, LATEST_POLL_INTERVAL_MS);
 
@@ -488,6 +511,8 @@ function init() {
     if (clearTelemetryButton) {
         clearTelemetryButton.addEventListener("click", clearTelemetryHistory);
     }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 }
 
 ymaps.ready(init);
