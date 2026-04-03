@@ -29,6 +29,7 @@ function buildEmptyLatestResponse() {
 
 // Хранилище последних зон в памяти сервера (deviceId -> lastZoneName)
 const deviceState = new Map();
+const pendingZoneBanners = new Map();
 
 function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000
@@ -39,6 +40,24 @@ function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2)
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
   return R * c
+}
+
+function buildZoneEnterBanner(zoneName) {
+  return {
+    type: 'zone_enter',
+    zoneName,
+    message: `Въезд в зону: ${zoneName}`
+  };
+}
+
+function consumePendingZoneBanner(deviceId) {
+  if (!pendingZoneBanners.has(deviceId)) {
+    return null;
+  }
+
+  const banner = pendingZoneBanners.get(deviceId) || null;
+  pendingZoneBanners.delete(deviceId);
+  return banner;
 }
 
 async function checkZones(lat, lon, deviceId) {
@@ -58,18 +77,17 @@ async function checkZones(lat, lon, deviceId) {
 
   // Логика "Только один раз":
   // Если вошли в новую зону (которой не было в прошлый раз)
-  if (currentZoneName) {
-    banner = {
-      type: 'zone_enter',
-      zoneName: currentZoneName,
-      message: `Въезд в зону: ${currentZoneName}`
-    };
-  } 
+  if (currentZoneName && currentZoneName !== lastZone) {
+    banner = buildZoneEnterBanner(currentZoneName);
+    pendingZoneBanners.set(deviceId, banner);
+  } else if (currentZoneName !== lastZone) {
+    pendingZoneBanners.delete(deviceId);
+  }
   
   // Обновляем состояние (даже если вышли из зоны - запишется null)
   deviceState.set(deviceId, currentZoneName);
   
-  return banner;
+  return { currentZoneName, banner };
 }
 
 function isValidLocation(lat, lon){
@@ -99,6 +117,7 @@ router.post('/', async (req, res) => {
 
     // СНАЧАЛА определяем баннер
     let banner = null;
+    let currentZoneName = deviceState.get(deviceId) || null;
     
     if (lat === 0 && lon === 0) {
       if (gps_quality === 0) {
@@ -109,7 +128,9 @@ router.post('/', async (req, res) => {
       }
     } 
     else {
-      banner = await checkZones(lat, lon, deviceId);
+      const zoneCheckResult = await checkZones(lat, lon, deviceId);
+      banner = zoneCheckResult.banner;
+      currentZoneName = zoneCheckResult.currentZoneName;
     }
 
     // ПОТОМ сохраняем в БД
@@ -131,8 +152,6 @@ router.post('/', async (req, res) => {
         eventsReaderOk: Boolean(events_reader_ok)
       }
     })
-
-    const currentZoneName = deviceState.get(deviceId) || null;
 
     // =======================================================
   // 🚜 ПОШАГОВЫЙ АЛГОРИТМ ЗАМЕСА (ONLINE СОХРАНЕНИЕ)
@@ -284,7 +303,7 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
         banner = { type: 'gps_error', message: 'Координаты не распознаны' };
       }
     } else {
-      banner = await checkZones(data.lat, data.lon, data.deviceId)
+      banner = consumePendingZoneBanner(data.deviceId)
     }
 
     // Возвращаем только необходимые данные для главной страницы
@@ -349,7 +368,7 @@ router.get('/admin/latest', authenticate, requireAdmin, async (req, res) => {
         banner = { type: 'gps_error', message: 'Координаты не распознаны' };
       }
     } else {
-      banner = await checkZones(data.lat, data.lon, data.deviceId)
+      banner = consumePendingZoneBanner(data.deviceId)
     }
 
     res.json({ ...data, banner })

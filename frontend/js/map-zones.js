@@ -1,6 +1,6 @@
 let map
 let marker
-const API_URL = "/api/telemetry/host/current"
+const API_URL = window.AppAuth?.getApiUrl?.("/api/telemetry/host/current") || "/api/telemetry/host/current"
 
 // токен из localStorage
 function getHeaders() {

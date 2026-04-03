@@ -64,11 +64,9 @@ $(document).ready(function() {
     // 2. Функция для загрузки данных с бэкенда
     async function loadBatches() {
         try {
-            const token = localStorage.getItem('token'); 
-            const response = await fetch('/api/batches', {
+            const response = await fetch(window.AppAuth?.getApiUrl?.('/api/batches') || '/api/batches', {
                 method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
+                headers: window.AppAuth?.getAuthHeaders?.({ includeJson: true }) || {
                     'Content-Type': 'application/json'
                 }
             });

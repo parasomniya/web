@@ -2,6 +2,7 @@
     const TOKEN_KEY = "token";
     const ROLE_KEY = "role";
     const USERNAME_KEY = "username";
+    const DEFAULT_API_PORT = "3000";
 
     const LOGIN_PAGE = "login.html";
     const ADMIN_TELEMETRY_PAGE = "telemetry-admin.html";
@@ -50,6 +51,33 @@
         }
 
         return headers;
+    }
+
+    function getApiOrigin() {
+        const { protocol, hostname, port, origin } = window.location;
+
+        if (!hostname) {
+            return `http://localhost:${DEFAULT_API_PORT}`;
+        }
+
+        if (!port || port === DEFAULT_API_PORT) {
+            return origin;
+        }
+
+        return `${protocol}//${hostname}:${DEFAULT_API_PORT}`;
+    }
+
+    function getApiUrl(path) {
+        if (typeof path !== "string" || !path.trim()) {
+            return getApiOrigin();
+        }
+
+        if (/^https?:\/\//i.test(path)) {
+            return path;
+        }
+
+        const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+        return `${getApiOrigin()}${normalizedPath}`;
     }
 
     function decodeBase64Url(value) {
@@ -183,16 +211,87 @@
         );
     }
 
-    function showAlert(message, type) {
+    function ensureAlertStyles() {
+        if (document.getElementById("appPageAlertStyles")) {
+            return;
+        }
+
+        const style = document.createElement("style");
+        style.id = "appPageAlertStyles";
+        style.textContent = `
+            .app-page-alert {
+                opacity: 0;
+                transform: translateY(-8px);
+                transition: opacity 0.22s ease, transform 0.22s ease;
+            }
+
+            .app-page-alert.is-visible {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    function dismissAlerts() {
         const host = resolveAlertHost();
         if (!host) {
             return;
         }
 
-        const alert = document.createElement("div");
-        alert.className = `alert alert-${type || "danger"} shadow-sm`;
-        alert.textContent = message;
-        host.prepend(alert);
+        host.querySelectorAll("[data-page-alert]").forEach((alert) => {
+            alert.remove();
+        });
+    }
+
+    function showAlert(message, type, options) {
+        const host = resolveAlertHost();
+        if (!host) {
+            return;
+        }
+
+        ensureAlertStyles();
+
+        const settings = options || {};
+        const existingAlerts = Array.from(host.querySelectorAll("[data-page-alert]"));
+        const alert = existingAlerts.shift() || document.createElement("div");
+        existingAlerts.forEach((existingAlert) => existingAlert.remove());
+
+        alert.className = `alert alert-${type || "danger"} shadow-sm app-page-alert`;
+        alert.dataset.pageAlert = "true";
+        alert.innerHTML = "";
+
+        if (settings.actionLabel && typeof settings.onAction === "function") {
+            alert.classList.add("d-flex", "justify-content-between", "align-items-center", "flex-wrap");
+
+            const text = document.createElement("div");
+            text.className = "mr-3 flex-grow-1";
+            text.textContent = message;
+
+            const actionButton = document.createElement("button");
+            actionButton.type = "button";
+            actionButton.className = settings.actionClassName || "btn btn-sm btn-outline-success bg-white text-success border-success font-weight-bold mt-2 mt-sm-0";
+            actionButton.textContent = settings.actionLabel;
+            actionButton.addEventListener("click", () => {
+                settings.onAction({ alert, button: actionButton, text });
+            });
+
+            alert.append(text, actionButton);
+        } else {
+            alert.textContent = message;
+        }
+
+        if (!alert.isConnected) {
+            host.prepend(alert);
+        }
+
+        alert.classList.remove("is-visible");
+        void alert.offsetWidth;
+        window.requestAnimationFrame(() => {
+            alert.classList.add("is-visible");
+        });
+
+        return alert;
     }
 
     function getRoleLabel(role) {
@@ -280,7 +379,7 @@
 
     async function logout() {
         try {
-            await fetch("/api/auth/logout", {
+            await fetch(getApiUrl("/api/auth/logout"), {
                 method: "POST",
                 credentials: "same-origin",
             });
@@ -445,12 +544,14 @@
         ROLE_GUEST,
         clearSession,
         getAuthHeaders,
+        getApiUrl,
         getRole,
         getToken,
         getUsername,
         hasWriteAccess,
         isAdmin,
         isAuthenticated,
+        dismissAlerts,
         logout,
         setSession,
         showAlert,
