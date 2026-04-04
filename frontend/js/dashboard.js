@@ -808,6 +808,9 @@ async function fetchZones() {
     } finally {
         isFetchingZones = false;
     }
+
+    fetchZones();
+    fetchLatest();
 }
 
 function handleVisibilityChange() {
