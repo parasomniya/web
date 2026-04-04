@@ -13,7 +13,8 @@
     <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
-    <script src="js/app-auth.js?v=20260331c"></script>
+    <link href="css/custom.css" rel="stylesheet">
+    <script src="js/app-auth.js?v=20260403f"></script>
     <script src="https://api-maps.yandex.ru/2.1/?apikey=3c050799-23a3-4bd9-a14a-b7eaf2e05511&lang=ru_RU"></script>
 
     <style>
@@ -40,6 +41,10 @@
             grid-template-columns: 1fr 360px;
             gap: 20px;
             align-items: start;
+        }
+
+        html[data-can-write="false"] .content-layout {
+            grid-template-columns: 1fr;
         }
 
         .map-card,
@@ -83,12 +88,6 @@
             margin-bottom: 12px;
         }
 
-        .hint-text {
-            font-size: 0.9rem;
-            color: #858796;
-            margin-bottom: 12px;
-        }
-
         .status-box {
             margin-top: 14px;
             padding: 10px 12px;
@@ -113,6 +112,21 @@
 
         .zone-row.selected {
             background-color: #dfe7ff !important;
+        }
+
+        .zones-separator-row {
+            pointer-events: none;
+        }
+
+        .zones-separator-cell {
+            padding: 10px 12px !important;
+            background: #f8f9fc;
+            color: #858796;
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border-top: 2px solid #d1d3e2 !important;
         }
 
         .badge-soft {
@@ -170,7 +184,6 @@
     <div id="wrapper">
 
         <ul class="navbar-nav bg-gradient-primary sidebar sidebar-dark accordion" id="accordionSidebar">
-
             <a class="sidebar-brand d-flex align-items-center justify-content-center" href="index.html">
                 <div class="sidebar-brand-icon">
                     <i class="fas fa-tractor"></i>
@@ -180,7 +193,7 @@
 
             <hr class="sidebar-divider my-0">
 
-            <li class="nav-item">
+            <li class="nav-item nav-item-home">
                 <a class="nav-link" href="index.html">
                     <i class="fas fa-fw fa-home"></i>
                     <span>Главная</span>
@@ -213,20 +226,16 @@
             <div class="text-center d-none d-md-inline">
                 <button class="rounded-circle border-0" id="sidebarToggle"></button>
             </div>
-
         </ul>
 
         <div id="content-wrapper" class="d-flex flex-column">
             <div id="content">
-
                 <nav class="navbar navbar-expand navbar-light bg-white topbar mb-4 static-top shadow">
-
                     <button id="sidebarToggleTop" class="btn btn-link d-md-none rounded-circle mr-3">
                         <i class="fa fa-bars"></i>
                     </button>
 
                     <span class="ml-3 font-weight-bold">Зоны на карте</span>
-
                 </nav>
 
                 <div class="container-fluid">
@@ -240,10 +249,22 @@
                         <div class="content-layout">
                             <div class="map-card">
                                 <div class="card-header-custom">Карта зон</div>
-                                <div id="map"></div>
+                                <div class="dashboard-map-wrap">
+                                    <div class="map-view-switch" role="group" aria-label="Переключение вида карты">
+                                        <button type="button" class="map-view-switch__button active" data-map-type="yandex#map" aria-pressed="true">Схема</button>
+                                        <button type="button" class="map-view-switch__button" data-map-type="yandex#satellite" aria-pressed="false">Спутник</button>
+                                    </div>
+                                    <div class="map-action-controls" role="group" aria-label="Управление картой">
+                                        <button type="button" class="map-action-button" id="mapFullscreenButton" aria-pressed="false" title="Полноэкранный режим">
+                                            <i class="fas fa-expand-arrows-alt" aria-hidden="true"></i>
+                                            <span class="map-action-button__label">Экран</span>
+                                        </button>
+                                    </div>
+                                    <div id="map" class="dashboard-map"></div>
+                                </div>
                             </div>
 
-                            <div class="panel-card">
+                            <div class="panel-card" data-requires-write>
                                 <div class="card-header-custom">Управление</div>
                                 <div class="card-body-custom">
                                     <div class="alert alert-info d-none" data-readonly-banner>
@@ -262,17 +283,17 @@
                                         <form id="zone-form">
                                             <div class="form-group">
                                                 <label for="ingredient">Ингредиент</label>
-                                                <input id="ingredient" class="form-control" type="text" placeholder="Например: Силос" required>
+                                                <input id="ingredient" class="form-control" type="text" required>
                                             </div>
 
                                             <div class="form-group">
                                                 <label for="lat">Lat</label>
-                                                <input id="lat" class="form-control" type="number" step="any" placeholder="55.75" required>
+                                                <input id="lat" class="form-control" type="number" step="any" required>
                                             </div>
 
                                             <div class="form-group">
                                                 <label for="lon">Lon</label>
-                                                <input id="lon" class="form-control" type="number" step="any" placeholder="37.57" required>
+                                                <input id="lon" class="form-control" type="number" step="any" required>
                                             </div>
 
                                             <div class="form-group">
@@ -347,7 +368,8 @@
     <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
-    <script src="js/storage-zones.js?v=20260331c"></script>
+    <script src="js/sidebar-enhancements.js?v=20260403a"></script>
+    <script src="js/storage-zones.js?v=20260403i"></script>
 </body>
 
 </html>

@@ -4,11 +4,26 @@ import { requireReadAccess, requireWriteAccess } from "../../middleware/auth.js"
 
 const router = Router()
 
+function parseActiveFlag(value) {
+  if (value === undefined) return undefined
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'true' || normalized === '1') return true
+    if (normalized === 'false' || normalized === '0') return false
+  }
+  return Boolean(value)
+}
+
 // GET все активные зоны - доступно для чтения всем авторизованным
 router.get('/', requireReadAccess, async (req, res) => {
   try {
     const zones = await prisma.storageZone.findMany({
-      where: { active: true }
+      orderBy: [
+        { active: 'desc' },
+        { id: 'asc' }
+      ]
     })
     res.json(zones)  // ← без map и toUTC7
   } catch (error) {
@@ -22,14 +37,15 @@ router.put('/:id', requireWriteAccess, async (req, res) => {
   try {
     const { id } = req.params;
     // Достаем lat и lon из тела запроса
-    const { name, radius, lat, lon, active } = req.body;
+    const { name, ingredient, radius, lat, lon, active } = req.body;
 
     // Подготавливаем объект с данными для обновления
     const updateData = {};
 
-    if (name !== undefined) updateData.name = name;
-    if (radius !== undefined) updateData.radius = parseInt(radius, 10);
-    if (active !== undefined) updateData.active = Boolean(active);
+    if (name !== undefined) updateData.name = String(name).trim();
+    if (ingredient !== undefined) updateData.ingredient = String(ingredient).trim();
+    if (radius !== undefined) updateData.radius = parseFloat(radius);
+    if (active !== undefined) updateData.active = parseActiveFlag(active);
 
     // Валидация и добавление координат, если фронтенд их прислал
     if (lat !== undefined) {
@@ -46,6 +62,20 @@ router.put('/:id', requireWriteAccess, async (req, res) => {
         return res.status(400).json({ error: 'Неверный формат долготы (lon)' });
       }
       updateData.lon = parsedLon;
+    }
+
+    if (updateData.name !== undefined && updateData.name.length === 0) {
+      return res.status(400).json({ error: 'Название зоны не может быть пустым' });
+    }
+
+    if (updateData.ingredient !== undefined && updateData.ingredient.length === 0) {
+      return res.status(400).json({ error: 'Ингредиент не может быть пустым' });
+    }
+
+    if (updateData.radius !== undefined) {
+      if (!Number.isFinite(updateData.radius) || updateData.radius <= 0) {
+        return res.status(400).json({ error: 'Неверный радиус зоны' });
+      }
     }
 
     // Записываем изменения в базу
@@ -68,9 +98,16 @@ router.put('/:id', requireWriteAccess, async (req, res) => {
 // POST создать зону - только для записи
 router.post('/', requireWriteAccess, async (req, res) => {
   try {
-    const { name, lat, lon, radius, ingredient } = req.body
+    const { name, lat, lon, radius, ingredient, active } = req.body
     const zone = await prisma.storageZone.create({
-      data: { name, lat, lon, radius: radius || 15.0, ingredient }
+      data: {
+        name,
+        lat,
+        lon,
+        radius: radius || 20.0,
+        ingredient,
+        active: active !== undefined ? parseActiveFlag(active) : true
+      }
     })
     res.status(201).json(zone)
   } catch (error) {

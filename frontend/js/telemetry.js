@@ -1,16 +1,21 @@
 const POLL_INTERVAL_MS = 5000;
 const HISTORY_LIMIT = 20;
-const OFFLINE_THRESHOLD_MS = 5000;
+const OFFLINE_THRESHOLD_MS = 30000;
 
 const endpoints = {
     host: {
-        latest: "/api/telemetry/host/admin/latest",
-        history: `/api/telemetry/host/admin/history?limit=${HISTORY_LIMIT}`,
+        latest: window.AppAuth?.getApiUrl?.("/api/telemetry/host/admin/latest") || "/api/telemetry/host/admin/latest",
+        history: window.AppAuth?.getApiUrl?.(`/api/telemetry/host/admin/history?limit=${HISTORY_LIMIT}`) || `/api/telemetry/host/admin/history?limit=${HISTORY_LIMIT}`,
     },
     events: {
-        history: "/api/events?limit=500",
+        history: window.AppAuth?.getApiUrl?.("/api/events?limit=500") || "/api/events?limit=500",
     },
     rtk: null,
+};
+
+const telemetryActivity = {
+    host: { lastChangeAt: 0, snapshotKey: null },
+    rtk: { lastChangeAt: 0, snapshotKey: null },
 };
 
 function getHeaders() {
@@ -30,14 +35,64 @@ function hasTelemetryTimestamp(value) {
     return !Number.isNaN(timestamp);
 }
 
+function getTelemetrySnapshotKey(latest) {
+    if (!latest) {
+        return null;
+    }
+
+    return [
+        latest.id ?? "",
+        latest.deviceId ?? "",
+        latest.timestamp ?? "",
+        latest.lat ?? "",
+        latest.lon ?? "",
+        latest.weight ?? "",
+        latest.rtkQuality ?? "",
+        latest.rtkAge ?? "",
+    ].join("|");
+}
+
+function noteTelemetryActivity(source, latest) {
+    const activity = telemetryActivity[source];
+    if (!activity) {
+        return;
+    }
+
+    const snapshotKey = getTelemetrySnapshotKey(latest);
+    if (!snapshotKey) {
+        activity.snapshotKey = null;
+        activity.lastChangeAt = 0;
+        return;
+    }
+
+    if (snapshotKey !== activity.snapshotKey) {
+        activity.snapshotKey = snapshotKey;
+        activity.lastChangeAt = Date.now();
+    }
+}
+
+function isRecentTelemetryActivity(source) {
+    const activity = telemetryActivity[source];
+    return Boolean(activity?.lastChangeAt) && (Date.now() - activity.lastChangeAt) < OFFLINE_THRESHOLD_MS;
+}
+
 function isPacketOnline(timestamp) {
     if (!hasTelemetryTimestamp(timestamp)) return false;
 
     return (Date.now() - new Date(timestamp).getTime()) < OFFLINE_THRESHOLD_MS;
 }
 
-function getTelemetryState(latest) {
+function getTelemetryState(latest, source = "host") {
     if (!hasTelemetryTimestamp(latest?.timestamp)) {
+        if (isRecentTelemetryActivity(source)) {
+            return {
+                label: "Онлайн",
+                panelLabel: "Поток активен",
+                mode: "ok",
+                online: true,
+            };
+        }
+
         return {
             label: "Нет данных",
             panelLabel: "Нет данных",
@@ -46,7 +101,7 @@ function getTelemetryState(latest) {
         };
     }
 
-    if (isPacketOnline(latest.timestamp)) {
+    if (isPacketOnline(latest.timestamp) || isRecentTelemetryActivity(source)) {
         return {
             label: "Онлайн",
             panelLabel: "Поток активен",
@@ -132,7 +187,7 @@ async function fetchJson(url) {
 }
 
 function renderHostSummary(latest) {
-    const hostState = getTelemetryState(latest);
+    const hostState = getTelemetryState(latest, "host");
 
     setText("hostStatus", hostState.label);
     setText("hostDevice", latest?.deviceId || "--");
@@ -221,7 +276,7 @@ async function loadEvents() {
 }
 
 function renderRtkSummary(latest, missing) {
-    const rtkState = getTelemetryState(latest);
+    const rtkState = getTelemetryState(latest, "rtk");
 
     setText("rtkStatus", missing ? "API не подключён" : rtkState.label);
     setText("rtkDevice", latest?.deviceId || "--");
@@ -269,7 +324,8 @@ async function loadHost() {
         ]);
 
         const hostLatest = latest.missing ? null : latest;
-        const hostState = getTelemetryState(hostLatest);
+        noteTelemetryActivity("host", hostLatest);
+        const hostState = getTelemetryState(hostLatest, "host");
 
         renderHostSummary(hostLatest);
         renderHostTable(Array.isArray(history) ? history : []);
@@ -297,7 +353,8 @@ async function loadRtk() {
 
         const missing = Boolean(latest.missing || history.missing);
         const rtkLatest = missing ? null : latest;
-        const rtkState = getTelemetryState(rtkLatest);
+        noteTelemetryActivity("rtk", rtkLatest);
+        const rtkState = getTelemetryState(rtkLatest, "rtk");
 
         renderRtkSummary(rtkLatest, missing);
         renderRtkTable(Array.isArray(history) ? history : [], missing);

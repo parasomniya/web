@@ -1,4 +1,4 @@
-const API_HOST = "";
+const API_HOST = window.AppAuth?.getApiUrl?.("") || "";
 
 const ZONES_API = API_HOST + "/api/telemetry/zones";
 const TELEMETRY_API = API_HOST + "/api/telemetry/host/current";
@@ -8,6 +8,10 @@ const EDIT_MODE_TITLE = "Редактирование зоны";
 const CREATE_SUBMIT_LABEL = "Добавить зону";
 const EDIT_SUBMIT_LABEL = "Сохранить зону";
 const DEFAULT_ZONE_RADIUS = 20;
+const DEFAULT_STATUS_MESSAGE = "Готово к работе";
+const DEFAULT_MAP_CENTER = [52.428863, 85.706438];
+const DEFAULT_MAP_ZOOM = 15;
+const DEFAULT_MAP_TYPE = "yandex#map";
 
 let map;
 let deviceMarker = null;
@@ -17,6 +21,11 @@ let zoneCircles = [];
 let selectedZoneId = null;
 let lastTelemetry = null;
 let suppressNextMapClick = false;
+let mapTypeButtons = [];
+let idleCursorAccessor = null;
+let dragCursorAccessor = null;
+let mapFullscreenButton = null;
+let mapWrapElement = null;
 
 ymaps.ready(init);
 
@@ -69,18 +78,147 @@ function isCreateMode() {
 
 function init() {
     map = new ymaps.Map("map", {
-        center: [55.75, 37.57],
-        zoom: 12,
+        center: DEFAULT_MAP_CENTER,
+        zoom: DEFAULT_MAP_ZOOM,
+        type: DEFAULT_MAP_TYPE,
+        controls: ["zoomControl"],
+    }, {
+        geoObjectCursor: "arrow",
+        suppressMapOpenBlock: true,
+        yandexMapDisablePoiInteractivity: true,
     });
+
+    initMapTypeSwitch();
+    initMapActionControls();
+    applyIdleMapCursor();
+    map.events.add("actionbegin", applyDragMapCursor);
+    map.events.add("actionend", handleMapActionEnd);
+    map.events.add("actionbreak", handleMapActionEnd);
 
     bindUI();
     bindMapClick();
+    bindOutsideSelectionReset();
     resetZoneEditor();
 
     loadZones();
     loadTelemetry();
 
     setInterval(loadTelemetry, 5000);
+}
+
+function updateMapTypeButtons() {
+    if (!mapTypeButtons.length || !map) {
+        return;
+    }
+
+    const activeType = map.getType();
+
+    mapTypeButtons.forEach((button) => {
+        const isActive = button.dataset.mapType === activeType;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-pressed", String(isActive));
+    });
+}
+
+function setMapType(mapType) {
+    if (!map || !mapType || map.getType() === mapType) {
+        return;
+    }
+
+    map.setType(mapType);
+    updateMapTypeButtons();
+}
+
+function initMapTypeSwitch() {
+    mapTypeButtons = Array.from(document.querySelectorAll(".map-view-switch__button[data-map-type]"));
+
+    mapTypeButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            setMapType(button.dataset.mapType);
+        });
+    });
+
+    updateMapTypeButtons();
+    map.events.add("typechange", updateMapTypeButtons);
+}
+
+function removeCursorAccessor(accessor) {
+    if (accessor) {
+        accessor.remove();
+    }
+
+    return null;
+}
+
+function applyIdleMapCursor() {
+    dragCursorAccessor = removeCursorAccessor(dragCursorAccessor);
+
+    if (!idleCursorAccessor) {
+        idleCursorAccessor = map.cursors.push("arrow");
+    }
+}
+
+function applyDragMapCursor() {
+    idleCursorAccessor = removeCursorAccessor(idleCursorAccessor);
+
+    if (!dragCursorAccessor) {
+        dragCursorAccessor = map.cursors.push("grabbing");
+    }
+}
+
+function syncMapActionButtons() {
+    if (!mapFullscreenButton) {
+        return;
+    }
+
+    const isFullscreen = document.fullscreenElement === mapWrapElement;
+    const icon = mapFullscreenButton.querySelector("i");
+    mapFullscreenButton.classList.toggle("is-active", isFullscreen);
+    mapFullscreenButton.setAttribute("aria-pressed", String(isFullscreen));
+
+    if (icon) {
+        icon.className = isFullscreen ? "fas fa-compress-arrows-alt" : "fas fa-expand-arrows-alt";
+    }
+}
+
+async function toggleMapFullscreen() {
+    if (!mapWrapElement) {
+        return;
+    }
+
+    try {
+        if (document.fullscreenElement === mapWrapElement) {
+            await document.exitFullscreen();
+        } else {
+            await mapWrapElement.requestFullscreen();
+        }
+    } catch (error) {
+        console.error("Error toggling fullscreen:", error);
+    }
+}
+
+function handleFullscreenChange() {
+    syncMapActionButtons();
+
+    window.setTimeout(() => {
+        map?.container.fitToViewport();
+    }, 50);
+}
+
+function handleMapActionEnd() {
+    applyIdleMapCursor();
+}
+
+function initMapActionControls() {
+    mapWrapElement = document.querySelector(".dashboard-map-wrap");
+    mapFullscreenButton = document.getElementById("mapFullscreenButton");
+
+    if (mapFullscreenButton) {
+        mapFullscreenButton.addEventListener("click", toggleMapFullscreen);
+    }
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    syncMapActionButtons();
 }
 
 function bindUI() {
@@ -101,6 +239,30 @@ function bindUI() {
     }
 }
 
+function bindOutsideSelectionReset() {
+    document.addEventListener("click", function (event) {
+        if (!selectedZoneId) {
+            return;
+        }
+
+        const target = event.target;
+        if (!(target instanceof Element)) {
+            return;
+        }
+
+        if (
+            target.closest(".map-card") ||
+            target.closest(".panel-card") ||
+            target.closest(".table-card") ||
+            target.closest(".ymaps-2-1-79-map")
+        ) {
+            return;
+        }
+
+        resetZoneEditor();
+    });
+}
+
 function bindMapClick() {
     map.events.add("click", function (event) {
         if (suppressNextMapClick) {
@@ -112,12 +274,14 @@ function bindMapClick() {
             return;
         }
 
-        if (!isCreateMode()) {
-            resetZoneEditor();
-        }
-
         const coords = event.get("coords");
         setFormCoordinates(coords);
+
+        const selectedZone = getSelectedZone();
+        if (selectedZone) {
+            setStatus(`Координаты зоны "${getZoneLabel(selectedZone)}" обновлены: ${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}`);
+            return;
+        }
 
         setStatus(`Координаты выбраны: ${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}`);
     });
@@ -179,7 +343,7 @@ function drawZones() {
     zoneCircles.forEach((circle) => map.geoObjects.remove(circle));
     zoneCircles = [];
 
-    zones.forEach((zone) => {
+    zones.filter((zone) => Boolean(zone.active)).forEach((zone) => {
         const isSelected = String(zone.id) === String(selectedZoneId);
 
         const circle = new ymaps.Circle(
@@ -228,7 +392,31 @@ function renderTable() {
         return;
     }
 
-    zones.forEach((zone) => {
+    const sortedZones = [...zones].sort((left, right) => {
+        if (Boolean(left.active) === Boolean(right.active)) {
+            return 0;
+        }
+
+        return left.active ? -1 : 1;
+    });
+
+    const hasActiveZones = sortedZones.some((zone) => Boolean(zone.active));
+    const hasInactiveZones = sortedZones.some((zone) => !zone.active);
+    let separatorInserted = false;
+
+    sortedZones.forEach((zone) => {
+        if (!zone.active && hasActiveZones && hasInactiveZones && !separatorInserted) {
+            const separatorRow = document.createElement("tr");
+            separatorRow.className = "zones-separator-row";
+            separatorRow.innerHTML = `
+                <td colspan="5" class="zones-separator-cell">
+                    Неактивные зоны
+                </td>
+            `;
+            table.appendChild(separatorRow);
+            separatorInserted = true;
+        }
+
         const row = document.createElement("tr");
         row.className = "zone-row";
         row.dataset.zoneId = zone.id;
@@ -249,8 +437,10 @@ function renderTable() {
             </td>
         `;
 
-        row.addEventListener("click", function () {
-            selectZone(zone.id, { focusMap: true });
+        row.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            selectZone(zone.id, { focusMap: Boolean(zone.active) });
         });
 
         table.appendChild(row);
@@ -326,8 +516,23 @@ function resetZoneFormFields() {
         zoneForm.reset();
     }
 
+    const ingredientInput = document.getElementById("ingredient");
+    const latInput = document.getElementById("lat");
+    const lonInput = document.getElementById("lon");
     const radiusInput = document.getElementById("radius");
     const activeInput = document.getElementById("active");
+
+    if (ingredientInput) {
+        ingredientInput.value = "";
+    }
+
+    if (latInput) {
+        latInput.value = "";
+    }
+
+    if (lonInput) {
+        lonInput.value = "";
+    }
 
     if (radiusInput) {
         radiusInput.value = String(DEFAULT_ZONE_RADIUS);
@@ -346,6 +551,7 @@ function resetZoneEditor() {
     }
 
     refreshSelectionUI();
+    setStatus(DEFAULT_STATUS_MESSAGE);
 }
 
 function focusZone(zone) {

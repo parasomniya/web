@@ -15,7 +15,7 @@
 
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
     <link href="css/custom.css" rel="stylesheet">
-    <script src="js/app-auth.js?v=20260331c"></script>
+    <script src="js/app-auth.js?v=20260403f"></script>
 
 </head>
 
@@ -34,7 +34,7 @@
 
             <hr class="sidebar-divider my-0">
 
-            <li class="nav-item active">
+            <li class="nav-item nav-item-home active">
                 <a class="nav-link" href="index.html">
                     <i class="fas fa-fw fa-home"></i>
                     <span>Главная</span>
@@ -103,7 +103,31 @@
                         </div>
 
                         <div class="card-body">
-                            <div id="map" style="width:100%; height:400px;"></div>
+                            <div class="dashboard-map-wrap">
+                                <div class="map-view-switch" role="group" aria-label="Переключение вида карты">
+                                    <button type="button" class="map-view-switch__button active" data-map-type="yandex#map" aria-pressed="true">
+                                        Схема
+                                    </button>
+                                    <button type="button" class="map-view-switch__button" data-map-type="yandex#satellite" aria-pressed="false">
+                                        Спутник
+                                    </button>
+                                </div>
+                                <div class="map-action-controls" role="group" aria-label="Управление картой">
+                                    <button type="button" class="map-action-button" id="mapTrackToggleButton" aria-pressed="false" title="Отслеживание метки" disabled>
+                                        <i class="fas fa-crosshairs" aria-hidden="true"></i>
+                                        <span class="map-action-button__label">Следить</span>
+                                    </button>
+                                    <button type="button" class="map-action-button" id="mapCenterOnMarkerButton" title="Вернуться к метке" disabled>
+                                        <i class="fas fa-location-arrow" aria-hidden="true"></i>
+                                        <span class="map-action-button__label">К метке</span>
+                                    </button>
+                                    <button type="button" class="map-action-button" id="mapFullscreenButton" aria-pressed="false" title="Полноэкранный режим">
+                                        <i class="fas fa-expand-arrows-alt" aria-hidden="true"></i>
+                                        <span class="map-action-button__label">Экран</span>
+                                    </button>
+                                </div>
+                                <div id="map" class="dashboard-map"></div>
+                            </div>
                             <div id="zone-entry-banner" class="zone-entry-banner hidden"></div>
                         </div>
                     </div>
@@ -179,10 +203,11 @@
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
 
     <script src="js/sb-admin-2.min.js"></script>
+    <script src="js/sidebar-enhancements.js?v=20260403a"></script>
 
     <script src="https://api-maps.yandex.ru/2.1/?apikey=3c050799-23a3-4bd9-a14a-b7eaf2e05511&lang=ru_RU"></script>
 
-    <script src="js/dashboard.js?v=20260331e"></script>
+    <script src="js/dashboard.js?v=20260403g"></script>
 
 </body>
 
