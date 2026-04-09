@@ -117,3 +117,118 @@ function processRationRows(rawRows) {
 
   return result;
 }
+
+
+/**
+ * Детектор нарушений - сравнивает план и факт
+ * @param {Array} planArr - Массив ингредиентов с плановым весом
+ * @param {Array} factArr - Массив фактически загруженных компонентов
+ * @param {number} threshold - Допустимая погрешность в % (по умолчанию 10)
+ * @returns {Object} { matches: [], violations: [] }
+ */
+function checkViolations(planArr, factArr, threshold = 10) {
+  const result = {
+    matches: [],
+    violations: []
+  };
+
+  // 1. Проверяем на наличие 'Unknown' компонентов
+  const unknownComponents = factArr.filter(item => 
+    item.name === 'Unknown' || item.name === undefined || item.name === null
+  );
+  
+  if (unknownComponents.length > 0) {
+    unknownComponents.forEach(item => {
+      result.violations.push({
+        type: 'unknown_component',
+        message: 'Загружен нераспознанный компонент',
+        component: item.name || 'Unknown',
+        actualWeight: item.actualWeight
+      });
+    });
+  }
+
+  // 2. Создаем карту плановых ингредиентов для быстрого поиска
+  const planMap = new Map();
+  planArr.forEach(item => {
+    planMap.set(item.name, item);
+  });
+
+  // 3. Сопоставляем факт с планом
+  factArr.forEach(factItem => {
+    // Пропускаем Unknown компоненты - они уже обработаны выше
+    if (factItem.name === 'Unknown' || !factItem.name) {
+      return;
+    }
+
+    const planItem = planMap.get(factItem.name);
+
+    if (planItem) {
+      // Компонент найден в плане
+      const plannedWeight = planItem.plannedWeight;
+      const actualWeight = factItem.actualWeight;
+      
+      // Рассчитываем процентное отклонение
+      // Формула: ((факт - план) / план) * 100
+      const deviationPercent = ((actualWeight - plannedWeight) / plannedWeight) * 100;
+      const absDeviation = Math.abs(deviationPercent);
+
+      // Создаем объект сравнения
+      const comparison = {
+        component: factItem.name,
+        plannedWeight,
+        actualWeight,
+        deviationPercent: Math.round(deviationPercent * 100) / 100, // округляем до 2 знаков
+        dryMatterPlan: planItem.dryMatterWeight,
+        dryMatterFact: factItem.dryMatterWeight
+      };
+
+      // Проверяем, превышает ли отклонение порог
+      if (absDeviation > threshold) {
+        // Определяем тип нарушения
+        const violationType = deviationPercent > 0 ? 'overweight' : 'underweight';
+        const message = deviationPercent > 0 
+          ? `Перевес по ${factItem.name} на ${Math.round(absDeviation)}%`
+          : `Недовес по ${factItem.name} на ${Math.round(absDeviation)}%`;
+
+        result.violations.push({
+          type: violationType,
+          message,
+          component: factItem.name,
+          plannedWeight,
+          actualWeight,
+          deviationPercent: comparison.deviationPercent
+        });
+      } else {
+        // Отклонение в пределах нормы
+        result.matches.push(comparison);
+      }
+    } else {
+      // Компонент есть в факте, но нет в плане
+      result.violations.push({
+        type: 'unexpected_component',
+        message: `Загружен компонент вне плана: ${factItem.name}`,
+        component: factItem.name,
+        actualWeight: factItem.actualWeight
+      });
+    }
+  });
+
+  // 4. Проверяем, все ли плановые компоненты были загружены
+  planArr.forEach(planItem => {
+    const factItem = factArr.find(f => f.name === planItem.name);
+    if (!factItem) {
+      // Компонент есть в плане, но нет в факте
+      result.violations.push({
+        type: 'missing_component',
+        message: `Не загружен плановый компонент: ${planItem.name}`,
+        component: planItem.name,
+        plannedWeight: planItem.plannedWeight,
+        actualWeight: 0,
+        deviationPercent: -100
+      });
+    }
+  });
+
+  return result;
+}
