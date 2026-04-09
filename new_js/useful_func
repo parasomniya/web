@@ -117,3 +117,46 @@ function processRationRows(rawRows) {
 
   return result;
 }
+
+
+
+/**
+ * Рассчитывает план замеса рациона на группу коров
+ * @param {Array} ration - Массив ингредиентов с нормами на 1 голову
+ * @param {number} headcount - Количество голов в группе
+ * @returns {Object} Объект с общими и целевыми весами
+ */
+function calculatePlan(ration, headcount) {
+  // 1. Базовая защита от некорректных данных
+  if (!Array.isArray(ration) || typeof headcount !== 'number' || headcount <= 0) {
+    return { totalBatchWeight: 0, totalDryMatterWeight: 0, ingredients: [] };
+  }
+
+  let totalBatchWeight = 0;
+  let totalDryMatterWeight = 0;
+  const ingredients = [];
+
+  // 2. Проходим по каждому ингредиенту и считаем замес
+  for (const item of ration) {
+    const targetWeight = item.plannedWeight * headcount;
+    const targetDryMatter = item.dryMatterWeight * headcount;
+
+    // Суммируем общие показатели
+    totalBatchWeight += targetWeight;
+    totalDryMatterWeight += targetDryMatter;
+
+    // Формируем объект ингредиента для результата
+    ingredients.push({
+      name: item.name,
+      targetWeight: targetWeight,
+      targetDryMatter: targetDryMatter
+    });
+  }
+
+  // 3. Возвращаем итоговый объект
+  return {
+    totalBatchWeight,
+    totalDryMatterWeight,
+    ingredients
+  };
+}
