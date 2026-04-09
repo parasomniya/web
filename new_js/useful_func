@@ -32,7 +32,14 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-
+/**
+ * Проверяет, находится ли погрузчик в какой либо из зон.
+ * @param {number} lat - Широта погрузчика (градусы)
+ * @param {number} lon1 - Долгота погрузчика (градусы)
+ * @param {array} zonelist - Массив с данными всех зон
+ * @returns {string} Название зоны, в которой находится погрузчик
+ * @returns {null} Если погрузчик ни в одной из зон 
+ */
 function findZone(lat, lon, zoneList)
 {
     let distance
@@ -45,4 +52,68 @@ function findZone(lat, lon, zoneList)
         }
     }
     return null
+}
+
+
+/**
+ * Обрабатывает массив строк из Excel с рационами
+ * @param {Array} rawRows - Массив объектов с русскими ключами
+ * @returns {Object} Результат: { success, data, errors }
+ */
+function processRationRows(rawRows) {
+  const result = {
+    success: true,
+    data: [],
+    errors: []
+  };
+
+  rawRows.forEach((row, index) => {
+    const lineNumber = index + 1; // Номер строки для сообщений об ошибках
+
+    // === 1. Очистка: пропускаем полностью пустые строки ===
+    const values = Object.values(row);
+    const isEmptyRow = values.every(val => 
+      val === undefined || val === null || String(val).trim() === ''
+    );
+    if (isEmptyRow) {
+      return; // Пропускаем пустую строку
+    }
+
+    // === 2. Маппинг колонок и очистка данных ===
+    const name = row['Ингредиент'] ? String(row['Ингредиент']).trim() : '';
+    const plannedWeightRaw = row['План'];
+    const dryMatterWeightRaw = row['СВ'];
+
+    // === 3. Валидация: План (plannedWeight) ===
+    const plannedWeight = Number(plannedWeightRaw);
+    if (isNaN(plannedWeight) || plannedWeight <= 0) {
+      result.errors.push(`Строка ${lineNumber}: Вес '${plannedWeightRaw}' не является числом или меньше/равен 0`);
+      result.success = false;
+      return; // Прерываем обработку этой строки, переходим к следующей
+    }
+
+    // === 4. Валидация: СВ (dryMatterWeight) ===
+    const dryMatterWeight = Number(dryMatterWeightRaw);
+    if (isNaN(dryMatterWeight) || dryMatterWeight < 0) {
+      result.errors.push(`Строка ${lineNumber}: Сухое вещество '${dryMatterWeightRaw}' не является числом или меньше 0`);
+      result.success = false;
+      return;
+    }
+
+    // === 5. Логика физики: СВ не может быть больше общего веса ===
+    if (dryMatterWeight > plannedWeight) {
+      result.errors.push(`Строка ${lineNumber}: Сухое вещество (${dryMatterWeight}) не может быть больше планового веса (${plannedWeight})`);
+      result.success = false;
+      return;
+    }
+
+    // === 6. Все проверки пройдены — добавляем валидную строку в результат ===
+    result.data.push({
+      name,
+      plannedWeight,
+      dryMatterWeight
+    });
+  });
+
+  return result;
 }
