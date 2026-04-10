@@ -11,6 +11,7 @@
   import rationsRouter from './modules/rations/rations.routes.js'
   import prisma from './database.js'
   import batchesRoutes from './modules/batches/batches.routes.js'
+  import usersRoutes from './modules/users/users.routes.js';
 
   const __filename = fileURLToPath(import.meta.url)
   const __dirname = path.dirname(__filename)
@@ -66,6 +67,8 @@
 
   // Замесы: доступно всем авторизованным (гость может только смотреть, админ/директор - управлять)
   app.use('/api/batches', authenticate, requireReadAccess, batchesRoutes)
+
+  app.use('/api/users', authenticate, requireAdmin, usersRoutes);
 
   // Static Frontend
   const frontendPath = path.resolve(__dirname, '../../frontend')
