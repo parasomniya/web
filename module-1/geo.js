@@ -1,8 +1,3 @@
-export function detectZone(lat, lon, zonesConfig) {
-  // ...
-}
-
-
 /**
  * Вычисляет расстояние между двумя точками по формуле гаверсинуса.
  * @param {number} lat1 - Широта первой точки (градусы)
@@ -35,7 +30,7 @@ function calculateHaversine(lat1, lon1, lat2, lon2) {
 }
 
 
-function detectZone(lat, lon, zonesConfig) {
+export function detectZone(lat, lon, zonesConfig) {
     let distance
     for (const zone of zonesConfig)
     {
