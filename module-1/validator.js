@@ -1,3 +1,8 @@
+export function isValidLocation(lat, lon) {
+  // ...
+}
+
+
 /**
  * Базовый фильтр от «мусорных» GPS-данных
  * @param {number|null} lat - Широта
