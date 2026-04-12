@@ -1,3 +1,8 @@
+export function detectZone(lat, lon, zonesConfig) {
+  // ...
+}
+
+
 /**
  * Вычисляет расстояние между двумя точками по формуле гаверсинуса.
  * @param {number} lat1 - Широта первой точки (градусы)
