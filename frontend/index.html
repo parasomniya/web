@@ -15,7 +15,8 @@
 
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
     <link href="css/custom.css" rel="stylesheet">
-    <script src="js/app-auth.js?v=20260403f"></script>
+    <script src="js/auth-route-alias.js?v=20260419a"></script>
+    <script src="js/app-auth.js?v=20260419a"></script>
 
 </head>
 
@@ -155,8 +156,8 @@
                                 </div>
 
                                 <div class="col-lg-3 col-md-6 mb-4 mb-md-0">
-                                    <div class="text-xs font-weight-bold text-primary text-uppercase mb-2">Скорость</div>
-                                    <div id="dashboardCurrentSpeed" class="dashboard-status-value">--</div>
+                                    <div class="text-xs font-weight-bold text-primary text-uppercase mb-2">Режим работы</div>
+                                    <div id="dashboardCurrentMode" class="dashboard-status-value">--</div>
                                 </div>
 
                                 <div class="col-lg-3 col-md-6">
@@ -166,6 +167,41 @@
                             </div>
 
                             <hr>
+
+                            <div id="dashboardUnloadProgressCard" class="dashboard-section d-none">
+                                <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-2">
+                                    <div class="text-xs font-weight-bold text-primary text-uppercase mb-2 mb-md-0">Шкала выгрузки</div>
+                                    <div id="dashboardUnloadProgressMeta" class="dashboard-section-meta">--</div>
+                                </div>
+                                <div class="dashboard-progress-track" aria-hidden="true">
+                                    <div id="dashboardUnloadProgressBar" class="dashboard-progress-bar"></div>
+                                </div>
+                            </div>
+
+                            <div id="dashboardActiveBatchCard" class="dashboard-section d-none">
+                                <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-3">
+                                    <div class="text-xs font-weight-bold text-primary text-uppercase mb-2 mb-md-0">План / Факт текущего замеса</div>
+                                    <div id="dashboardActiveBatchMeta" class="dashboard-section-meta">--</div>
+                                </div>
+                                <div class="table-responsive dashboard-mini-table-wrap">
+                                    <table class="table table-sm dashboard-mini-table mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Компонент</th>
+                                                <th>План</th>
+                                                <th>Факт</th>
+                                                <th>Отклонение</th>
+                                                <th>Нарушение</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="dashboardActiveBatchTableBody">
+                                            <tr>
+                                                <td colspan="5" class="dashboard-mini-table-empty">--</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
 
                             <div id="dashboardLastPacketTime" class="font-weight-bold text-gray-800">--</div>
                         </div>
@@ -207,7 +243,7 @@
 
     <script src="https://api-maps.yandex.ru/2.1/?apikey=3c050799-23a3-4bd9-a14a-b7eaf2e05511&lang=ru_RU"></script>
 
-    <script src="js/dashboard.js?v=20260403g"></script>
+    <script src="js/dashboard.js?v=20260419b"></script>
 
 </body>
 

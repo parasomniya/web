@@ -3,7 +3,6 @@ import multer from 'multer';
 import prisma from '../../database.js'; 
 import { requireReadAccess, requireWriteAccess } from '../../middleware/auth.js';
 
-import { rationManager } from '../../core/rationManager.js';
 
 // ВРЕМЕННАЯ ЗАГЛУШКА (Удалишь, когда Илья отдаст файл)
 const rationManager = {

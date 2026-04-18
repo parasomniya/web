@@ -91,6 +91,154 @@ function formatMetric(value, digits = 1) {
     return Number.isNaN(number) ? "--" : number.toFixed(digits);
 }
 
+function parseNumber(value) {
+    if (value === null || value === undefined || value === "") {
+        return null;
+    }
+
+    if (typeof value === "number") {
+        return Number.isFinite(value) ? value : null;
+    }
+
+    const parsed = Number.parseFloat(String(value).replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatSignedPercent(value, digits = 1) {
+    const number = parseNumber(value);
+    if (number === null) return "--";
+
+    const sign = number > 0 ? "+" : "";
+    return `${sign}${number.toFixed(digits)}%`;
+}
+
+function formatSignedMetric(value, unit = "", digits = 1) {
+    const number = parseNumber(value);
+    if (number === null) return "--";
+
+    const sign = number > 0 ? "+" : "";
+    const suffix = unit ? ` ${unit}` : "";
+    return `${sign}${number.toFixed(digits)}${suffix}`;
+}
+
+function asBoolean(value) {
+    if (typeof value === "boolean") {
+        return value;
+    }
+
+    if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "да";
+    }
+
+    return Boolean(value);
+}
+
+function setSectionVisible(id, isVisible) {
+    const element = document.getElementById(id);
+    if (!element) {
+        return;
+    }
+
+    element.classList.toggle("d-none", !isVisible);
+}
+
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function renderUnloadProgress(mode, unloadProgress) {
+    const isVisible = mode === "Выгрузка" && unloadProgress;
+    const bar = document.getElementById("dashboardUnloadProgressBar");
+
+    setSectionVisible("dashboardUnloadProgressCard", Boolean(isVisible));
+
+    if (!bar) {
+        return;
+    }
+
+    if (!isVisible) {
+        bar.style.width = "0%";
+        setText("dashboardUnloadProgressMeta", "--");
+        return;
+    }
+
+    const target = Math.max(parseNumber(unloadProgress?.target_weight) ?? 0, 0);
+    const fact = Math.max(parseNumber(unloadProgress?.unloaded_fact) ?? 0, 0);
+    const progress = target > 0 ? Math.min((fact / target) * 100, 100) : 0;
+
+    bar.style.width = `${progress}%`;
+    setText(
+        "dashboardUnloadProgressMeta",
+        `${formatMetric(fact, 1)} / ${formatMetric(target, 1)} кг (${progress.toFixed(0)}%)`
+    );
+}
+
+function renderActiveBatch(batch) {
+    const tbody = document.getElementById("dashboardActiveBatchTableBody");
+    if (!tbody) {
+        return;
+    }
+
+    const rows = Array.isArray(batch?.ingredients)
+        ? batch.ingredients
+        : (Array.isArray(batch?.actualIngredients) ? batch.actualIngredients : []);
+    const isVisible = Boolean(batch);
+
+    setSectionVisible("dashboardActiveBatchCard", isVisible);
+
+    if (!isVisible) {
+        setText("dashboardActiveBatchMeta", "--");
+        tbody.innerHTML = '<tr><td colspan="5" class="dashboard-mini-table-empty">--</td></tr>';
+        return;
+    }
+
+    const metaParts = [];
+    if (batch?.id != null) {
+        metaParts.push(`Замес #${batch.id}`);
+    }
+    metaParts.push(`Компонентов: ${rows.length}`);
+    setText("dashboardActiveBatchMeta", metaParts.join(" | "));
+
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="dashboard-mini-table-empty">Нет данных по текущему замесу</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = rows.map((row) => {
+        const name = escapeHtml(row?.name ?? row?.ingredientName ?? "--");
+        const planValue = row?.plan ?? row?.plannedWeight;
+        const factValue = row?.fact ?? row?.actualWeight;
+        const plan = formatMetric(planValue, 1);
+        const fact = formatMetric(factValue, 1);
+        const deviationPercentValue = row?.deviation_percent ?? row?.deviationPercent;
+        const deviationValue = row?.deviation;
+        const deviation = deviationPercentValue != null
+            ? formatSignedPercent(deviationPercentValue, 1)
+            : formatSignedMetric(deviationValue, "кг", 1);
+        const isViolation = asBoolean(row?.is_violation ?? row?.isViolation);
+
+        return `
+            <tr>
+                <td>${name}</td>
+                <td>${plan}</td>
+                <td>${fact}</td>
+                <td>${deviation}</td>
+                <td>
+                    <span class="dashboard-bool-badge ${isViolation ? "is-yes" : "is-no"}">
+                        ${isViolation ? "Да" : "Нет"}
+                    </span>
+                </td>
+            </tr>
+        `;
+    }).join("");
+}
+
 function getTelemetrySnapshotKey(data) {
     if (isEmptyTelemetry(data)) {
         return null;
@@ -432,9 +580,11 @@ function renderDashboard(data) {
         resetTelemetryActivity();
         setVehicleStatus(false);
         setText("dashboardCurrentZone", "--");
-        setText("dashboardCurrentSpeed", "--");
+        setText("dashboardCurrentMode", data?.mode || "Ожидание");
         setText("dashboardCurrentWeight", "--");
         setText("dashboardLastPacketTime", "--");
+        renderUnloadProgress(data?.mode, data?.unload_progress);
+        renderActiveBatch(data?.active_batch);
         hidePlacemark();
         hasLiveCoordinates = false;
         syncMapActionButtons();
@@ -451,9 +601,11 @@ function renderDashboard(data) {
 
     setVehicleStatus(isOnline);
     setText("dashboardCurrentZone", zoneName);
-    setText("dashboardCurrentSpeed", data.speed != null ? `${formatMetric(data.speed, 1)} км/ч` : "--");
+    setText("dashboardCurrentMode", data?.mode || "Ожидание");
     setText("dashboardCurrentWeight", data.weight != null ? `${formatMetric(data.weight, 1)} кг` : "--");
     setText("dashboardLastPacketTime", formatDateTime(data.timestamp));
+    renderUnloadProgress(data?.mode, data?.unload_progress);
+    renderActiveBatch(data?.active_batch);
 
     updateMapPosition(data, isOnline);
 }

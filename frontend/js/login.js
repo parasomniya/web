@@ -3,6 +3,20 @@ const loginButton = document.getElementById("loginBtn");
 const passwordInput = document.getElementById("password");
 const togglePasswordButton = document.getElementById("togglePasswordBtn");
 
+function consumeResetSuccessMessage() {
+    const url = new URL(window.location.href);
+
+    if (url.searchParams.get("reset") !== "success") {
+        return;
+    }
+
+    window.AppAuth?.showAlert("Пароль успешно изменен. Теперь можно войти.", "success");
+    url.searchParams.delete("reset");
+    window.history.replaceState({}, document.title, url.toString());
+}
+
+consumeResetSuccessMessage();
+
 async function handleLogin(event) {
     event.preventDefault();
 
