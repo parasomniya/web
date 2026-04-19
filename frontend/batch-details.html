@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <title>Детали замеса</title>
+
+    <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
+
+    <link href="css/sb-admin-2.min.css" rel="stylesheet">
+    <link href="css/custom.css" rel="stylesheet">
+    <script src="js/app-auth.js?v=20260419a"></script>
+
+</head>
+
+<body id="page-top">
+
+    <div id="wrapper">
+
+        <ul class="navbar-nav bg-gradient-primary sidebar sidebar-dark accordion" id="accordionSidebar">
+
+            <a class="sidebar-brand d-flex align-items-center justify-content-center" href="index.html">
+                <div class="sidebar-brand-icon">
+                    <i class="fas fa-tractor"></i>
+                </div>
+                <div class="sidebar-brand-text mx-3">Кормление КРС</div>
+            </a>
+
+            <hr class="sidebar-divider my-0">
+
+            <li class="nav-item nav-item-home">
+                <a class="nav-link" href="index.html">
+                    <i class="fas fa-fw fa-home"></i>
+                    <span>Главная</span>
+                </a>
+            </li>
+
+            <li class="nav-item active">
+                <a class="nav-link" href="tables.html">
+                    <i class="fas fa-fw fa-table"></i>
+                    <span>Замесы</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="map-zones.html">
+                    <i class="fas fa-fw fa-map"></i>
+                    <span>Зоны хранения</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="telemetry-admin.html">
+                    <i class="fas fa-fw fa-broadcast-tower"></i>
+                    <span>Телеметрия</span>
+                </a>
+            </li>
+
+            <hr class="sidebar-divider d-none d-md-block">
+
+            <div class="text-center d-none d-md-inline">
+                <button class="rounded-circle border-0" id="sidebarToggle"></button>
+            </div>
+
+        </ul>
+
+        <div id="content-wrapper" class="d-flex flex-column">
+
+            <div id="content">
+
+                <nav class="navbar navbar-expand navbar-light bg-white topbar mb-4 static-top shadow">
+
+                    <button id="sidebarToggleTop" class="btn btn-link d-md-none rounded-circle mr-3">
+                        <i class="fa fa-bars"></i>
+                    </button>
+
+                    <span class="ml-3 font-weight-bold">Детальный просмотр замеса</span>
+
+                </nav>
+
+                <div class="container-fluid">
+                    <div data-page-alerts></div>
+
+                    <div class="d-sm-flex align-items-center justify-content-between mb-4">
+                        <h1 id="batchDetailsPageTitle" class="h3 mb-0 text-gray-800">Детали замеса</h1>
+                        <a id="batchDetailsBackLink" class="btn btn-outline-primary btn-sm mt-3 mt-sm-0" href="tables.html">
+                            <i class="fas fa-arrow-left mr-1"></i>
+                            К списку замесов
+                        </a>
+                    </div>
+
+                    <div class="card shadow mb-4">
+                        <div class="card-header py-3">
+                            <h6 class="m-0 font-weight-bold text-primary">Сводка</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-xl-3 col-md-6 mb-4 mb-xl-0">
+                                    <div class="batch-detail-stat">
+                                        <div class="batch-detail-stat__label">Замес</div>
+                                        <div id="batchDetailsTitle" class="batch-detail-stat__value">--</div>
+                                    </div>
+                                </div>
+                                <div class="col-xl-3 col-md-6 mb-4 mb-xl-0">
+                                    <div class="batch-detail-stat">
+                                        <div class="batch-detail-stat__label">План</div>
+                                        <div id="batchDetailsRationName" class="batch-detail-stat__value">--</div>
+                                    </div>
+                                </div>
+                                <div class="col-xl-3 col-md-6 mb-4 mb-md-0">
+                                    <div class="batch-detail-stat">
+                                        <div class="batch-detail-stat__label">Начало</div>
+                                        <div id="batchDetailsStartTime" class="batch-detail-stat__value">--</div>
+                                    </div>
+                                </div>
+                                <div class="col-xl-3 col-md-6">
+                                    <div class="batch-detail-stat">
+                                        <div class="batch-detail-stat__label">Завершение</div>
+                                        <div id="batchDetailsEndTime" class="batch-detail-stat__value">--</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-xl-8">
+                            <div class="card shadow mb-4">
+                                <div class="card-header py-3">
+                                    <h6 class="m-0 font-weight-bold text-primary">График веса от времени</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="batch-detail-chart-wrap">
+                                        <canvas id="batchTelemetryChart" aria-label="График веса замеса" role="img"></canvas>
+                                        <div id="batchTelemetryEmpty" class="batch-detail-empty d-none">Нет телеметрии для этого замеса</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-xl-4">
+                            <div class="card shadow mb-4">
+                                <div class="card-header py-3">
+                                    <h6 class="m-0 font-weight-bold text-primary">Выгрузка</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="batch-unloading-card">
+                                        <div class="batch-unloading-card__icon">
+                                            <i class="fas fa-truck-loading"></i>
+                                        </div>
+                                        <div class="batch-unloading-card__content">
+                                            <div class="batch-unloading-card__label">Коровник</div>
+                                            <div id="batchDetailsBarnName" class="batch-unloading-card__value">--</div>
+                                            <div class="batch-unloading-card__label mt-3">Остаток после выгрузки</div>
+                                            <div id="batchDetailsRemainingWeight" class="batch-unloading-card__value">--</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow mb-4">
+                        <div class="card-header py-3">
+                            <h6 class="m-0 font-weight-bold text-primary">Загруженные ингредиенты</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-bordered mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Время</th>
+                                            <th>Компонент</th>
+                                            <th>Факт</th>
+                                            <th>Нарушение</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="batchIngredientsTableBody">
+                                        <tr>
+                                            <td colspan="4" class="batch-detail-empty">Загрузка...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow mb-4">
+                        <div class="card-header py-3">
+                            <h6 class="m-0 font-weight-bold text-primary">План vs Факт</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row mb-4">
+                                <div class="col-md-4 mb-3 mb-md-0">
+                                    <div class="batch-detail-stat batch-detail-stat--accent">
+                                        <div class="batch-detail-stat__label">Сумма плана</div>
+                                        <div id="batchPlanTotal" class="batch-detail-stat__value">--</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 mb-3 mb-md-0">
+                                    <div class="batch-detail-stat batch-detail-stat--accent">
+                                        <div class="batch-detail-stat__label">Сумма факта</div>
+                                        <div id="batchFactTotal" class="batch-detail-stat__value">--</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="batch-detail-stat batch-detail-stat--accent">
+                                        <div class="batch-detail-stat__label">Суммарное отклонение</div>
+                                        <div id="batchDeviationTotal" class="batch-detail-stat__value">--</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive dashboard-mini-table-wrap">
+                                <table class="table table-sm dashboard-mini-table mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Компонент</th>
+                                            <th>План</th>
+                                            <th>Факт</th>
+                                            <th>Отклонение</th>
+                                            <th>Нарушение</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="batchPlanFactTableBody">
+                                        <tr>
+                                            <td colspan="5" class="dashboard-mini-table-empty">Загрузка...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <footer class="sticky-footer bg-white">
+
+                <div class="container my-auto">
+                    <div class="copyright text-center my-auto">
+                        <span>© Система контроля рациона</span>
+                    </div>
+                </div>
+
+            </footer>
+
+        </div>
+
+    </div>
+
+    <a class="scroll-to-top rounded" href="#page-top">
+        <i class="fas fa-angle-up"></i>
+    </a>
+
+    <script src="vendor/jquery/jquery.min.js"></script>
+    <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
+    <script src="js/sb-admin-2.min.js"></script>
+    <script src="js/sidebar-enhancements.js?v=20260403a"></script>
+    <script src="vendor/chart.js/Chart.min.js"></script>
+    <script src="js/batch-details.js?v=20260419a"></script>
+
+</body>
+
+</html>
