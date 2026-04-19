@@ -1,7 +1,3 @@
-export function isValidLocation(lat, lon) {
-  // ...
-}
-
 
 /**
  * Базовый фильтр от «мусорных» GPS-данных
@@ -9,7 +5,7 @@ export function isValidLocation(lat, lon) {
  * @param {number|null} lon - Долгота
  * @returns {boolean} true, если координаты валидны
  */
-function isValidLocation(lat, lon) {
+export function isValidLocation(lat, lon) {
   // 1. Проверяем, что значения существуют и являются числами
   if (lat === null || lat === undefined || typeof lat !== 'number') {
     return false;
