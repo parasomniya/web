@@ -8,6 +8,21 @@ import { processRationRows } from '../../../../module-2/rationManager.js';
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
+function parseId(value) {
+  const id = parseInt(value, 10);
+  return Number.isInteger(id) ? id : null;
+}
+
+function parseStrictBoolean(value) {
+  if (typeof value === 'boolean') return { ok: true, value };
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') return { ok: true, value: true };
+    if (normalized === 'false') return { ok: true, value: false };
+  }
+  return { ok: false, value: null };
+}
+
 function parseExcel(fileBuffer) {
   try {
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
@@ -137,15 +152,24 @@ router.get('/', requireReadAccess, async (req, res) => {
 // ============================================================================
 router.patch('/:id/toggle', requireWriteAccess, async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseId(req.params.id);
     const { isActive } = req.body; // Фронт передает { "isActive": true/false }
+    const parsedIsActive = parseStrictBoolean(isActive);
+
+    if (!id) {
+      return res.status(400).json({ error: 'Некорректный ID рациона' });
+    }
+
+    if (!parsedIsActive.ok) {
+      return res.status(400).json({ error: 'isActive должен быть boolean true/false' });
+    }
 
     const updated = await prisma.ration.update({
-      where: { id: parseInt(id, 10) },
-      data: { isActive: Boolean(isActive) }
+      where: { id },
+      data: { isActive: parsedIsActive.value }
     });
 
-    res.json({ status: 'ok', message: isActive ? 'Рацион активирован' : 'Рацион деактивирован', ration: updated });
+    res.json({ status: 'ok', message: parsedIsActive.value ? 'Рацион активирован' : 'Рацион деактивирован', ration: updated });
   } catch (error) {
     if (error.code === 'P2025') return res.status(404).json({ error: 'Рацион не найден' });
     res.status(500).json({ error: 'Ошибка при изменении статуса рациона' });
@@ -157,14 +181,51 @@ router.patch('/:id/toggle', requireWriteAccess, async (req, res) => {
 // ============================================================================
 router.delete('/:id', requireWriteAccess, async (req, res) => {
   try {
-    const { id } = req.params;
-    await prisma.ration.delete({
-      where: { id: parseInt(id, 10) }
+    const id = parseId(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({ error: 'Некорректный ID рациона' });
+    }
+
+    const ration = await prisma.ration.findUnique({ where: { id } });
+    if (!ration) {
+      return res.status(404).json({ error: 'Рацион не найден' });
+    }
+
+    const [linkedGroups, linkedBatches] = await Promise.all([
+      prisma.livestockGroup.count({ where: { rationId: id } }),
+      prisma.batch.count({ where: { rationId: id } })
+    ]);
+
+    if (linkedBatches > 0) {
+      return res.status(409).json({
+        error: 'Рацион нельзя удалить: он уже используется в истории замесов',
+        details: {
+          linkedGroups,
+          linkedBatches,
+          hint: 'Сначала назначьте другой рацион в замесах или оставьте рацион для истории'
+        }
+      });
+    }
+
+    await prisma.$transaction([
+      prisma.livestockGroup.updateMany({
+        where: { rationId: id },
+        data: { rationId: null }
+      }),
+      prisma.ration.delete({ where: { id } })
+    ]);
+
+    res.json({
+      status: 'ok',
+      message: linkedGroups > 0
+        ? 'Рацион удален, привязки к группам сняты'
+        : 'Рацион успешно удален'
     });
-    res.json({ status: 'ok', message: 'Рацион успешно удален' });
   } catch (error) {
     if (error.code === 'P2025') return res.status(404).json({ error: 'Рацион не найден' });
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('[Ошибка DELETE /rations/:id]:', error);
+    res.status(500).json({ error: 'Не удалось удалить рацион' });
   }
 });
 

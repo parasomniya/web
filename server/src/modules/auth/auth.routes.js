@@ -15,16 +15,31 @@ function getFrontendUrl() {
   return (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')
 }
 
+function parseSmtpPort() {
+  const port = Number(process.env.SMTP_PORT || 465)
+  return Number.isInteger(port) && port > 0 ? port : 465
+}
+
+function parseSmtpSecure(port) {
+  if (process.env.SMTP_SECURE !== undefined) {
+    return String(process.env.SMTP_SECURE).trim().toLowerCase() === 'true'
+  }
+  return port === 465
+}
+
 // Настройка почты
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: process.env.SMTP_PORT || 465,
-  secure: true,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-})
+function createTransporter() {
+  const port = parseSmtpPort()
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port,
+    secure: parseSmtpSecure(port),
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  })
+}
 
 
 // ============== Авторизация ==============
@@ -99,6 +114,7 @@ router.post('/forgot-password', async (req, res) => {
     const resetLink = `${frontendUrl}/reset-password?token=${token}&id=${user.id}`
 
     // Отправляем реальное письмо на привязанный email
+    const transporter = createTransporter()
     await transporter.sendMail({
       from: process.env.SMTP_USER,
       to: user.email,

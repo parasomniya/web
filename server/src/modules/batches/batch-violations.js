@@ -1,14 +1,20 @@
-import { calculatePlan, checkViolations } from '../../../../module-2/rationManager.js';
+import { calculatePlan, checkViolations, normalizeIngredientName } from '../../../../module-2/rationManager.js';
+
+function round1(value) {
+    return Math.round(Number(value || 0) * 10) / 10;
+}
 
 export function aggregateFacts(ingredients) {
     const facts = new Map();
 
     for (const ingredient of ingredients) {
-        const current = facts.get(ingredient.ingredientName) || 0;
-        facts.set(ingredient.ingredientName, current + ingredient.actualWeight);
+        const key = normalizeIngredientName(ingredient.ingredientName);
+        const current = facts.get(key) || { name: String(ingredient.ingredientName || 'Unknown'), actualWeight: 0 };
+        current.actualWeight += Number(ingredient.actualWeight || 0);
+        facts.set(key, current);
     }
 
-    return Array.from(facts.entries()).map(([name, actualWeight]) => ({ name, actualWeight }));
+    return Array.from(facts.values());
 }
 
 export function getBatchPlan(batch) {
@@ -22,25 +28,30 @@ export function getBatchPlan(batch) {
 export function buildIngredientSummary(batch, threshold = 10) {
     const plan = getBatchPlan(batch);
     const facts = aggregateFacts(batch?.actualIngredients || []);
-    const factMap = new Map(facts.map((item) => [item.name, item.actualWeight]));
-    const planMap = new Map(plan.ingredients.map((item) => [item.name, item.targetWeight]));
-    const persistedViolationMap = new Map((batch?.actualIngredients || []).map((item) => [item.ingredientName, item.isViolation]));
+    const factMap = new Map(facts.map((item) => [normalizeIngredientName(item.name), item.actualWeight]));
+    const planMap = new Map(plan.ingredients.map((item) => [normalizeIngredientName(item.name), item.targetWeight]));
+    const nameMap = new Map([
+        ...facts.map((item) => [normalizeIngredientName(item.name), item.name]),
+        ...plan.ingredients.map((item) => [normalizeIngredientName(item.name), item.name])
+    ]);
+    const persistedViolationMap = new Map((batch?.actualIngredients || []).map((item) => [normalizeIngredientName(item.ingredientName), item.isViolation]));
     const names = new Set([...planMap.keys(), ...factMap.keys()]);
 
-    return Array.from(names).map((name) => {
-        const planWeight = planMap.get(name) || 0;
-        const factWeight = factMap.get(name) || 0;
+    return Array.from(names).map((key) => {
+        const name = nameMap.get(key) || key || 'Unknown';
+        const planWeight = planMap.get(key) || 0;
+        const factWeight = factMap.get(key) || 0;
         const deviationPercent = planWeight > 0
             ? Math.round(((factWeight - planWeight) / planWeight) * 1000) / 10
             : (factWeight > 0 ? 100 : 0);
         const isViolation = planWeight > 0
             ? Math.abs(deviationPercent) > threshold
-            : Boolean(persistedViolationMap.get(name) || name === 'Unknown');
+            : Boolean(persistedViolationMap.get(key) || key === 'unknown');
 
         return {
             name,
-            plan: planWeight,
-            fact: factWeight,
+            plan: round1(planWeight),
+            fact: round1(factWeight),
             deviation_percent: deviationPercent,
             is_violation: isViolation
         };
@@ -57,8 +68,8 @@ export function buildUnloadProgress(batch, currentWeight, machineState = {}) {
     const unloadedFact = Math.max(0, peakWeight - Number(currentWeight || 0));
 
     return {
-        target_weight: Math.round(targetWeight * 10) / 10,
-        unloaded_fact: Math.round(unloadedFact * 10) / 10
+        target_weight: round1(targetWeight),
+        unloaded_fact: round1(unloadedFact)
     };
 }
 
@@ -94,15 +105,15 @@ export async function recalculateBatchViolations(prisma, batchId, threshold = 10
     const plan = getBatchPlan(batch);
     const facts = aggregateFacts(batch.actualIngredients);
     const check = checkViolations(plan.ingredients, facts, threshold);
-    const violationNames = new Set(check.violations.map((item) => item.ingredient));
-    const planByName = new Map(plan.ingredients.map((item) => [item.name, item.targetWeight]));
+    const violationNames = new Set(check.violations.map((item) => normalizeIngredientName(item.ingredient)));
+    const planByName = new Map(plan.ingredients.map((item) => [normalizeIngredientName(item.name), item.targetWeight]));
 
     await prisma.$transaction([
         ...batch.actualIngredients.map((ingredient) => prisma.batchIngredient.update({
             where: { id: ingredient.id },
             data: {
-                plannedWeight: planByName.get(ingredient.ingredientName) ?? 0,
-                isViolation: violationNames.has(ingredient.ingredientName)
+                plannedWeight: planByName.get(normalizeIngredientName(ingredient.ingredientName)) ?? 0,
+                isViolation: violationNames.has(normalizeIngredientName(ingredient.ingredientName))
             }
         })),
         prisma.batch.update({
