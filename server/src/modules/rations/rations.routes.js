@@ -36,11 +36,12 @@ function parseExcel(fileBuffer) {
 router.post('/upload', requireWriteAccess, upload.single('file'), async (req, res) => {
   try {
     const rationName = req.body.name?.trim();
-    // Связь с группами: фронтенд должен передать ID группы, для которой этот рацион
-    const groupId = req.body.groupId ? parseInt(req.body.groupId, 10) : null; 
     
     if (!rationName) return res.status(400).json({ error: 'Необходимо указать название рациона' });
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+    if (req.body.groupId !== undefined) {
+      return res.status(400).json({ error: 'Используйте единый формат groups: JSON-массив ID групп' });
+    }
 
     // ЗАДАЧА: Уникальность названий для рационов
     const existing = await prisma.ration.findFirst({ where: { name: rationName } });
@@ -56,6 +57,33 @@ router.post('/upload', requireWriteAccess, upload.single('file'), async (req, re
       return res.status(400).json({ error: `Ошибка в Excel файле: ${parsedResult.error}` });
     }
 
+    let selectedGroupIds = [];
+    if (req.body.groups) {
+        try {
+            const groupIds = JSON.parse(req.body.groups);
+            if (!Array.isArray(groupIds)) {
+                return res.status(400).json({ error: 'groups должен быть JSON-массивом ID групп' });
+            }
+            selectedGroupIds = groupIds.map(id => parseInt(id, 10));
+        } catch (e) {
+            return res.status(400).json({ error: 'groups должен быть корректным JSON-массивом ID групп' });
+        }
+
+        if (selectedGroupIds.some(id => !Number.isInteger(id))) {
+            return res.status(400).json({ error: 'groups должен содержать только числовые ID групп' });
+        }
+
+        if (selectedGroupIds.length > 0) {
+            const existingGroups = await prisma.livestockGroup.findMany({
+                where: { id: { in: selectedGroupIds } },
+                select: { id: true }
+            });
+            if (existingGroups.length !== selectedGroupIds.length) {
+                return res.status(404).json({ error: 'Одна или несколько групп не найдены' });
+            }
+        }
+    }
+
     // Сохраняем в базу
     // Сохраняем рацион и его ингредиенты
     const newRation = await prisma.ration.create({
@@ -69,21 +97,12 @@ router.post('/upload', requireWriteAccess, upload.single('file'), async (req, re
       include: { ingredients: true }
     });
 
-    // СВЯЗЬ С ГРУППАМИ: Если фронт прислал массив ID групп, привязываем их к рациону
-    // Например, Соня передала в body: groups = "[1, 2]" (ID коровников)
-    if (req.body.groups) {
-        try {
-            const groupIds = JSON.parse(req.body.groups); // парсим массив из строки FormData
-            if (Array.isArray(groupIds) && groupIds.length > 0) {
-                // Обновляем все выбранные группы, прописывая им ID нового рациона
-                await prisma.livestockGroup.updateMany({
-                    where: { id: { in: groupIds } },
-                    data: { rationId: newRation.id }
-                });
-            }
-        } catch (e) {
-            console.warn('[Рационы] Не удалось распарсить группы:', req.body.groups);
-        }
+    // СВЯЗЬ С ГРУППАМИ: единый формат groups = "[1,2]"
+    if (selectedGroupIds.length > 0) {
+        await prisma.livestockGroup.updateMany({
+            where: { id: { in: selectedGroupIds } },
+            data: { rationId: newRation.id }
+        });
     }
 
     console.log(`[Рационы] Загружен рацион "${rationName}"`);
@@ -91,6 +110,9 @@ router.post('/upload', requireWriteAccess, upload.single('file'), async (req, re
 
   } catch (error) {
     console.error('[Ошибка POST /upload]:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'Рацион с таким названием уже существует' });
+    }
     res.status(500).json({ error: 'Внутренняя ошибка сервера при сохранении рациона' });
   }
 });
@@ -125,6 +147,7 @@ router.patch('/:id/toggle', requireWriteAccess, async (req, res) => {
 
     res.json({ status: 'ok', message: isActive ? 'Рацион активирован' : 'Рацион деактивирован', ration: updated });
   } catch (error) {
+    if (error.code === 'P2025') return res.status(404).json({ error: 'Рацион не найден' });
     res.status(500).json({ error: 'Ошибка при изменении статуса рациона' });
   }
 });
@@ -140,6 +163,7 @@ router.delete('/:id', requireWriteAccess, async (req, res) => {
     });
     res.json({ status: 'ok', message: 'Рацион успешно удален' });
   } catch (error) {
+    if (error.code === 'P2025') return res.status(404).json({ error: 'Рацион не найден' });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

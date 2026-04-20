@@ -2,7 +2,7 @@ import { Router } from 'express'
 import prisma from "../../database.js"
 import { authenticate, requireAdmin, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js"
 import telemetryProcessor from '../../../../module-3/telemetryProcessor.js'
-import { recalculateBatchViolations } from '../batches/batch-violations.js'
+import { buildIngredientSummary, buildUnloadProgress, recalculateBatchViolations } from '../batches/batch-violations.js'
 
 const router = Router()
 
@@ -42,7 +42,10 @@ function buildEmptyLatestResponse() {
     id: null, deviceId: null, timestamp: null, lat: null, lon: null,
     weight: null, weightValid: false, gpsValid: false, gpsSatellites: 0,
     gpsQuality: 0, wifiClients: null, cpuTempC: null, lteRssiDbm: null,
-    lteAccessTech: null, eventsReaderOk: false, banner: null
+    lteAccessTech: null, eventsReaderOk: false, banner: null,
+    mode: 'Ожидание',
+    unload_progress: null,
+    active_batch: null
   }
 }
 
@@ -116,6 +119,7 @@ router.post('/', async (req, res) => {
                 actualWeight: action.actualWeight
               }
             });
+            await recalculateBatchViolations(prisma, activeBatch.id);
             console.log(`Добавлен ингредиент: ${action.ingredientName} (${action.actualWeight} кг)`);
             break;
 
@@ -125,6 +129,7 @@ router.post('/', async (req, res) => {
                 where: { id: activeBatch.id },
                 data: { endWeight: action.endWeight } // Просто обновляем остаток
               });
+              await recalculateBatchViolations(prisma, activeBatch.id);
             }
             break;
 
@@ -186,10 +191,18 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
     
     if (!data) return res.json(buildEmptyLatestResponse());
 
-    // 1. Получаем состояние из ядра Ильи
-    // 1. Получаем состояние из ядра Ильи
     const machineState = telemetryProcessor.getState(data.deviceId);
-    
+
+    const activeBatch = await prisma.batch.findFirst({
+      where: { deviceId: data.deviceId, endTime: null },
+      include: {
+        group: true,
+        ration: { include: { ingredients: true } },
+        actualIngredients: true
+      },
+      orderBy: { startTime: 'desc' }
+    });
+
     let mode = 'Ожидание';
     let unload_progress = null;
     let active_banner = null;
@@ -205,11 +218,7 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
 
       if (machineState.isUnloading) {
         mode = 'Выгрузка';
-        // Идеальная шкала: Илья отдает план на текущий коровник и сколько уже высыпали
-        unload_progress = { 
-          target_weight: machineState.barnTargetWeight || 0, // План для этого коровника
-          unloaded_fact: machineState.unloadedInBarn || 0    // Факт выгрузки
-        };
+        unload_progress = buildUnloadProgress(activeBatch, data.weight, machineState);
       } else if (machineState.isMixing) {
         mode = 'Загрузка';
       }
@@ -224,24 +233,13 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
       }
     }
 
-    // 3. Данные по замесу для таблицы (План/Факт)
-    const activeBatch = await prisma.batch.findFirst({
-      where: { deviceId: data.deviceId, endTime: null },
-      include: { actualIngredients: true },
-      orderBy: { startTime: 'desc' }
-    });
-
     let active_batch_data = null;
     if (activeBatch) {
       active_batch_data = {
         id: activeBatch.id,
-        ingredients: activeBatch.actualIngredients.map(ing => ({
-          name: ing.ingredientName,
-          plan: ing.plannedWeight || 0, 
-          fact: ing.actualWeight,
-          deviation_percent: ing.plannedWeight ? Math.round(((ing.actualWeight - ing.plannedWeight) / ing.plannedWeight) * 1000) / 10 : 0,
-          is_violation: ing.isViolation
-        }))
+        rationId: activeBatch.rationId,
+        groupId: activeBatch.groupId,
+        ingredients: buildIngredientSummary(activeBatch)
       };
     }
 

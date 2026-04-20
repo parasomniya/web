@@ -3,9 +3,9 @@
  * @param {Array} rawExelData - Массив объектов с русскими ключами
  * @returns {Object} Результат: { success, data, errors }
  */
-const NAME_COLUMNS = ['Ингредиент', 'Название', 'Компонент', 'Корм', 'ingredient', 'name'];
-const PLAN_COLUMNS = ['План', 'Вес на голову в сутки, кг', 'Вес/голову', 'Вес на голову', 'plannedWeight'];
-const DRY_COLUMNS = ['СВ', 'Вес на голову в сутки СВ, кг', 'Вес СВ/голову', 'Сухое вещество', 'dryMatterWeight'];
+export const NAME_COLUMNS = ['Ингредиент', 'Название', 'Компонент', 'Корм', 'ingredient', 'name'];
+export const PLAN_COLUMNS = ['План', 'Вес на голову в сутки, кг', 'Вес/голову', 'Вес на голову', 'plannedWeight'];
+export const DRY_COLUMNS = ['СВ', 'Вес на голову в сутки СВ, кг', 'Вес СВ/голову', 'Сухое вещество', 'dryMatterWeight'];
 
 function firstValue(row, columns) {
   for (const column of columns) {
@@ -28,6 +28,32 @@ export function processRationRows(rawExelData) {
     data: [],
     errors: []
   };
+
+  if (!Array.isArray(rawExelData) || rawExelData.length === 0) {
+    return {
+      success: false,
+      data: [],
+      errors: ['В файле не найдено строк с рационом']
+    };
+  }
+
+  const availableColumns = new Set(rawExelData.flatMap(row => Object.keys(row)));
+  const hasColumn = columns => columns.some(column => availableColumns.has(column));
+
+  if (!hasColumn(NAME_COLUMNS)) {
+    result.errors.push(`Не найдена колонка ингредиента. Поддерживаются: ${NAME_COLUMNS.join(', ')}`);
+  }
+  if (!hasColumn(PLAN_COLUMNS)) {
+    result.errors.push(`Не найдена колонка планового веса. Поддерживаются: ${PLAN_COLUMNS.join(', ')}`);
+  }
+  if (!hasColumn(DRY_COLUMNS)) {
+    result.errors.push(`Не найдена колонка сухого вещества. Поддерживаются: ${DRY_COLUMNS.join(', ')}`);
+  }
+
+  if (result.errors.length > 0) {
+    result.success = false;
+    return result;
+  }
 
   rawExelData.forEach((row, index) => {
     const lineNumber = index + 1;

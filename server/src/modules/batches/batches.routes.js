@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import prisma from "../../database.js";
 import { authenticate, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js";
-import { recalculateBatchViolations } from './batch-violations.js';
+import { buildIngredientSummary, buildUnloadProgress, recalculateBatchViolations } from './batch-violations.js';
 
 const router = Router();
 
@@ -17,6 +17,9 @@ router.get('/', authenticate, requireReadAccess, async (req, res) => {
         endDate.setHours(23, 59, 59, 999);
 
         if (req.query.date) {
+            if (Number.isNaN(Date.parse(req.query.date))) {
+                return res.status(400).json({ error: 'Некорректная дата фильтра' });
+            }
             startDate = new Date(req.query.date);
             startDate.setHours(0, 0, 0, 0);
             endDate = new Date(req.query.date);
@@ -32,7 +35,7 @@ router.get('/', authenticate, requireReadAccess, async (req, res) => {
             },
             include: {
                 group: true,
-                ration: true, // Связка с "Планом"
+                ration: { include: { ingredients: true } }, // Связка с "Планом"
                 actualIngredients: true // Тут лежат компоненты и их нарушения
             },
             orderBy: { startTime: 'desc' }
@@ -49,20 +52,13 @@ router.get('/', authenticate, requireReadAccess, async (req, res) => {
             hasViolations: b.hasViolations, // Общий флаг нарушений
             startWeight: b.startWeight,
             endWeight: b.endWeight,
-            ingredients: b.actualIngredients.map(ing => ({
-                id: ing.id,
-                name: ing.ingredientName,
-                time: ing.addedAt, // Точное время загрузки
-                plan: ing.plannedWeight || 0,
-                fact: ing.actualWeight,
-                isViolation: ing.isViolation
-            }))
+            ingredients: buildIngredientSummary(b)
         }));
 
         res.json(formattedBatches);
     } catch (error) {
         console.error('[Ошибка GET /batches]:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: 'Не удалось получить список замесов' });
     }
 });
 
@@ -71,11 +67,18 @@ router.get('/', authenticate, requireReadAccess, async (req, res) => {
 // ============================================================================
 router.get('/:id', authenticate, requireReadAccess, async (req, res) => {
     try {
+        const batchId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(batchId)) {
+            return res.status(400).json({ error: 'Некорректный ID замеса' });
+        }
+
         const batch = await prisma.batch.findUnique({
-            where: { id: parseInt(req.params.id) },
+            where: { id: batchId },
             include: {
                 group: true,
-                ration: true,
+                ration: {
+                    include: { ingredients: true }
+                },
                 actualIngredients: {
                     orderBy: { addedAt: 'asc' } // Сортируем по времени добавления
                 }
@@ -92,16 +95,40 @@ router.get('/:id', authenticate, requireReadAccess, async (req, res) => {
             deviceId: batch.deviceId,
             startTime: batch.startTime,
             endTime: batch.endTime,
+            rationId: batch.rationId,
+            groupId: batch.groupId,
             rationName: batch.ration?.name || 'Без рациона',
+            groupName: batch.group?.name || 'Без группы',
+            ration: batch.ration ? {
+                id: batch.ration.id,
+                name: batch.ration.name,
+                isActive: batch.ration.isActive,
+                ingredients: batch.ration.ingredients.map(ing => ({
+                    id: ing.id,
+                    name: ing.name,
+                    plannedWeight: ing.plannedWeight,
+                    dryMatterWeight: ing.dryMatterWeight
+                }))
+            } : null,
+            group: batch.group ? {
+                id: batch.group.id,
+                name: batch.group.name,
+                headcount: batch.group.headcount,
+                rationId: batch.group.rationId,
+                lat: batch.group.lat,
+                lon: batch.group.lon,
+                radius: batch.group.radius
+            } : null,
             
             // Данные для ПЛАШКИ ВЫГРУЗКИ (пункт 4)
             unloadingInfo: {
                 barnName: batch.group?.name || 'Коровник не выбран',
-                remainingWeight: batch.endWeight || 0
+                remainingWeight: batch.endWeight || 0,
+                progress: buildUnloadProgress(batch, batch.endWeight || batch.startWeight, {})
             },
 
             // СПИСОК ИНГРЕДИЕНТОВ И ПЛАН/ФАКТ (пункты 2 и 3)
-            ingredients: batch.actualIngredients.map(ing => ({
+            actualIngredients: batch.actualIngredients.map(ing => ({
                 id: ing.id,
                 name: ing.ingredientName,
                 time: ing.addedAt,
@@ -109,13 +136,14 @@ router.get('/:id', authenticate, requireReadAccess, async (req, res) => {
                 fact: ing.actualWeight,
                 deviation: ing.plannedWeight ? (ing.actualWeight - ing.plannedWeight) : 0,
                 isViolation: ing.isViolation
-            }))
+            })),
+            ingredients: buildIngredientSummary(batch)
         };
 
         res.json(detailedBatch);
     } catch (error) {
         console.error('[Ошибка GET /batches/:id]:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: 'Не удалось получить замес' });
     }
 });
 
@@ -124,8 +152,13 @@ router.get('/:id', authenticate, requireReadAccess, async (req, res) => {
 // ============================================================================
 router.get('/:id/telemetry', authenticate, requireReadAccess, async (req, res) => {
     try {
+        const batchId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(batchId)) {
+            return res.status(400).json({ error: 'Некорректный ID замеса' });
+        }
+
         const batch = await prisma.batch.findUnique({
-            where: { id: parseInt(req.params.id) }
+            where: { id: batchId }
         });
 
         if (!batch) return res.status(404).json({ error: 'Замес не найден' });
@@ -149,7 +182,7 @@ router.get('/:id/telemetry', authenticate, requireReadAccess, async (req, res) =
         res.json(telemetryData);
     } catch (error) {
         console.error('[Ошибка графика замеса]:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: 'Не удалось получить график замеса' });
     }
 });
 
@@ -159,14 +192,42 @@ router.get('/:id/telemetry', authenticate, requireReadAccess, async (req, res) =
 router.patch('/:id', authenticate, requireWriteAccess, async (req, res) => {
     try {
         const { rationId, groupId } = req.body;
+        const batchId = parseInt(req.params.id, 10);
+
+        if (!Number.isInteger(batchId)) {
+            return res.status(400).json({ error: 'Некорректный ID замеса' });
+        }
+
+        const data = {};
+
+        if (rationId !== undefined) {
+            if (rationId === null || rationId === '') {
+                data.rationId = null;
+            } else {
+                const parsedRationId = parseInt(rationId, 10);
+                if (!Number.isInteger(parsedRationId)) return res.status(400).json({ error: 'Некорректный rationId' });
+                const ration = await prisma.ration.findUnique({ where: { id: parsedRationId } });
+                if (!ration) return res.status(404).json({ error: 'Рацион не найден' });
+                data.rationId = parsedRationId;
+            }
+        }
+
+        if (groupId !== undefined) {
+            if (groupId === null || groupId === '') {
+                data.groupId = null;
+            } else {
+                const parsedGroupId = parseInt(groupId, 10);
+                if (!Number.isInteger(parsedGroupId)) return res.status(400).json({ error: 'Некорректный groupId' });
+                const group = await prisma.livestockGroup.findUnique({ where: { id: parsedGroupId } });
+                if (!group) return res.status(404).json({ error: 'Группа не найдена' });
+                data.groupId = parsedGroupId;
+            }
+        }
         
         // Обновляем замес новыми данными от пользователя
         const updatedBatch = await prisma.batch.update({
-            where: { id: parseInt(req.params.id) },
-            data: {
-                rationId: rationId ? parseInt(rationId) : undefined,
-                groupId: groupId ? parseInt(groupId) : undefined
-            }
+            where: { id: batchId },
+            data
         });
 
         const recalculation = await recalculateBatchViolations(prisma, updatedBatch.id);
@@ -174,7 +235,8 @@ router.patch('/:id', authenticate, requireWriteAccess, async (req, res) => {
         res.json({ status: 'ok', batch: updatedBatch, recalculation });
     } catch (error) {
         console.error('[Ошибка редактирования замеса]:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        if (error.code === 'P2025') return res.status(404).json({ error: 'Замес не найден' });
+        res.status(500).json({ error: 'Не удалось обновить замес' });
     }
 });
 
@@ -184,23 +246,35 @@ router.patch('/:id', authenticate, requireWriteAccess, async (req, res) => {
 router.patch('/:batchId/ingredients/:ingredientId', authenticate, requireWriteAccess, async (req, res) => {
     try {
         const { ingredientName } = req.body;
+        const batchId = parseInt(req.params.batchId, 10);
+        const ingredientId = parseInt(req.params.ingredientId, 10);
         
+        if (!Number.isInteger(batchId) || !Number.isInteger(ingredientId)) {
+            return res.status(400).json({ error: 'Некорректный ID замеса или ингредиента' });
+        }
+
         if (!ingredientName) {
             return res.status(400).json({ error: 'Не указано новое название корма' });
         }
 
+        const batchIngredient = await prisma.batchIngredient.findUnique({ where: { id: ingredientId } });
+        if (!batchIngredient || batchIngredient.batchId !== batchId) {
+            return res.status(404).json({ error: 'Ингредиент замеса не найден' });
+        }
+
         // Обновляем имя компонента в базе
         const updatedIngredient = await prisma.batchIngredient.update({
-            where: { id: parseInt(req.params.ingredientId) },
-            data: { ingredientName }
+            where: { id: ingredientId },
+            data: { ingredientName: String(ingredientName).trim() }
         });
 
-        const recalculation = await recalculateBatchViolations(prisma, req.params.batchId);
+        const recalculation = await recalculateBatchViolations(prisma, batchId);
 
         res.json({ status: 'ok', ingredient: updatedIngredient, recalculation });
     } catch (error) {
         console.error('[Ошибка обновления ингредиента]:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        if (error.code === 'P2025') return res.status(404).json({ error: 'Ингредиент замеса не найден' });
+        res.status(500).json({ error: 'Не удалось обновить ингредиент замеса' });
     }
 });
 
