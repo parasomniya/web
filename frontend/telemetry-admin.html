@@ -325,6 +325,40 @@
                             </div>
                         </div>
                     </section>
+
+                    <div class="card shadow mb-4">
+                        <div class="card-header py-3 d-sm-flex align-items-center justify-content-between">
+                            <div>
+                                <h6 class="m-0 font-weight-bold text-primary">Пользователи</h6>
+                                <div class="small text-muted mt-1" id="usersPanelMeta">Загрузка пользователей...</div>
+                            </div>
+                            <button type="button" class="btn btn-primary btn-sm mt-3 mt-sm-0" data-toggle="modal" data-target="#createUserModal">
+                                <i class="fas fa-plus mr-1"></i>
+                                Добавить
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive admin-users-table-wrap">
+                                <table class="table table-bordered admin-users-table mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Имя</th>
+                                            <th>Email</th>
+                                            <th>Роль</th>
+                                            <th>Дата регистрации</th>
+                                            <th class="text-center">Удалить</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="usersTableBody">
+                                        <tr>
+                                            <td colspan="6" class="telemetry-empty-state">Загрузка пользователей...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -342,12 +376,55 @@
         <i class="fas fa-angle-up"></i>
     </a>
 
+    <div class="modal fade" id="createUserModal" tabindex="-1" role="dialog" aria-labelledby="createUserModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <form id="createUserForm">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="createUserModalLabel">Добавить пользователя</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Закрыть">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="createUserName">Имя</label>
+                            <input type="text" class="form-control" id="createUserName" name="username" autocomplete="off" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="createUserEmail">Email</label>
+                            <input type="email" class="form-control" id="createUserEmail" name="email" autocomplete="off" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="createUserPassword">Пароль</label>
+                            <input type="password" class="form-control" id="createUserPassword" name="password" minlength="6" required>
+                            <small class="form-text text-muted">Минимум 6 символов.</small>
+                        </div>
+                        <div class="form-group mb-0">
+                            <label for="createUserRole">Роль</label>
+                            <select class="custom-select" id="createUserRole" name="role">
+                                <option value="GUEST" selected>GUEST</option>
+                                <option value="DIRECTOR">DIRECTOR</option>
+                                <option value="ADMIN">ADMIN</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light border" data-dismiss="modal">Отмена</button>
+                        <button type="submit" class="btn btn-primary" id="createUserSubmitButton">Создать</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="vendor/jquery/jquery.min.js"></script>
     <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260403a"></script>
     <script src="js/telemetry.js?v=20260403b"></script>
+    <script src="js/admin-users.js?v=20260420a"></script>
 
 </body>
 

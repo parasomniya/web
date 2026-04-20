@@ -1,96 +1,444 @@
-$(document).ready(function() {
-    // 1. Инициализируем DataTable
-    const table = $('#batchesTable').DataTable({
-        language: {
-            url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/ru.json'
-        },
-        
-        // --- НОВЫЕ НАСТРОЙКИ ---
-        searching: false,    // Убирает поле "Поиск"
-        lengthChange: false, // Убирает выпадающий список "Показать 10 записей"
-        info: false,         // (Опционально) Убирает надпись "Записи с 1 по 10 из..."
-        // -----------------------
+$(document).ready(function () {
+    const dateInput = document.getElementById("batchesDateFilter");
+    const filterMeta = document.getElementById("batchesFilterMeta");
 
-        order: [[0, 'desc']], // Авто-сортировка по первой колонке (время)
-        
-        // Отключаем возможность клика по заголовкам для ручной сортировки
-        columnDefs: [
-            { orderable: false, targets: '_all' }
-        ],
-
-        columns: [
-            { 
-                data: 'time', 
-                render: function(data) {
-                    return data ? new Date(data).toLocaleString('ru-RU') : '-';
-                }
-            },
-            { 
-                data: 'action',
-                render: function(data) {
-                    if (data.includes('Загрузка')) {
-                        return `<span class="badge badge-primary" style="font-size: 13px; padding: 6px 10px;">${data}</span>`;
-                    } else if (data.includes('Разгрузка')) {
-                        return `<span class="badge badge-success" style="font-size: 13px; padding: 6px 10px;">${data}</span>`;
-                    }
-                    return data;
-                }
-            },
-            { 
-                data: 'zone',
-                render: function(data) {
-                    return `<strong>${data || '-'}</strong>`;
-                }
-            },
-            { 
-                data: 'weight',
-                render: function(data) {
-                    return `<span>${data}</span>`;
-                }
-            },
-            { 
-                data: 'status',
-                render: function(data) {
-                    if (data === 'Завершен') {
-                        return '<span class="text-success font-weight-bold"><i class="fas fa-check"></i> Завершен</span>';
-                    }
-                    return '<span class="text-warning font-weight-bold"><i class="fas fa-spinner fa-spin"></i> В процессе</span>';
-                }
-            }
-        ]
+    const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
     });
 
-    // 2. Функция для загрузки данных с бэкенда
-    // 2. Функция для загрузки данных с бэкенда
-    async function loadBatches() {
-        try {
-            const response = await fetch(window.AppAuth?.getApiUrl?.('/api/batches') || '/api/batches', {
-                method: 'GET',
-                headers: window.AppAuth?.getAuthHeaders?.({ includeJson: true }) || {
-                    'Content-Type': 'application/json'
-                }
-            });
+    const dateTimeFormatter = new Intl.DateTimeFormat("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+    });
 
-            if (response.ok) {
-                const data = await response.json();
-                
-                // Проверяем, изменились ли данные (чтобы зря не перерисовывать таблицу)
-                const currentDataString = JSON.stringify(table.rows().data().toArray());
-                const newDataString = JSON.stringify(data);
-                
-                if (currentDataString !== newDataString) {
-                    // draw(false) - обновляет данные, но оставляет пользователя на текущей странице пагинации
-                    table.clear().rows.add(data).draw(false);
-                }
+    const timeFormatter = new Intl.DateTimeFormat("ru-RU", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+    });
+
+    const weightFormatter = new Intl.NumberFormat("ru-RU", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1,
+    });
+
+    const initialUrl = new URL(window.location.href);
+
+    let lastSnapshotKey = "";
+    let activeRequestId = 0;
+    let lastAlertKey = "";
+
+    const table = $("#batchesTable").DataTable({
+        language: {
+            url: "https://cdn.datatables.net/plug-ins/1.13.6/i18n/ru.json",
+            emptyTable: "Нет замесов за выбранную дату",
+            zeroRecords: "Нет замесов за выбранную дату",
+        },
+        searching: false,
+        lengthChange: false,
+        info: false,
+        ordering: false,
+        autoWidth: false,
+        pageLength: 25,
+        createdRow: function (row, data) {
+            if (!data?.id) {
+                return;
             }
+
+            row.classList.add("batch-table-row");
+            row.setAttribute("tabindex", "0");
+            row.setAttribute("role", "link");
+            row.setAttribute("aria-label", `Открыть детали замеса ${data.id}`);
+        },
+        columns: [
+            {
+                data: "startTime",
+                className: "align-middle",
+                render: function (data, type) {
+                    if (type !== "display") {
+                        return data || "";
+                    }
+
+                    return formatDateTime(data);
+                },
+            },
+            {
+                data: "rationName",
+                className: "align-middle",
+                render: function (data, type) {
+                    if (type !== "display") {
+                        return data || "";
+                    }
+
+                    return `<strong>${escapeHtml(data || "Без плана")}</strong>`;
+                },
+            },
+            {
+                data: "groupName",
+                className: "align-middle",
+                render: function (data, type) {
+                    if (type !== "display") {
+                        return data || "";
+                    }
+
+                    return escapeHtml(data || "Без группы");
+                },
+            },
+            {
+                data: "hasViolations",
+                className: "align-middle text-center",
+                render: function (data, type) {
+                    if (type !== "display") {
+                        return data ? "1" : "0";
+                    }
+
+                    return renderBooleanBadge(asBoolean(data));
+                },
+            },
+            {
+                data: "ingredients",
+                render: function (data, type) {
+                    const ingredients = Array.isArray(data) ? data : [];
+
+                    if (type !== "display") {
+                        return ingredients.length;
+                    }
+
+                    return renderIngredients(ingredients);
+                },
+            },
+        ],
+    });
+
+    function escapeHtml(value) {
+        return String(value ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    function asBoolean(value) {
+        if (typeof value === "boolean") {
+            return value;
+        }
+
+        if (typeof value === "number") {
+            return value !== 0;
+        }
+
+        if (typeof value === "string") {
+            const normalized = value.trim().toLowerCase();
+            return normalized === "true" || normalized === "1" || normalized === "yes";
+        }
+
+        return false;
+    }
+
+    function getTodayValue() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, "0");
+        const day = String(now.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+    }
+
+    function normalizeDateValue(value) {
+        return /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : "";
+    }
+
+    function getInitialDateValue() {
+        return normalizeDateValue(initialUrl.searchParams.get("date")) || getTodayValue();
+    }
+
+    function getSelectedDateValue() {
+        const value = normalizeDateValue(dateInput?.value);
+        return value || getTodayValue();
+    }
+
+    function formatDateLabel(dateValue) {
+        const parsedDate = new Date(`${dateValue}T00:00:00`);
+        return Number.isNaN(parsedDate.getTime()) ? dateValue : dateFormatter.format(parsedDate);
+    }
+
+    function formatDateTime(value) {
+        if (!value) {
+            return '<span class="text-muted">-</span>';
+        }
+
+        const parsedDate = new Date(value);
+        if (Number.isNaN(parsedDate.getTime())) {
+            return '<span class="text-muted">-</span>';
+        }
+
+        return escapeHtml(dateTimeFormatter.format(parsedDate));
+    }
+
+    function formatIngredientTime(value) {
+        if (!value) {
+            return "";
+        }
+
+        const parsedDate = new Date(value);
+        if (Number.isNaN(parsedDate.getTime())) {
+            return "";
+        }
+
+        return timeFormatter.format(parsedDate);
+    }
+
+    function formatWeight(value) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            return "";
+        }
+
+        return `${weightFormatter.format(numericValue)} кг`;
+    }
+
+    function renderBooleanBadge(value) {
+        const badgeClass = value ? "dashboard-bool-badge is-yes" : "dashboard-bool-badge is-no";
+        const label = value ? "Да" : "Нет";
+        return `<span class="${badgeClass}">${label}</span>`;
+    }
+
+    function renderIngredients(ingredients) {
+        if (!ingredients.length) {
+            return '<span class="text-muted">Нет компонентов</span>';
+        }
+
+        return `
+            <div class="small">
+                ${ingredients.map((ingredient, index) => {
+                    const name = escapeHtml(ingredient?.name || "Без названия");
+                    const ingredientTime = formatIngredientTime(ingredient?.time);
+                    const plan = formatWeight(ingredient?.plan);
+                    const fact = formatWeight(ingredient?.fact);
+                    const metaParts = [];
+
+                    if (ingredientTime) {
+                        metaParts.push(`Время: ${escapeHtml(ingredientTime)}`);
+                    }
+
+                    if (plan) {
+                        metaParts.push(`План: ${escapeHtml(plan)}`);
+                    }
+
+                    if (fact) {
+                        metaParts.push(`Факт: ${escapeHtml(fact)}`);
+                    }
+
+                    return `
+                        <div class="${index < ingredients.length - 1 ? "mb-2 pb-2 border-bottom" : ""}">
+                            <div class="font-weight-bold text-gray-800">
+                                ${name}
+                                ${asBoolean(ingredient?.isViolation) ? '<span class="badge badge-danger ml-2">Отклонение</span>' : ""}
+                            </div>
+                            <div class="text-muted">${metaParts.length ? metaParts.join(" &middot; ") : "Без деталей по компоненту"}</div>
+                        </div>
+                    `;
+                }).join("")}
+            </div>
+        `;
+    }
+
+    function formatBatchWord(count) {
+        const absoluteCount = Math.abs(Number(count) || 0);
+        const lastTwoDigits = absoluteCount % 100;
+        const lastDigit = absoluteCount % 10;
+
+        if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
+            return "замесов";
+        }
+
+        if (lastDigit === 1) {
+            return "замес";
+        }
+
+        if (lastDigit >= 2 && lastDigit <= 4) {
+            return "замеса";
+        }
+
+        return "замесов";
+    }
+
+    function updateFilterMeta(dateValue, options) {
+        if (!filterMeta) {
+            return;
+        }
+        
+        filterMeta.textContent = "";
+    }
+
+    function updatePageUrl(dateValue) {
+        const url = new URL(window.location.href);
+
+        if (dateValue === getTodayValue()) {
+            url.searchParams.delete("date");
+        } else {
+            url.searchParams.set("date", dateValue);
+        }
+
+        window.history.replaceState({}, "", url.toString());
+    }
+
+    function buildBatchesUrl(dateValue) {
+        const baseUrl = window.AppAuth?.getApiUrl?.("/api/batches") || "/api/batches";
+        const url = new URL(baseUrl, window.location.origin);
+
+        if (dateValue !== getTodayValue()) {
+            url.searchParams.set("date", dateValue);
+        }
+
+        return url.toString();
+    }
+
+    function buildBatchDetailsUrl(batchId) {
+        const url = new URL("batch-details.html", window.location.href);
+        const selectedDate = getSelectedDateValue();
+
+        url.searchParams.set("id", String(batchId));
+        if (selectedDate !== getTodayValue()) {
+            url.searchParams.set("date", selectedDate);
+        } else {
+            url.searchParams.delete("date");
+        }
+
+        return url.toString();
+    }
+
+    async function readErrorMessage(response) {
+        const contentType = response.headers.get("content-type") || "";
+
+        if (contentType.includes("application/json")) {
+            try {
+                const payload = await response.json();
+                return payload?.error || payload?.message || "";
+            } catch (error) {
+                return "";
+            }
+        }
+
+        try {
+            return (await response.text()).trim();
         } catch (error) {
-            console.error('Ошибка сети при загрузке логов:', error);
+            return "";
         }
     }
 
-    // 3. Запускаем первый раз сразу
-    loadBatches();
-    
-    // 4. Запускаем цикл автообновления каждые 2 секунды (2000 мс)
-    setInterval(loadBatches, 2000); 
+    function showLoadError(message, dateValue) {
+        const alertKey = `${dateValue}|${message}`;
+        if (alertKey === lastAlertKey) {
+            return;
+        }
+
+        lastAlertKey = alertKey;
+        window.AppAuth?.showAlert?.(message, "danger");
+    }
+
+    function clearLoadError() {
+        if (!lastAlertKey) {
+            return;
+        }
+
+        lastAlertKey = "";
+        window.AppAuth?.dismissAlerts?.();
+    }
+
+    async function loadBatches(options) {
+        const settings = options || {};
+        const dateValue = getSelectedDateValue();
+        const requestId = ++activeRequestId;
+
+        if (dateInput && dateInput.value !== dateValue) {
+            dateInput.value = dateValue;
+        }
+
+        updateFilterMeta(dateValue, { loading: true });
+        updatePageUrl(dateValue);
+
+        try {
+            const response = await fetch(buildBatchesUrl(dateValue), {
+                method: "GET",
+                headers: window.AppAuth?.getAuthHeaders?.() || {},
+            });
+
+            if (!response.ok) {
+                const responseMessage = await readErrorMessage(response);
+                throw new Error(responseMessage || "Не удалось получить список замесов");
+            }
+
+            const payload = await response.json();
+            const rows = Array.isArray(payload) ? payload : [];
+
+            if (requestId !== activeRequestId) {
+                return;
+            }
+
+            const nextSnapshotKey = `${dateValue}|${JSON.stringify(rows)}`;
+            if (settings.force || nextSnapshotKey !== lastSnapshotKey) {
+                table.clear().rows.add(rows).draw(false);
+                lastSnapshotKey = nextSnapshotKey;
+            }
+
+            clearLoadError();
+            updateFilterMeta(dateValue, { count: rows.length });
+        } catch (error) {
+            if (requestId !== activeRequestId) {
+                return;
+            }
+
+            console.error("Ошибка загрузки замесов:", error);
+            updateFilterMeta(dateValue, { error: true });
+            showLoadError(error.message || "Не удалось загрузить замесы", dateValue);
+        }
+    }
+
+    function openBatchDetails(batchId) {
+        if (!batchId) {
+            return;
+        }
+
+        window.location.href = buildBatchDetailsUrl(batchId);
+    }
+
+    $("#batchesTable tbody").on("click", "tr", function (event) {
+        if ($(event.target).closest("a, button, input, select, textarea").length) {
+            return;
+        }
+
+        const rowData = table.row(this).data();
+        openBatchDetails(rowData?.id);
+    });
+
+    $("#batchesTable tbody").on("keydown", "tr", function (event) {
+        if (event.key !== "Enter" && event.key !== " ") {
+            return;
+        }
+
+        event.preventDefault();
+        const rowData = table.row(this).data();
+        openBatchDetails(rowData?.id);
+    });
+
+    if (dateInput) {
+        dateInput.value = getInitialDateValue();
+        dateInput.addEventListener("change", function () {
+            lastSnapshotKey = "";
+            loadBatches({ force: true });
+        });
+    }
+
+    loadBatches({ force: true });
+
+    window.setInterval(function () {
+        loadBatches();
+    }, 2000);
 });

@@ -9,6 +9,7 @@
     const RESET_PASSWORD_PAGE = "reset-password.html";
     const RESET_PASSWORD_ROUTE = "/reset-password";
     const ADMIN_TELEMETRY_PAGE = "telemetry-admin.html";
+    const BATCH_DETAILS_PAGE = "batch-details.html";
 
     const ROLE_ADMIN = "ADMIN";
     const ROLE_DIRECTOR = "DIRECTOR";
@@ -17,6 +18,7 @@
     const APP_PAGES = new Set([
         "index.html",
         "tables.html",
+        BATCH_DETAILS_PAGE,
         "map-zones.html",
         ADMIN_TELEMETRY_PAGE,
     ]);

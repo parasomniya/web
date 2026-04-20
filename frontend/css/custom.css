@@ -287,6 +287,75 @@
     word-break: break-word;
 }
 
+.dashboard-current-state .dashboard-inline-state {
+    display: flex;
+    align-items: flex-start;
+    padding: 0.8rem 1rem;
+    margin-bottom: 1.25rem;
+    border: 1px solid transparent;
+    border-radius: 0.9rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1.45;
+}
+
+.dashboard-current-state .dashboard-inline-state--info {
+    color: #35506b;
+    background: #eef5ff;
+    border-color: #d8e6ff;
+}
+
+.dashboard-current-state .dashboard-inline-state--warning {
+    color: #7a4f00;
+    background: #fff6dd;
+    border-color: #f2dfad;
+}
+
+.dashboard-current-state .dashboard-inline-state--danger {
+    color: #842029;
+    background: #f8d7da;
+    border-color: #f1aeb5;
+}
+
+.dashboard-current-state .dashboard-mode-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.8rem;
+    min-width: 140px;
+    padding: 0.55rem 1rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 0.95rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.dashboard-current-state .dashboard-mode-badge--idle {
+    color: #6c757d;
+    background: #e9ecef;
+}
+
+.dashboard-current-state .dashboard-mode-badge--loading {
+    color: #2f5ecc;
+    background: #e8efff;
+}
+
+.dashboard-current-state .dashboard-mode-badge--unloading {
+    color: #8a4b00;
+    background: #ffe7c2;
+}
+
+.dashboard-current-state .dashboard-mode-badge--unknown {
+    color: #4f5d75;
+    background: #eef1f6;
+}
+
+.dashboard-current-state .dashboard-mode-badge.is-stale {
+    border-color: rgba(138, 75, 0, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(138, 75, 0, 0.08);
+}
+
 .dashboard-section {
     margin-bottom: 1.5rem;
 }
@@ -351,6 +420,30 @@
     color: #858796;
 }
 
+.dashboard-current-state .dashboard-last-packet {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid #eaecf4;
+}
+
+.dashboard-current-state .dashboard-last-packet__label {
+    color: #858796;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.dashboard-current-state .dashboard-last-packet__value {
+    color: #3a3b45;
+    font-size: 1rem;
+    font-weight: 700;
+    text-align: right;
+}
+
 .dashboard-bool-badge {
     display: inline-flex;
     align-items: center;
@@ -370,6 +463,108 @@
 .dashboard-bool-badge.is-no {
     color: #0f6848;
     background: #d9f7ea;
+}
+
+.batch-table-row {
+    cursor: pointer;
+    transition: background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.batch-table-row:hover,
+.batch-table-row:focus {
+    background: #f8f9fc;
+    box-shadow: inset 0 0 0 1px rgba(78, 115, 223, 0.16);
+    outline: none;
+}
+
+.batch-detail-stat {
+    height: 100%;
+    padding: 1rem 1.1rem;
+    border: 1px solid #e3e6f0;
+    border-radius: 0.9rem;
+    background: #fff;
+}
+
+.batch-detail-stat--accent {
+    background: linear-gradient(180deg, #ffffff 0%, #f8f9fc 100%);
+}
+
+.batch-detail-stat__label {
+    color: #4e73df;
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    margin-bottom: 0.55rem;
+}
+
+.batch-detail-stat__value {
+    color: #5a5c69;
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.batch-detail-chart-wrap {
+    position: relative;
+    min-height: 320px;
+}
+
+.batch-detail-chart-wrap canvas {
+    width: 100% !important;
+    height: 320px !important;
+}
+
+.batch-detail-empty {
+    padding: 1rem !important;
+    text-align: center;
+    color: #858796;
+}
+
+.batch-unloading-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    min-height: 100%;
+    padding: 1.1rem;
+    border-radius: 1rem;
+    background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 100%);
+    border: 1px solid #d9e7ff;
+}
+
+.batch-unloading-card__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 0.9rem;
+    background: #4e73df;
+    color: #fff;
+    font-size: 1.1rem;
+    box-shadow: 0 12px 24px rgba(78, 115, 223, 0.2);
+    flex-shrink: 0;
+}
+
+.batch-unloading-card__content {
+    min-width: 0;
+}
+
+.batch-unloading-card__label {
+    color: #4e73df;
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.batch-unloading-card__value {
+    color: #304270;
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.45;
+    word-break: break-word;
 }
 
 .telemetry-page-meta {
@@ -492,6 +687,15 @@
         width: 100%;
     }
 
+    .dashboard-current-state .dashboard-last-packet {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .dashboard-current-state .dashboard-last-packet__value {
+        text-align: left;
+    }
+
     .map-view-switch {
         top: 6px;
         left: 6px;
@@ -523,5 +727,81 @@
 
     .dashboard-mini-table {
         min-width: 560px;
+    }
+
+    .batch-unloading-card {
+        flex-direction: column;
+    }
+}
+
+.admin-users-table-wrap {
+    overflow: auto;
+}
+
+.admin-users-table {
+    min-width: 860px;
+}
+
+.admin-users-table thead th {
+    background: #eef3ff;
+    color: #44506d;
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.admin-users-table td {
+    vertical-align: middle;
+    white-space: nowrap;
+    font-size: 0.9rem;
+}
+
+.admin-users-table td:nth-child(2),
+.admin-users-table td:nth-child(3),
+.admin-users-table td:nth-child(5) {
+    white-space: normal;
+}
+
+.admin-users-role-select {
+    min-width: 148px;
+    max-width: 170px;
+    font-weight: 700;
+}
+
+.admin-users-delete-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 999px;
+    transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.admin-users-delete-button:hover:not(:disabled),
+.admin-users-delete-button:focus-visible:not(:disabled) {
+    background: rgba(231, 74, 59, 0.12);
+    color: #c0392b !important;
+    text-decoration: none;
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.admin-users-delete-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    text-decoration: none;
+}
+
+@media (max-width: 768px) {
+    .admin-users-table {
+        min-width: 760px;
+    }
+
+    .admin-users-role-select {
+        min-width: 132px;
     }
 }
