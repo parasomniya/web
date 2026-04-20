@@ -48,6 +48,13 @@
             </li>
 
             <li class="nav-item">
+                <a class="nav-link" href="rations.html">
+                    <i class="fas fa-fw fa-utensils"></i>
+                    <span>Рационы</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
                 <a class="nav-link" href="map-zones.html">
                     <i class="fas fa-fw fa-map"></i>
                     <span>Зоны хранения</span>
@@ -128,6 +135,42 @@
                         </div>
                     </div>
 
+                    <div id="batchEditCard" class="card shadow mb-4" data-requires-write hidden>
+                        <div class="card-header py-3 d-flex flex-column flex-md-row align-items-md-center justify-content-between">
+                            <h6 class="m-0 font-weight-bold text-primary">Ручное редактирование</h6>
+                            <div id="batchEditMeta" class="batch-edit-meta mt-2 mt-md-0">После сохранения замес перечитается с сервера</div>
+                        </div>
+                        <div class="card-body">
+                            <div id="batchEditState" class="batch-edit-state d-none" role="status" aria-live="polite"></div>
+
+                            <div class="row">
+                                <div class="col-xl-5 col-md-6 mb-3">
+                                    <label for="batchEditRationSelect" class="batch-edit-label">Рацион</label>
+                                    <select id="batchEditRationSelect" class="form-control" disabled>
+                                        <option value="">Загрузка...</option>
+                                    </select>
+                                    <div id="batchEditRationHint" class="batch-edit-hint">Подтягиваем список рационов...</div>
+                                </div>
+
+                                <div class="col-xl-5 col-md-6 mb-3">
+                                    <label for="batchEditGroupSelect" class="batch-edit-label">Группа</label>
+                                    <select id="batchEditGroupSelect" class="form-control" disabled>
+                                        <option value="">Загрузка...</option>
+                                    </select>
+                                    <div id="batchEditGroupHint" class="batch-edit-hint">Подтягиваем список групп...</div>
+                                </div>
+
+                                <div class="col-xl-2 col-md-12 mb-3">
+                                    <div class="batch-edit-actions">
+                                        <button id="batchEditSubmitButton" type="button" class="btn btn-primary btn-block" disabled>
+                                            Пересчитать
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="row">
                         <div class="col-xl-8">
                             <div class="card shadow mb-4">
@@ -158,6 +201,11 @@
                                             <div id="batchDetailsBarnName" class="batch-unloading-card__value">--</div>
                                             <div class="batch-unloading-card__label mt-3">Остаток после выгрузки</div>
                                             <div id="batchDetailsRemainingWeight" class="batch-unloading-card__value">--</div>
+                                            <div class="batch-unloading-card__label mt-3">Прогресс выгрузки</div>
+                                            <div id="batchUnloadProgressMeta" class="batch-unloading-card__meta">--</div>
+                                            <div class="dashboard-progress-track mt-2" aria-hidden="true">
+                                                <div id="batchUnloadProgressBar" class="dashboard-progress-bar"></div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -210,7 +258,7 @@
                                 </div>
                                 <div class="col-md-4">
                                     <div class="batch-detail-stat batch-detail-stat--accent">
-                                        <div class="batch-detail-stat__label">Суммарное отклонение</div>
+                                        <div class="batch-detail-stat__label">Итоговое отклонение, %</div>
                                         <div id="batchDeviationTotal" class="batch-detail-stat__value">--</div>
                                     </div>
                                 </div>
@@ -264,7 +312,7 @@
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260403a"></script>
     <script src="vendor/chart.js/Chart.min.js"></script>
-    <script src="js/batch-details.js?v=20260419a"></script>
+    <script src="js/batch-details.js?v=20260420c"></script>
 
 </body>
 
