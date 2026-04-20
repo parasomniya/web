@@ -13,17 +13,21 @@
         return;
     }
 
-    try {
-        const request = new XMLHttpRequest();
-        request.open("GET", targetPage, false);
-        request.send(null);
-
-        if (request.status >= 200 && request.status < 300 && request.responseText) {
+    // Use async fetch instead of sync XMLHttpRequest
+    fetch(targetPage)
+        .then(response => {
+            if (response.status >= 200 && response.status < 300) {
+                return response.text();
+            }
+            throw new Error(`Failed to load ${targetPage}: ${response.status}`);
+        })
+        .then(html => {
             document.open();
-            document.write(request.responseText);
+            document.write(html);
             document.close();
-        }
-    } catch (error) {
-        console.error("Failed to load auth route alias.", error);
-    }
+        })
+        .catch(error => {
+            console.error("Failed to load auth route alias:", error);
+            window.location.replace(targetPage);
+        });
 })();

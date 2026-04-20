@@ -143,7 +143,9 @@
                             <h6 class="m-0 font-weight-bold text-primary">Сводка по технике</h6>
                         </div>
 
-                        <div class="card-body dashboard-status-card">
+                        <div class="card-body dashboard-status-card dashboard-current-state">
+                            <div id="dashboardCurrentStateNotice" class="dashboard-inline-state d-none" role="status" aria-live="polite"></div>
+
                             <div class="row">
                                 <div class="col-lg-3 col-md-6 mb-4 mb-lg-0">
                                     <div class="text-xs font-weight-bold text-primary text-uppercase mb-2">Статус</div>
@@ -157,7 +159,7 @@
 
                                 <div class="col-lg-3 col-md-6 mb-4 mb-md-0">
                                     <div class="text-xs font-weight-bold text-primary text-uppercase mb-2">Режим работы</div>
-                                    <div id="dashboardCurrentMode" class="dashboard-status-value">--</div>
+                                    <div id="dashboardCurrentMode" class="dashboard-status-value dashboard-mode-badge dashboard-mode-badge--unknown">--</div>
                                 </div>
 
                                 <div class="col-lg-3 col-md-6">
@@ -203,7 +205,10 @@
                                 </div>
                             </div>
 
-                            <div id="dashboardLastPacketTime" class="font-weight-bold text-gray-800">--</div>
+                            <div class="dashboard-last-packet">
+                                <div class="dashboard-last-packet__label">Последний пакет</div>
+                                <div id="dashboardLastPacketTime" class="dashboard-last-packet__value">--</div>
+                            </div>
                         </div>
 
                     </div>
@@ -244,6 +249,7 @@
     <script src="https://api-maps.yandex.ru/2.1/?apikey=3c050799-23a3-4bd9-a14a-b7eaf2e05511&lang=ru_RU"></script>
 
     <script src="js/dashboard.js?v=20260419b"></script>
+    <script src="js/dashboard-current-state.js?v=20260419a"></script>
 
 </body>
 

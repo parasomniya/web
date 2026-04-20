@@ -152,6 +152,162 @@ function escapeHtml(value) {
         .replace(/'/g, "&#39;");
 }
 
+const latestFetchState = {
+    hasLoadedAtLeastOnce: false,
+    status: "loading",
+    errorMessage: "",
+};
+
+function setCurrentStateNotice(tone, message) {
+    const element = document.getElementById("dashboardCurrentStateNotice");
+    if (!element) {
+        return;
+    }
+
+    if (!tone || !message) {
+        element.textContent = "";
+        element.className = "dashboard-inline-state d-none";
+        return;
+    }
+
+    element.textContent = message;
+    element.className = `dashboard-inline-state dashboard-inline-state--${tone}`;
+}
+
+function updateCurrentStateNotice(data) {
+    if (latestFetchState.status === "loading" && !latestFetchState.hasLoadedAtLeastOnce) {
+        setCurrentStateNotice("info", "Загрузка текущего состояния...");
+        return;
+    }
+
+    if (latestFetchState.status === "error") {
+        setCurrentStateNotice(
+            "danger",
+            latestFetchState.errorMessage || "Не удалось загрузить текущее состояние."
+        );
+        return;
+    }
+
+    if (latestFetchState.status === "stale" && !isEmptyTelemetry(data)) {
+        const packetTime = formatDateTime(data?.timestamp);
+        const packetInfo = packetTime !== "--" ? ` Последний пакет: ${packetTime}.` : "";
+        setCurrentStateNotice(
+            "warning",
+            `Данные временно не обновляются. Показано последнее доступное состояние.${packetInfo}`
+        );
+        return;
+    }
+
+    if (isEmptyTelemetry(data)) {
+        setCurrentStateNotice("info", "Телеметрия ещё не поступила.");
+        return;
+    }
+
+    setCurrentStateNotice("", "");
+}
+
+function getModeLabel(mode) {
+    return (typeof mode === "string" && mode.trim()) ? mode.trim() : "Ожидание";
+}
+
+function normalizeModeKey(mode) {
+    const normalized = getModeLabel(mode).toLowerCase();
+
+    if (normalized.includes("выгруз") || normalized.includes("unload")) {
+        return "unloading";
+    }
+
+    if (
+        normalized.includes("загруз") ||
+        normalized.includes("смеш") ||
+        normalized.includes("микс") ||
+        normalized.includes("load") ||
+        normalized.includes("mix")
+    ) {
+        return "loading";
+    }
+
+    if (
+        normalized.includes("ожид") ||
+        normalized.includes("простой") ||
+        normalized.includes("пауза") ||
+        normalized.includes("idle") ||
+        normalized.includes("wait")
+    ) {
+        return "idle";
+    }
+
+    return "unknown";
+}
+
+function renderModeBadge(mode) {
+    const element = document.getElementById("dashboardCurrentMode");
+    if (!element) {
+        return;
+    }
+
+    const modeKey = normalizeModeKey(mode);
+    element.textContent = getModeLabel(mode);
+    element.classList.remove(
+        "dashboard-mode-badge--idle",
+        "dashboard-mode-badge--loading",
+        "dashboard-mode-badge--unloading",
+        "dashboard-mode-badge--unknown",
+        "is-stale"
+    );
+    element.classList.add("dashboard-mode-badge", `dashboard-mode-badge--${modeKey}`);
+    element.classList.toggle("is-stale", latestFetchState.status === "stale");
+}
+
+function isUnloadMode(mode) {
+    return normalizeModeKey(mode) === "unloading";
+}
+
+function formatBatchMetricValue(value, digits = 1) {
+    const number = parseNumber(value);
+    return number === null ? "--" : number.toFixed(digits);
+}
+
+function getActiveBatchRows(batch) {
+    if (Array.isArray(batch?.ingredients)) {
+        return batch.ingredients;
+    }
+
+    if (Array.isArray(batch?.actualIngredients)) {
+        return batch.actualIngredients;
+    }
+
+    return [];
+}
+
+function getBatchPlanNumber(row) {
+    const factNumber = parseNumber(row?.fact ?? row?.actualWeight);
+    const planNumber = parseNumber(row?.plan ?? row?.plannedWeight);
+
+    if (planNumber === null) {
+        return null;
+    }
+
+    if (planNumber <= 0 && factNumber !== null && factNumber > 0) {
+        return null;
+    }
+
+    return planNumber;
+}
+
+function getBatchDeviationPercent(row, planNumber, factNumber) {
+    const explicitPercent = parseNumber(row?.deviation_percent ?? row?.deviationPercent);
+    if (explicitPercent !== null) {
+        return explicitPercent;
+    }
+
+    if (planNumber === null || factNumber === null || planNumber <= 0) {
+        return null;
+    }
+
+    return ((factNumber - planNumber) / planNumber) * 100;
+}
+
 function renderUnloadProgress(mode, unloadProgress) {
     const isVisible = mode === "Выгрузка" && unloadProgress;
     const bar = document.getElementById("dashboardUnloadProgressBar");

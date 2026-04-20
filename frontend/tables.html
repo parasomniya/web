@@ -99,20 +99,29 @@
 
                         <div class="card-body">
 
+                            <div class="form-row align-items-end mb-3">
+                                <div class="col-sm-6 col-md-4 col-lg-3">
+                                    <label class="small text-primary font-weight-bold text-uppercase mb-2" for="batchesDateFilter">Дата</label>
+                                    <input type="date" class="form-control" id="batchesDateFilter">
+                                </div>
+                                <div class="col-sm-6 col-md-8 col-lg-9 mt-3 mt-sm-0 d-flex align-items-center">
+                                    <div class="small text-gray-600" id="batchesFilterMeta"></div>
+                                </div>
+                            </div>
+
                             <div class="table-responsive">
 
-                                <table class="table table-bordered" id="batchesTable">
+                                <table class="table table-bordered mb-0" id="batchesTable">
                                     <thead>
                                         <tr>
                                             <th>Время</th>
-                                            <th>Действие</th>
-                                            <th>Зона / Объект</th>
-                                            <th>Вес</th>
-                                            <th>Статус</th>
+                                            <th>План</th>
+                                            <th>Группа</th>
+                                            <th>Нарушения</th>
+                                            <th>Компоненты</th>
                                         </tr>
                                     </thead>
-                                    <tbody id="batchesTableBody">
-                                        </tbody>
+                                    <tbody></tbody>
                                 </table>
 
                             </div>
@@ -157,7 +166,7 @@
     <script src="vendor/datatables/jquery.dataTables.min.js"></script>
     <script src="vendor/datatables/dataTables.bootstrap4.min.js"></script>
 
-    <script src="js/tables.js?v=20260403a"></script>
+    <script src="js/tables.js?v=20260419c"></script>
 
 </body>
 

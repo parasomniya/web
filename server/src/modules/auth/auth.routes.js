@@ -72,7 +72,7 @@ router.post('/register', async (req, res) => {
       role: user.role 
     })
   } catch (error) {
-    console.error('[Ошибка /register]:', error)
+    console.error('[Register Error]:', error)
     res.status(500).json({ error: 'Ошибка сервера при регистрации' })
   }
 })
@@ -97,12 +97,13 @@ router.post('/login', async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 30 *24 * 60 * 60 * 1000 // 30 дней
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 дней
     })
     
     // Возвращаем токен и роль, чтобы фронтенд знал, какие вкладки показывать
     res.json({ token, role: user.role }) 
   } catch (error) {
+    console.error('[Login Error]:', error)
     res.status(500).json({ error: 'Ошибка сервера' })
   }
 })
