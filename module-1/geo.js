@@ -30,12 +30,12 @@ function calculateHaversine(lat1, lon1, lat2, lon2) {
 }
 
 
-function detectZone(lat, lon, zonesConfig) {
+export function detectZone(lat, lon, zonesConfig) {
     let distance
     for (const zone of zonesConfig)
     {
         distance = calculateHaversine(lat,lon,zone.lat,zone.lon)
-        if (distance <= zone,radius)
+        if (distance <= zone.radius)
         {
             return zone.name
         }
