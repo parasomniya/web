@@ -7,6 +7,14 @@ import nodemailer from 'nodemailer' // Отправка email
 const router = Router()
 const SECRET_KEY = process.env.JWT_SECRET || 'super_secret_farm_key_123'
 
+function isSmtpConfigured() {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
+}
+
+function getFrontendUrl() {
+  return (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')
+}
+
 // Настройка почты
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -18,64 +26,6 @@ const transporter = nodemailer.createTransport({
   },
 })
 
-// ============== Регистрация ==============
-
-router.post('/register', async (req, res) => {
-  try {
-    const { username, email, password } = req.body
-
-    if (!username || !email || !password) {
-      return res.status(400).json({ error: 'Заполните все поля' })
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Пароль должен быть минимум 6 символов' })
-    }
-
-    // Проверяем, не занят ли логин или email
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [ { username }, { email } ]
-      }
-    })
-
-    if (existingUser) {
-      return res.status(400).json({ error: 'Пользователь с таким логином или email уже существует' })
-    }
-
-    // Хешируем пароль
-    const hashedPassword = await bcrypt.hash(password, 10)
-
-    // Создаем пользователя с ролью GUEST по умолчанию
-    const user = await prisma.user.create({
-      data: {
-        username,
-        email,
-        password: hashedPassword,
-        role: 'GUEST'
-      }
-    })
-
-    // Сразу генерируем токен и пускаем в систему (как при логине)
-    const token = jwt.sign({ id: user.id, role: user.role }, SECRET_KEY, { expiresIn: '24h' })
-    
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 дней
-    })
-    
-    res.status(201).json({ 
-      message: 'Регистрация успешна',
-      token, 
-      role: user.role 
-    })
-  } catch (error) {
-    console.error('[Register Error]:', error)
-    res.status(500).json({ error: 'Ошибка сервера при регистрации' })
-  }
-})
 
 // ============== Авторизация ==============
 
@@ -136,11 +86,16 @@ router.post('/forgot-password', async (req, res) => {
       })
     }
 
+    if (!isSmtpConfigured()) {
+      console.error('[Ошибка /forgot-password]: SMTP не настроен')
+      return res.status(500).json({ error: 'SMTP не настроен. Проверьте SMTP_HOST, SMTP_USER и SMTP_PASS' })
+    }
+
     // Секрет из ключа + текущего пароля (ссылка сгорит после смены пароля)
     const secret = SECRET_KEY + user.password
     const token = jwt.sign({ id: user.id, username: user.username }, secret, { expiresIn: '15m' })
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+    const frontendUrl = getFrontendUrl()
     const resetLink = `${frontendUrl}/reset-password?token=${token}&id=${user.id}`
 
     // Отправляем реальное письмо на привязанный email
@@ -178,6 +133,10 @@ router.post('/reset-password', async (req, res) => {
 
     if (!id || !token || !newPassword) {
       return res.status(400).json({ error: 'Не все данные переданы' })
+    }
+
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ error: 'Пароль должен быть минимум 6 символов' })
     }
 
     const user = await prisma.user.findUnique({ where: { id: parseInt(id) } })

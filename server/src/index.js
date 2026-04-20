@@ -1,4 +1,4 @@
-  import 'dotenv/config.js'
+  import './load-env.js'
   import express from 'express'
   import cors from 'cors'
   import path from 'path'
@@ -12,6 +12,7 @@
   import rationsRouter from './modules/rations/rations.routes.js'
   import prisma from './database.js'
   import batchesRoutes from './modules/batches/batches.routes.js'
+  import groupsRoutes from './modules/groups/groups.routes.js'
   import usersRoutes from './modules/users/users.routes.js';
 
   const __filename = fileURLToPath(import.meta.url)
@@ -68,6 +69,9 @@
 
   // Замесы: доступно всем авторизованным (гость может только смотреть, админ/директор - управлять)
   app.use('/api/batches', authenticate, requireReadAccess, batchesRoutes)
+
+  // Группы/коровники для селектов и справочников
+  app.use('/api/groups', authenticate, requireReadAccess, groupsRoutes)
 
   app.use('/api/users', authenticate, requireAdmin, usersRoutes);
 

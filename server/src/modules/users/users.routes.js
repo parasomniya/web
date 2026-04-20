@@ -4,6 +4,12 @@ import bcrypt from "bcrypt"; // Используем уже установлен
 import { authenticate, requireWriteAccess } from "../../middleware/auth.js"; // Проверь путь до middleware
 
 const router = Router();
+const VALID_ROLES = ['ADMIN', 'DIRECTOR', 'GUEST'];
+
+function isValidEmail(email) {
+    if (!email) return true;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
 
 // ============================================================================
 // 1. GET / - Получить список всех пользователей (для таблицы в админке)
@@ -35,6 +41,21 @@ router.get('/', authenticate, async (req, res) => {
 router.post('/', authenticate, requireWriteAccess, async (req, res) => {
     try {
         const { username, email, password, role } = req.body;
+        const normalizedUsername = String(username || '').trim();
+        const normalizedEmail = email ? String(email).trim() : null;
+        const normalizedRole = role || 'GUEST';
+
+        if (!normalizedUsername) {
+            return res.status(400).json({ error: 'Логин обязателен' });
+        }
+
+        if (!isValidEmail(normalizedEmail)) {
+            return res.status(400).json({ error: 'Некорректный email' });
+        }
+
+        if (!VALID_ROLES.includes(normalizedRole)) {
+            return res.status(400).json({ error: 'Недопустимая роль. Доступны: ADMIN, DIRECTOR, GUEST' });
+        }
 
         if (!password || password.length < 6) {
             return res.status(400).json({ error: 'Пароль должен быть минимум 6 символов' });
@@ -45,10 +66,10 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
 
         const newUser = await prisma.user.create({
             data: {
-                username,
-                email,
+                username: normalizedUsername,
+                email: normalizedEmail,
                 password: hashedPassword,
-                role: role || 'GUEST' // Если роль не передали, ставим GUEST
+                role: normalizedRole
             },
             select: { id: true, username: true, email: true, role: true }
         });
@@ -72,8 +93,7 @@ router.patch('/:id/role', authenticate, requireWriteAccess, async (req, res) => 
         const { role } = req.body;
         
         // Проверяем, что прислали правильную роль (согласно enum в schema.prisma)
-        const validRoles = ['ADMIN', 'DIRECTOR', 'GUEST'];
-        if (!validRoles.includes(role)) {
+        if (!VALID_ROLES.includes(role)) {
             return res.status(400).json({ error: 'Недопустимая роль. Доступны: ADMIN, DIRECTOR, GUEST' });
         }
 
@@ -86,6 +106,9 @@ router.patch('/:id/role', authenticate, requireWriteAccess, async (req, res) => 
         res.json({ status: 'ok', message: 'Роль успешно обновлена', user: updatedUser });
     } catch (error) {
         console.error('[Ошибка PATCH /users/:id/role]:', error);
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
         res.status(500).json({ error: 'Ошибка сервера при обновлении пользователя' });
     }
 });
@@ -101,6 +124,9 @@ router.delete('/:id', authenticate, requireWriteAccess, async (req, res) => {
         res.json({ status: 'ok', message: 'Пользователь удален' });
     } catch (error) {
         console.error('[Ошибка DELETE /users/:id]:', error);
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
         res.status(500).json({ error: 'Ошибка при удалении пользователя' });
     }
 });
