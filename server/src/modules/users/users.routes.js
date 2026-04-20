@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import prisma from "../../database.js"; // Проверь путь до твоего файла Prisma
-import bcrypt from "bcryptjs"; // Если еще не установлен, сделай: npm install bcryptjs
+import bcrypt from "bcrypt"; // Используем уже установленный пакет
 import { authenticate, requireWriteAccess } from "../../middleware/auth.js"; // Проверь путь до middleware
 
 const router = Router();

@@ -5,6 +5,9 @@
     const DEFAULT_API_PORT = "3000";
 
     const LOGIN_PAGE = "login.html";
+    const LOGIN_ROUTE = "/login";
+    const RESET_PASSWORD_PAGE = "reset-password.html";
+    const RESET_PASSWORD_ROUTE = "/reset-password";
     const ADMIN_TELEMETRY_PAGE = "telemetry-admin.html";
 
     const ROLE_ADMIN = "ADMIN";
@@ -180,6 +183,23 @@
         return pageName || "index.html";
     }
 
+    function getNormalizedPathname() {
+        const pathname = window.location.pathname.replace(/\\/g, "/");
+        if (!pathname || pathname === "/") {
+            return "/";
+        }
+
+        return pathname.replace(/\/+$/, "") || "/";
+    }
+
+    function isLoginPage() {
+        return getCurrentPageName() === LOGIN_PAGE || getNormalizedPathname() === LOGIN_ROUTE;
+    }
+
+    function isResetPasswordPage() {
+        return getCurrentPageName() === RESET_PASSWORD_PAGE || getNormalizedPathname() === RESET_PASSWORD_ROUTE;
+    }
+
     function buildUrl(pageName, params) {
         const url = new URL(pageName, window.location.href);
 
@@ -194,7 +214,7 @@
 
     function redirectToLogin(reason) {
         clearSession();
-        window.location.replace(buildUrl(LOGIN_PAGE, { error: reason || "auth-required" }));
+        window.location.replace(buildUrl(LOGIN_ROUTE, { error: reason || "auth-required" }));
     }
 
     function redirectToHome(reason) {
@@ -387,12 +407,12 @@
             // local session cleanup below is enough for frontend logout
         } finally {
             clearSession();
-            window.location.replace(buildUrl(LOGIN_PAGE));
+            window.location.replace(buildUrl(LOGIN_ROUTE));
         }
     }
 
     function renderAccountPanel() {
-        if (getCurrentPageName() === LOGIN_PAGE || document.getElementById("appAuthAccountPanel")) {
+        if (isLoginPage() || isResetPasswordPage() || document.getElementById("appAuthAccountPanel")) {
             return;
         }
 
@@ -491,12 +511,16 @@
     function guardCurrentPage() {
         const pageName = getCurrentPageName();
 
-        if (pageName === LOGIN_PAGE) {
+        if (isLoginPage()) {
             if (isAuthenticated()) {
                 window.location.replace(buildUrl("index.html"));
                 return false;
             }
 
+            return true;
+        }
+
+        if (isResetPasswordPage()) {
             return true;
         }
 

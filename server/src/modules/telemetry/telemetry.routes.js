@@ -1,7 +1,6 @@
 import { Router } from 'express'
 import prisma from "../../database.js"
 import { authenticate, requireAdmin, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js"
-import { telemetryProcessor } from '../../core/TelemetryProcessor.js'
 
 // ВРЕМЕННАЯ ЗАГЛУШКА
 const telemetryProcessor = {
