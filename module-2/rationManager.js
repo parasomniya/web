@@ -3,7 +3,26 @@
  * @param {Array} rawExelData - Массив объектов с русскими ключами
  * @returns {Object} Результат: { success, data, errors }
  */
-function processRationRows(rawExelData) {
+const NAME_COLUMNS = ['Ингредиент', 'Название', 'Компонент', 'Корм', 'ingredient', 'name'];
+const PLAN_COLUMNS = ['План', 'Вес на голову в сутки, кг', 'Вес/голову', 'Вес на голову', 'plannedWeight'];
+const DRY_COLUMNS = ['СВ', 'Вес на голову в сутки СВ, кг', 'Вес СВ/голову', 'Сухое вещество', 'dryMatterWeight'];
+
+function firstValue(row, columns) {
+  for (const column of columns) {
+    if (row[column] !== undefined && row[column] !== null && String(row[column]).trim() !== '') {
+      return row[column];
+    }
+  }
+  return undefined;
+}
+
+function normalizeNumber(value) {
+  if (typeof value === 'number') return value;
+  if (value === undefined || value === null) return NaN;
+  return Number(String(value).replace(',', '.').trim());
+}
+
+export function processRationRows(rawExelData) {
   const result = {
     success: true,
     data: [],
@@ -21,12 +40,12 @@ function processRationRows(rawExelData) {
     if (isEmptyRow) return;
 
     // 2. Маппинг и очистка
-    const name = row['Ингредиент'] ? String(row['Ингредиент']).trim() : '';
-    const plannedWeightRaw = row['План'];
-    const dryMatterWeightRaw = row['СВ'];
+    const name = firstValue(row, NAME_COLUMNS) ? String(firstValue(row, NAME_COLUMNS)).trim() : '';
+    const plannedWeightRaw = firstValue(row, PLAN_COLUMNS);
+    const dryMatterWeightRaw = firstValue(row, DRY_COLUMNS);
 
     // 3. Валидация: План
-    const plannedWeight = Number(plannedWeightRaw);
+    const plannedWeight = normalizeNumber(plannedWeightRaw);
     if (isNaN(plannedWeight) || plannedWeight <= 0) {
       result.errors.push(`Строка ${lineNumber}: Вес '${plannedWeightRaw}' не является числом или меньше/равен 0`);
       result.success = false;
@@ -34,7 +53,7 @@ function processRationRows(rawExelData) {
     }
 
     // 4. Валидация: СВ
-    const dryMatterWeight = Number(dryMatterWeightRaw);
+    const dryMatterWeight = normalizeNumber(dryMatterWeightRaw);
     if (isNaN(dryMatterWeight) || dryMatterWeight < 0) {
       result.errors.push(`Строка ${lineNumber}: Сухое вещество '${dryMatterWeightRaw}' не является числом или меньше 0`);
       result.success = false;
@@ -52,6 +71,11 @@ function processRationRows(rawExelData) {
     result.data.push({ name, plannedWeight, dryMatterWeight });
   });
 
+  if (result.success && result.data.length === 0) {
+    result.errors.push('В файле не найдено ни одной строки рациона');
+    result.success = false;
+  }
+
   return result;
 }
 
@@ -62,7 +86,7 @@ function processRationRows(rawExelData) {
  * @param {number} headcount - Количество голов в группе
  * @returns {Object} Объект с общими и целевыми весами
  */
-function calculatePlan(parsedRation, headcount) {
+export function calculatePlan(parsedRation, headcount) {
   // 1. Базовая защита от некорректных данных
   if (!Array.isArray(parsedRation) || typeof headcount !== 'number' || headcount <= 0) {
     return { totalBatchWeight: 0, totalDryMatterWeight: 0, ingredients: [] };
@@ -105,7 +129,7 @@ function calculatePlan(parsedRation, headcount) {
  * @param {number} threshold - Допустимый процент погрешности (по умолчанию 10)
  * @returns {Object} { matches: [], violations: [] }
  */
-function checkViolations(planArr, factArr, threshold = 10) {
+export function checkViolations(planArr, factArr, threshold = 10) {
   const result = {
     matches: [],
     violations: []
@@ -189,4 +213,8 @@ function checkViolations(planArr, factArr, threshold = 10) {
   return result;
 }
 
-
+export default {
+  processRationRows,
+  calculatePlan,
+  checkViolations
+};

@@ -1,27 +1,34 @@
 import { Router } from 'express';
 import multer from 'multer';
+import XLSX from 'xlsx';
 import prisma from '../../database.js'; 
 import { requireReadAccess, requireWriteAccess } from '../../middleware/auth.js';
-
-
-// ВРЕМЕННАЯ ЗАГЛУШКА (Удалишь, когда Илья отдаст файл)
-const rationManager = {
-  parseExcel: (fileBuffer) => {
-    // Илья там внутри использует xlsx, проверяет колонки и возвращает:
-    return {
-      success: true,
-      data: [
-        { name: 'Силос кукурузный', plannedWeight: 15, dryMatterWeight: 5 },
-        { name: 'Сенаж', plannedWeight: 10, dryMatterWeight: 4 }
-      ],
-      error: null
-    };
-    // Если ошибка, вернет: { success: false, data: null, error: 'Не найдена колонка "План"' }
-  }
-};
+import { processRationRows } from '../../../../module-2/rationManager.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+function parseExcel(fileBuffer) {
+  try {
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+    const firstSheetName = workbook.SheetNames[0];
+
+    if (!firstSheetName) {
+      return { success: false, data: null, error: 'В Excel-файле нет листов' };
+    }
+
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { defval: '' });
+    const parsed = processRationRows(rows);
+
+    return {
+      success: parsed.success,
+      data: parsed.success ? parsed.data : null,
+      error: parsed.errors.join('; ')
+    };
+  } catch (error) {
+    return { success: false, data: null, error: error.message };
+  }
+}
 
 // ============================================================================
 // POST /upload - Загрузка Excel и создание рациона
@@ -42,7 +49,7 @@ router.post('/upload', requireWriteAccess, upload.single('file'), async (req, re
     }
 
     // Отдаем буфер файла
-    const parsedResult = rationManager.parseExcel(req.file.buffer);
+    const parsedResult = parseExcel(req.file.buffer);
 
     // ЗАДАЧА: Обработка ошибок для пользователя в парсинге
     if (!parsedResult.success) {

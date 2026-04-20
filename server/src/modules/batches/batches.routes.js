@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import prisma from "../../database.js";
 import { authenticate, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js";
+import { recalculateBatchViolations } from './batch-violations.js';
 
 const router = Router();
 
@@ -165,12 +166,12 @@ router.patch('/:id', authenticate, requireWriteAccess, async (req, res) => {
             data: {
                 rationId: rationId ? parseInt(rationId) : undefined,
                 groupId: groupId ? parseInt(groupId) : undefined
-                // В будущем сюда можно добавить логику "пересчета" нарушений, 
-                // если Илья напишет для этого отдельную функцию
             }
         });
 
-        res.json({ status: 'ok', batch: updatedBatch });
+        const recalculation = await recalculateBatchViolations(prisma, updatedBatch.id);
+
+        res.json({ status: 'ok', batch: updatedBatch, recalculation });
     } catch (error) {
         console.error('[Ошибка редактирования замеса]:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -194,11 +195,9 @@ router.patch('/:batchId/ingredients/:ingredientId', authenticate, requireWriteAc
             data: { ingredientName }
         });
 
-        // 🧠 ВАЖНО: В будущем (когда Илья допишет алгоритм), именно здесь 
-        // мы будем дергать функцию пересчета нарушений для этого конкретного компонента,
-        // так как теперь мы знаем, что именно насыпали, и можем сравнить с планом.
+        const recalculation = await recalculateBatchViolations(prisma, req.params.batchId);
 
-        res.json({ status: 'ok', ingredient: updatedIngredient });
+        res.json({ status: 'ok', ingredient: updatedIngredient, recalculation });
     } catch (error) {
         console.error('[Ошибка обновления ингредиента]:', error);
         res.status(500).json({ error: 'Internal server error' });

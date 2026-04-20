@@ -18,65 +18,6 @@ const transporter = nodemailer.createTransport({
   },
 })
 
-// ============== Регистрация ==============
-
-router.post('/register', async (req, res) => {
-  try {
-    const { username, email, password } = req.body
-
-    if (!username || !email || !password) {
-      return res.status(400).json({ error: 'Заполните все поля' })
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Пароль должен быть минимум 6 символов' })
-    }
-
-    // Проверяем, не занят ли логин или email
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [ { username }, { email } ]
-      }
-    })
-
-    if (existingUser) {
-      return res.status(400).json({ error: 'Пользователь с таким логином или email уже существует' })
-    }
-
-    // Хешируем пароль
-    const hashedPassword = await bcrypt.hash(password, 10)
-
-    // Создаем пользователя с ролью GUEST по умолчанию
-    const user = await prisma.user.create({
-      data: {
-        username,
-        email,
-        password: hashedPassword,
-        role: 'GUEST'
-      }
-    })
-
-    // Сразу генерируем токен и пускаем в систему (как при логине)
-    const token = jwt.sign({ id: user.id, role: user.role }, SECRET_KEY, { expiresIn: '24h' })
-    
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 дней
-    })
-    
-    res.status(201).json({ 
-      message: 'Регистрация успешна',
-      token, 
-      role: user.role 
-    })
-  } catch (error) {
-    console.error('[Ошибка /register]:', error)
-    res.status(500).json({ error: 'Ошибка сервера при регистрации' })
-  }
-})
-
 // ============== Авторизация ==============
 
 router.post('/login', async (req, res) => {

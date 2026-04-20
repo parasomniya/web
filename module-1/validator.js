@@ -34,3 +34,5 @@ export function isValidLocation(lat, lon) {
   // Все проверки пройдены
   return true;
 }
+
+export default isValidLocation

@@ -6,7 +6,7 @@
  * @param {number} lon2 - Долгота второй точки (градусы)
  * @returns {number} Расстояние в метрах
  */
-function calculateHaversine(lat1, lon1, lat2, lon2) {
+export function calculateHaversine(lat1, lon1, lat2, lon2) {
   const R = 6371000; // Средний радиус Земли в метрах
   const toRad = deg => deg * Math.PI / 180;
 
@@ -30,15 +30,21 @@ function calculateHaversine(lat1, lon1, lat2, lon2) {
 }
 
 
-export function detectZone(lat, lon, zonesConfig) {
+export function detectZoneObject(lat, lon, zonesConfig = []) {
     let distance
     for (const zone of zonesConfig)
     {
-        distance = calculateHaversine(lat,lon,zone.lat,zone.lon)
-        if (distance <= zone.radius)
+        distance = calculateHaversine(lat, lon, Number(zone.lat), Number(zone.lon))
+        if (distance <= Number(zone.radius))
         {
-            return zone.name
+            return zone
         }
     }
     return null
 }
+
+export function detectZone(lat, lon, zonesConfig = []) {
+    return detectZoneObject(lat, lon, zonesConfig)?.name || null
+}
+
+export default detectZone

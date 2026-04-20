@@ -1,11 +1,11 @@
-import detectZone from '../module-1/geo.js';
-import isValidLocation from '../module-1/validator.js';
+import { detectZoneObject } from '../module-1/geo.js';
+import { isValidLocation } from '../module-1/validator.js';
 
 /**
  * Главный автомат состояний для обработки телеметрии
  * Отслеживает загрузки, выгрузки и перемещения между зонами
  */
-class TelemetryProcessor {
+export class TelemetryProcessor {
   constructor() {
     // Хранилище состояний по deviceId
     this.deviceStates = new Map();
@@ -14,15 +14,16 @@ class TelemetryProcessor {
   /**
    * Возвращает начальное состояние для нового устройства
    */
-  getInitialState() {
+  getInitialState(weight = 0) {
     return {
       lastZoneName: null,        // Зона из предыдущего пакета (для баннеров)
       currentZone: null,         // Текущая активная зона загрузки
-      zoneStartWeight: 0,        // Вес в момент начала загрузки в зоне
-      peakWeight: 0,             // Максимальный вес за цикл
+      zoneStartWeight: weight,   // Вес в момент начала загрузки в зоне
+      peakWeight: weight,        // Максимальный вес за цикл
       isMixing: false,           // Флаг: идет набор веса?
       isUnloading: false,        // Флаг: идет разгрузка?
-      lastUnloadWeight: null     // Последний вес при разгрузке
+      lastUnloadWeight: null,    // Последний вес при разгрузке
+      lastIngredientName: null
     };
   }
 
@@ -41,33 +42,38 @@ class TelemetryProcessor {
     };
 
     // ===== ШАГ 1: Базовая проверка координат =====
-    if (!isValidLocation(packet.lat, packet.lon)) {
+    const deviceId = packet.deviceId || packet.device_id || 'host_01';
+    const lat = Number(packet.lat);
+    const lon = Number(packet.lon);
+    const currentWeight = Number(packet.weight || 0);
+
+    if (!isValidLocation(lat, lon)) {
       result.isValid = false;
       result.error = 'Invalid GPS coordinates';
       return result;
     }
 
     // ===== Получаем или создаем состояние устройства =====
-    let state = this.deviceStates.get(packet.deviceId);
+    let state = this.deviceStates.get(deviceId);
     if (!state) {
-      state = this.getInitialState();
-      this.deviceStates.set(packet.deviceId, state);
+      state = this.getInitialState(currentWeight);
+      this.deviceStates.set(deviceId, state);
     }
 
-    const currentWeight = packet.weight;
-
     // ===== ШАГ 2: Определение зоны и баннеров =====
-    const activeZone = detectZone(packet.lat, packet.lon, zonesConfig);
+    const activeZone = detectZoneObject(lat, lon, zonesConfig);
+    const activeZoneName = activeZone?.name || null;
+    const activeIngredientName = activeZone?.ingredient || activeZoneName;
     
     // Если зона сменилась — генерируем баннер
-    if (activeZone !== state.lastZoneName) {
-      if (activeZone) {
+    if (activeZoneName !== state.lastZoneName) {
+      if (activeZoneName) {
         result.banner = {
           type: 'zone_enter',
-          message: `Въезд в зону ${activeZone}`
+          message: `Въезд в зону ${activeZoneName}`
         };
       }
-      state.lastZoneName = activeZone;
+      state.lastZoneName = activeZoneName;
     }
 
     // ===== ШАГ 3: Авто-Тара (Защита от "Васи с лопатой") =====
@@ -79,7 +85,7 @@ class TelemetryProcessor {
     }
 
     // ===== ШАГ 4: Детекция загрузки (смена зоны) =====
-    if (state.currentZone !== activeZone) {
+    if ((state.currentZone?.name || null) !== activeZoneName) {
       // Проверяем, был ли в какой-то зоне до этого
       if (state.currentZone) {
         const delta = currentWeight - state.zoneStartWeight;
@@ -87,17 +93,19 @@ class TelemetryProcessor {
         // Если набрал больше 30 кг — это загрузка
         if (delta > 30) {
           state.isMixing = true;
+          const ingredientName = state.currentZone.ingredient || state.currentZone.name || 'Unknown';
+          state.lastIngredientName = ingredientName;
           
           result.dbActions.push({
             type: 'ADD_INGREDIENT',
-            ingredientName: state.currentZone,
+            ingredientName,
             actualWeight: Math.round(delta)
           });
         }
       }
 
       // В любом случае обновляем якоря
-      state.currentZone = activeZone;
+      state.currentZone = activeZone ? { ...activeZone, ingredient: activeIngredientName } : null;
       state.zoneStartWeight = currentWeight;
     }
 
@@ -140,8 +148,17 @@ class TelemetryProcessor {
       });
 
       // Полностью удаляем состояние из памяти
-      this.deviceStates.delete(packet.deviceId);
+      this.deviceStates.delete(deviceId);
     }
+
+    result.state = {
+      currentZone: activeZoneName,
+      currentIngredient: activeIngredientName,
+      isMixing: state.isMixing,
+      isUnloading: state.isUnloading,
+      peakWeight: state.peakWeight,
+      lastIngredientName: state.lastIngredientName
+    };
 
     return result;
   }
@@ -149,8 +166,17 @@ class TelemetryProcessor {
   /**
    * Получение состояния конкретного устройства (для отладки)
    */
+  getState(deviceId) {
+    const state = this.deviceStates.get(deviceId) || this.getInitialState();
+    return {
+      ...state,
+      currentZone: state.currentZone?.name || null,
+      currentIngredient: state.currentZone?.ingredient || state.lastIngredientName || null
+    };
+  }
+
   getDeviceState(deviceId) {
-    return this.deviceStates.get(deviceId);
+    return this.getState(deviceId);
   }
 
   /**
@@ -160,3 +186,5 @@ class TelemetryProcessor {
     this.deviceStates.clear();
   }
 }
+
+export default new TelemetryProcessor();

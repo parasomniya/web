@@ -1,14 +1,40 @@
 import { Router } from 'express'
 import prisma from "../../database.js"
 import { authenticate, requireAdmin, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js"
-
-// ВРЕМЕННАЯ ЗАГЛУШКА
-const telemetryProcessor = {
-  processPacket: (packet, zones) => ({ isValid: true, error: null, banner: null, dbActions: [] }),
-  getState: (deviceId) => ({ isMixing: false, isUnloading: false, peakWeight: 0 })
-};
+import telemetryProcessor from '../../../../module-3/telemetryProcessor.js'
+import { recalculateBatchViolations } from '../batches/batch-violations.js'
 
 const router = Router()
+
+function parseBoolean(value) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'true' || normalized === '1') return true
+    if (normalized === 'false' || normalized === '0') return false
+  }
+  return Boolean(value)
+}
+
+function normalizeTelemetryPacket(packet) {
+  return {
+    deviceId: packet.deviceId || packet.device_id || 'host_01',
+    timestamp: packet.timestamp ? new Date(packet.timestamp) : new Date(),
+    lat: Number(packet.lat || 0),
+    lon: Number(packet.lon || 0),
+    gpsValid: parseBoolean(packet.gpsValid ?? packet.gps_valid),
+    gpsSatellites: Number(packet.gpsSatellites ?? packet.gps_satellites ?? 0),
+    weight: Number(packet.weight || 0),
+    weightValid: parseBoolean(packet.weightValid ?? packet.weight_valid),
+    gpsQuality: Number(packet.gpsQuality ?? packet.gps_quality ?? 0),
+    wifiClients: packet.wifiClients ?? packet.wifi_clients ?? [],
+    cpuTempC: packet.cpuTempC ?? packet.cpu_temp_c ?? null,
+    lteRssiDbm: packet.lteRssiDbm ?? packet.lte_rssi_dbm ?? null,
+    lteAccessTech: packet.lteAccessTech ?? packet.lte_access_tech ?? null,
+    eventsReaderOk: parseBoolean(packet.eventsReaderOk ?? packet.events_reader_ok)
+  }
+}
 
 // Хелпер для пустых ответов
 function buildEmptyLatestResponse() {
@@ -25,8 +51,8 @@ function buildEmptyLatestResponse() {
 // ============================================================================
 router.post('/', async (req, res) => {
   try {
-    const packet = req.body;
-    const deviceId = packet.device_id || 'host_01';
+    const packet = normalizeTelemetryPacket(req.body);
+    const deviceId = packet.deviceId;
 
     // 1. Достаем геозоны из базы
     const activeZones = await prisma.storageZone.findMany({ where: { active: true } });
@@ -43,19 +69,19 @@ router.post('/', async (req, res) => {
     const telemetry = await prisma.telemetry.create({
       data: {
         deviceId: deviceId,
-        timestamp: packet.timestamp ? new Date(packet.timestamp) : new Date(),
-        lat: packet.lat || 0,
-        lon: packet.lon || 0,
-        gpsValid: Boolean(packet.gps_valid),
-        gpsSatellites: packet.gps_satellites || 0,
-        weight: packet.weight || 0,
-        weightValid: Boolean(packet.weight_valid),
-        gpsQuality: packet.gps_quality || 0,
-        wifiClients: packet.wifi_clients ? JSON.stringify(packet.wifi_clients) : '[]',
-        cpuTempC: packet.cpu_temp_c || null,
-        lteRssiDbm: packet.lte_rssi_dbm || null,
-        lteAccessTech: packet.lte_access_tech || null,
-        eventsReaderOk: Boolean(packet.events_reader_ok)
+        timestamp: packet.timestamp,
+        lat: packet.lat,
+        lon: packet.lon,
+        gpsValid: packet.gpsValid,
+        gpsSatellites: packet.gpsSatellites,
+        weight: packet.weight,
+        weightValid: packet.weightValid,
+        gpsQuality: packet.gpsQuality,
+        wifiClients: Array.isArray(packet.wifiClients) ? JSON.stringify(packet.wifiClients) : String(packet.wifiClients || '[]'),
+        cpuTempC: packet.cpuTempC,
+        lteRssiDbm: packet.lteRssiDbm,
+        lteAccessTech: packet.lteAccessTech,
+        eventsReaderOk: packet.eventsReaderOk
       }
     });
 
@@ -76,7 +102,7 @@ router.post('/', async (req, res) => {
               activeBatch = await prisma.batch.create({
                 data: {
                   deviceId,
-                  startTime: new Date(),
+                  startTime: telemetry.timestamp,
                   startWeight: telemetry.weight, // Или можно брать action.startWeight
                   hasViolations: false
                 }
@@ -87,10 +113,10 @@ router.post('/', async (req, res) => {
               data: {
                 batchId: activeBatch.id,
                 ingredientName: action.ingredientName,
-                actualWeight: action.weight
+                actualWeight: action.actualWeight
               }
             });
-            console.log(`Добавлен ингредиент: ${action.ingredientName} (${action.weight} кг)`);
+            console.log(`Добавлен ингредиент: ${action.ingredientName} (${action.actualWeight} кг)`);
             break;
 
           case 'UPDATE_UNLOAD':
@@ -104,10 +130,12 @@ router.post('/', async (req, res) => {
 
           case 'COMPLETE_BATCH':
             if (activeBatch) {
+              const completedBatchId = activeBatch.id;
               await prisma.batch.update({
                 where: { id: activeBatch.id },
-                data: { endTime: new Date() } // Закрываем замес
+                data: { endTime: telemetry.timestamp, endWeight: telemetry.weight } // Закрываем замес
               });
+              await recalculateBatchViolations(prisma, completedBatchId);
               console.log(`Замес ${activeBatch.id} закрыт!`);
               activeBatch = null;
             }
@@ -115,17 +143,19 @@ router.post('/', async (req, res) => {
 
           case 'FORCE_CLOSE_BATCH':
             if (activeBatch) {
+              const closedBatchId = activeBatch.id;
               await prisma.batch.update({
                 where: { id: activeBatch.id },
-                data: { endTime: new Date() }
+                data: { endTime: telemetry.timestamp, endWeight: telemetry.weight, hasViolations: true }
               });
+              await recalculateBatchViolations(prisma, closedBatchId);
               console.log(`Замес ${activeBatch.id} принудительно закрыт (недовыгрузка)!`);
             }
             // Сразу открываем новый с текущим остатком в кузове
             activeBatch = await prisma.batch.create({
               data: {
                 deviceId,
-                startTime: new Date(),
+                startTime: telemetry.timestamp,
                 startWeight: telemetry.weight,
                 hasViolations: false
               }
@@ -197,7 +227,7 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
     // 3. Данные по замесу для таблицы (План/Факт)
     const activeBatch = await prisma.batch.findFirst({
       where: { deviceId: data.deviceId, endTime: null },
-      include: { ingredients: true }, // Сразу берем ингредиенты
+      include: { actualIngredients: true },
       orderBy: { startTime: 'desc' }
     });
 
@@ -205,12 +235,12 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
     if (activeBatch) {
       active_batch_data = {
         id: activeBatch.id,
-        ingredients: activeBatch.ingredients.map(ing => ({
+        ingredients: activeBatch.actualIngredients.map(ing => ({
           name: ing.ingredientName,
-          plan: 0, 
+          plan: ing.plannedWeight || 0, 
           fact: ing.actualWeight,
-          deviation_percent: 0,
-          is_violation: false
+          deviation_percent: ing.plannedWeight ? Math.round(((ing.actualWeight - ing.plannedWeight) / ing.plannedWeight) * 1000) / 10 : 0,
+          is_violation: ing.isViolation
         }))
       };
     }
