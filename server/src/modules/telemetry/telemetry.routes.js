@@ -37,15 +37,92 @@ function normalizeTelemetryPacket(packet) {
 }
 
 // Хелпер для пустых ответов
-function buildEmptyLatestResponse() {
+function buildEmptyLatestResponse(deviceId = null) {
   return {
-    id: null, deviceId: null, timestamp: null, lat: null, lon: null,
+    id: null, deviceId, timestamp: null, lat: null, lon: null,
     weight: null, weightValid: false, gpsValid: false, gpsSatellites: 0,
     gpsQuality: 0, wifiClients: null, cpuTempC: null, lteRssiDbm: null,
     lteAccessTech: null, eventsReaderOk: false, banner: null,
     mode: 'Ожидание',
+    isMixing: false,
+    isUnloading: false,
     unload_progress: null,
     active_batch: null
+  }
+}
+
+function getRequestedDeviceId(req) {
+  const value = req.query.deviceId || req.query.device_id
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+async function inferMachineStateFromDatabase(deviceId, latestTelemetry, activeBatch, memoryState = {}) {
+  if (!latestTelemetry) {
+    return {
+      mode: 'Ожидание',
+      isMixing: false,
+      isUnloading: false,
+      peakWeight: 0,
+      currentZone: memoryState?.currentZone || null
+    }
+  }
+
+  if (!activeBatch) {
+    return {
+      mode: 'Ожидание',
+      isMixing: false,
+      isUnloading: false,
+      peakWeight: Number(latestTelemetry.weight || 0),
+      currentZone: memoryState?.currentZone || null
+    }
+  }
+
+  const telemetryWhere = {
+    deviceId,
+    timestamp: { gte: activeBatch.startTime }
+  }
+
+  const [recentPoints, peakTelemetry] = await Promise.all([
+    prisma.telemetry.findMany({
+      where: telemetryWhere,
+      orderBy: { timestamp: 'desc' },
+      take: 8,
+      select: { weight: true, timestamp: true }
+    }),
+    prisma.telemetry.aggregate({
+      where: telemetryWhere,
+      _max: { weight: true }
+    })
+  ])
+
+  const currentWeight = Number(latestTelemetry.weight || 0)
+  const previousWeight = Number(recentPoints[1]?.weight ?? currentWeight)
+  const peakWeight = Math.max(
+    Number(peakTelemetry._max.weight || 0),
+    Number(activeBatch.startWeight || 0),
+    currentWeight
+  )
+  const dropFromPeak = peakWeight - currentWeight
+  const recentDelta = currentWeight - previousWeight
+
+  let mode = 'Ожидание'
+  if (memoryState?.isUnloading) {
+    mode = 'Выгрузка'
+  } else if (memoryState?.isMixing) {
+    mode = 'Загрузка'
+  } else if (dropFromPeak > 30) {
+    mode = 'Выгрузка'
+  } else if (recentDelta > 5 || (activeBatch.actualIngredients || []).length > 0) {
+    mode = 'Загрузка'
+  }
+
+  return {
+    ...memoryState,
+    mode,
+    isMixing: mode === 'Загрузка',
+    isUnloading: mode === 'Выгрузка',
+    peakWeight,
+    currentZone: memoryState?.currentZone || null
   }
 }
 
@@ -185,13 +262,15 @@ router.post('/', async (req, res) => {
 // ============================================================================
 router.get('/current', authenticate, requireReadAccess, async (req, res) => {
   try {
-    const data = await prisma.telemetry.findFirst({ 
+    const requestedDeviceId = getRequestedDeviceId(req)
+    const data = await prisma.telemetry.findFirst({
+      where: requestedDeviceId ? { deviceId: requestedDeviceId } : undefined,
       orderBy: { timestamp: 'desc' } 
     });
     
-    if (!data) return res.json(buildEmptyLatestResponse());
+    if (!data) return res.json(buildEmptyLatestResponse(requestedDeviceId));
 
-    const machineState = telemetryProcessor.getState(data.deviceId);
+    const memoryState = telemetryProcessor.getState(data.deviceId);
 
     const activeBatch = await prisma.batch.findFirst({
       where: { deviceId: data.deviceId, endTime: null },
@@ -203,11 +282,15 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
       orderBy: { startTime: 'desc' }
     });
 
+    const machineState = await inferMachineStateFromDatabase(data.deviceId, data, activeBatch, memoryState);
+
     let mode = 'Ожидание';
     let unload_progress = null;
     let active_banner = null;
 
     if (machineState) {
+      mode = machineState.mode || mode;
+
       // БАННЕР ЗОНЫ (И для загрузки, и для выгрузки)
       if (machineState.currentZone) {
         active_banner = { 
@@ -245,8 +328,11 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
 
     res.json({
       ...data,
+      selectedDeviceId: data.deviceId,
       banner: active_banner, // Вот тут будет висеть зона, пока трактор там
       mode,
+      isMixing: machineState.isMixing,
+      isUnloading: machineState.isUnloading,
       unload_progress,
       active_batch: active_batch_data
     });

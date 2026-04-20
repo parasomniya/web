@@ -7,6 +7,17 @@ export const NAME_COLUMNS = ['Ингредиент', 'Название', 'Ком
 export const PLAN_COLUMNS = ['План', 'Вес на голову в сутки, кг', 'Вес/голову', 'Вес на голову', 'plannedWeight'];
 export const DRY_COLUMNS = ['СВ', 'Вес на голову в сутки СВ, кг', 'Вес СВ/голову', 'Сухое вещество', 'dryMatterWeight'];
 
+export function normalizeIngredientName(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+export function areSameIngredient(left, right) {
+  return normalizeIngredientName(left) === normalizeIngredientName(right);
+}
+
 function firstValue(row, columns) {
   for (const column of columns) {
     if (row[column] !== undefined && row[column] !== null && String(row[column]).trim() !== '') {
@@ -66,9 +77,15 @@ export function processRationRows(rawExelData) {
     if (isEmptyRow) return;
 
     // 2. Маппинг и очистка
-    const name = firstValue(row, NAME_COLUMNS) ? String(firstValue(row, NAME_COLUMNS)).trim() : '';
+    const name = firstValue(row, NAME_COLUMNS) ? String(firstValue(row, NAME_COLUMNS)).trim().replace(/\s+/g, ' ') : '';
     const plannedWeightRaw = firstValue(row, PLAN_COLUMNS);
     const dryMatterWeightRaw = firstValue(row, DRY_COLUMNS);
+
+    if (!name) {
+      result.errors.push(`Строка ${lineNumber}: Не указано название ингредиента`);
+      result.success = false;
+      return;
+    }
 
     // 3. Валидация: План
     const plannedWeight = normalizeNumber(plannedWeightRaw);
@@ -161,18 +178,22 @@ export function checkViolations(planArr, factArr, threshold = 10) {
     violations: []
   };
 
-  // Создаем карту плановых ингредиентов для быстрого поиска по имени
+  // Создаем карту плановых ингредиентов для быстрого поиска по нормализованному имени
   const planMap = new Map();
   planArr.forEach(item => {
-    planMap.set(item.name, item);
+    planMap.set(normalizeIngredientName(item.name), item);
   });
+
+  const loadedKeys = new Set();
 
   // Проходим по всем фактическим загрузкам
   factArr.forEach(factItem => {
-    const planItem = planMap.get(factItem.name);
+    const factKey = normalizeIngredientName(factItem.name);
+    const planItem = planMap.get(factKey);
+    loadedKeys.add(factKey);
     
     // Если компонента нет в плане (или это Unknown)
-    if (!planItem || factItem.name === 'Unknown') {
+    if (!planItem || factKey === 'unknown') {
       // Это нарушение - загружен компонент вне плана
       result.violations.push({
         ingredient: factItem.name,
@@ -202,7 +223,7 @@ export function checkViolations(planArr, factArr, threshold = 10) {
       const absRounded = Math.round(absDeviation * 10) / 10;
       
       result.violations.push({
-        ingredient: factItem.name,
+        ingredient: planItem.name || factItem.name,
         plan: planWeight,
         fact: factWeight,
         deviationPercent: roundedDeviation,
@@ -211,7 +232,7 @@ export function checkViolations(planArr, factArr, threshold = 10) {
     } else {
       // Отклонение в пределах нормы
       result.matches.push({
-        ingredient: factItem.name,
+        ingredient: planItem.name || factItem.name,
         plan: planWeight,
         fact: factWeight,
         deviationPercent: roundedDeviation
@@ -221,8 +242,7 @@ export function checkViolations(planArr, factArr, threshold = 10) {
 
   // Проверяем, все ли плановые компоненты были загружены
   planArr.forEach(planItem => {
-    const factItem = factArr.find(f => f.name === planItem.name);
-    if (!factItem) {
+    if (!loadedKeys.has(normalizeIngredientName(planItem.name))) {
       // Компонент был в плане, но не загружен
       const planWeight = planItem.targetWeight || planItem.plannedWeight;
       
@@ -242,5 +262,7 @@ export function checkViolations(planArr, factArr, threshold = 10) {
 export default {
   processRationRows,
   calculatePlan,
-  checkViolations
+  checkViolations,
+  normalizeIngredientName,
+  areSameIngredient
 };

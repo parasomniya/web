@@ -2,8 +2,51 @@ import { Router } from 'express';
 import prisma from "../../database.js";
 import { authenticate, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js";
 import { buildIngredientSummary, buildUnloadProgress, recalculateBatchViolations } from './batch-violations.js';
+import { normalizeIngredientName } from '../../../../module-2/rationManager.js';
 
 const router = Router();
+
+function round1(value) {
+    return Math.round(Number(value || 0) * 10) / 10;
+}
+
+async function getBatchWeightContext(batch) {
+    const telemetryWhere = {
+        deviceId: batch.deviceId,
+        timestamp: {
+            gte: batch.startTime,
+            ...(batch.endTime ? { lte: batch.endTime } : {})
+        }
+    };
+
+    const [latestTelemetry, peakTelemetry] = await Promise.all([
+        prisma.telemetry.findFirst({
+            where: telemetryWhere,
+            orderBy: { timestamp: 'desc' },
+            select: { weight: true, timestamp: true }
+        }),
+        prisma.telemetry.aggregate({
+            where: telemetryWhere,
+            _max: { weight: true }
+        })
+    ]);
+
+    const currentWeight = batch.endTime
+        ? Number(batch.endWeight ?? latestTelemetry?.weight ?? 0)
+        : Number(latestTelemetry?.weight ?? batch.endWeight ?? batch.startWeight ?? 0);
+    const peakWeight = Math.max(
+        Number(peakTelemetry._max.weight || 0),
+        Number(batch.startWeight || 0),
+        currentWeight
+    );
+
+    return {
+        currentWeight,
+        peakWeight,
+        remainingWeight: round1(Math.max(0, currentWeight)),
+        latestTelemetryAt: latestTelemetry?.timestamp || null
+    };
+}
 
 // ============================================================================
 // 1. GET / - Получить список замесов (с фильтром по дате, нарушениями и планом)
@@ -89,6 +132,8 @@ router.get('/:id', authenticate, requireReadAccess, async (req, res) => {
             return res.status(404).json({ error: 'Замес не найден' });
         }
 
+        const weightContext = await getBatchWeightContext(batch);
+
         // Форматируем ответ строго под нужды интерфейса Сони
         const detailedBatch = {
             id: batch.id,
@@ -123,8 +168,9 @@ router.get('/:id', authenticate, requireReadAccess, async (req, res) => {
             // Данные для ПЛАШКИ ВЫГРУЗКИ (пункт 4)
             unloadingInfo: {
                 barnName: batch.group?.name || 'Коровник не выбран',
-                remainingWeight: batch.endWeight || 0,
-                progress: buildUnloadProgress(batch, batch.endWeight || batch.startWeight, {})
+                remainingWeight: weightContext.remainingWeight,
+                latestTelemetryAt: weightContext.latestTelemetryAt,
+                progress: buildUnloadProgress(batch, weightContext.currentWeight, { peakWeight: weightContext.peakWeight })
             },
 
             // СПИСОК ИНГРЕДИЕНТОВ И ПЛАН/ФАКТ (пункты 2 и 3)
@@ -257,15 +303,47 @@ router.patch('/:batchId/ingredients/:ingredientId', authenticate, requireWriteAc
             return res.status(400).json({ error: 'Не указано новое название корма' });
         }
 
-        const batchIngredient = await prisma.batchIngredient.findUnique({ where: { id: ingredientId } });
-        if (!batchIngredient || batchIngredient.batchId !== batchId) {
+        const nextIngredientName = String(ingredientName).trim().replace(/\s+/g, ' ');
+        if (!nextIngredientName) {
+            return res.status(400).json({ error: 'Название корма не может быть пустым' });
+        }
+
+        const batch = await prisma.batch.findUnique({
+            where: { id: batchId },
+            include: {
+                ration: { include: { ingredients: true } },
+                actualIngredients: true
+            }
+        });
+
+        if (!batch) {
+            return res.status(404).json({ error: 'Замес не найден' });
+        }
+
+        const batchIngredient = batch.actualIngredients.find((item) => item.id === ingredientId);
+        if (!batchIngredient) {
             return res.status(404).json({ error: 'Ингредиент замеса не найден' });
+        }
+
+        if (!batch.ration) {
+            return res.status(400).json({ error: 'Нельзя заменить Unknown: у замеса не назначен рацион' });
+        }
+
+        const matchedRationIngredient = batch.ration.ingredients.find((item) =>
+            normalizeIngredientName(item.name) === normalizeIngredientName(nextIngredientName)
+        );
+
+        if (!matchedRationIngredient) {
+            return res.status(400).json({
+                error: 'Корм не входит в рацион этого замеса',
+                allowedIngredients: batch.ration.ingredients.map((item) => item.name)
+            });
         }
 
         // Обновляем имя компонента в базе
         const updatedIngredient = await prisma.batchIngredient.update({
             where: { id: ingredientId },
-            data: { ingredientName: String(ingredientName).trim() }
+            data: { ingredientName: matchedRationIngredient.name }
         });
 
         const recalculation = await recalculateBatchViolations(prisma, batchId);
