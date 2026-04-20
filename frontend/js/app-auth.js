@@ -18,6 +18,7 @@
     const APP_PAGES = new Set([
         "index.html",
         "tables.html",
+        "rations.html",
         BATCH_DETAILS_PAGE,
         "map-zones.html",
         ADMIN_TELEMETRY_PAGE,

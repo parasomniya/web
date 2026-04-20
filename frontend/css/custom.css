@@ -522,6 +522,64 @@
     color: #858796;
 }
 
+.batch-edit-state {
+    padding: 0.85rem 1rem;
+    margin-bottom: 1rem;
+    border: 1px solid transparent;
+    border-radius: 0.85rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1.45;
+}
+
+.batch-edit-state--info {
+    color: #35506b;
+    background: #eef5ff;
+    border-color: #d8e6ff;
+}
+
+.batch-edit-state--warning {
+    color: #7a4f00;
+    background: #fff6dd;
+    border-color: #f2dfad;
+}
+
+.batch-edit-state--danger {
+    color: #842029;
+    background: #f8d7da;
+    border-color: #f1aeb5;
+}
+
+.batch-edit-label {
+    display: inline-block;
+    margin-bottom: 0.45rem;
+    color: #4e73df;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.batch-edit-hint {
+    margin-top: 0.45rem;
+    color: #6c757d;
+    font-size: 0.84rem;
+    line-height: 1.45;
+}
+
+.batch-edit-actions {
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+}
+
+.batch-edit-meta {
+    color: #858796;
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
 .batch-unloading-card {
     display: flex;
     align-items: flex-start;
@@ -565,6 +623,149 @@
     font-weight: 700;
     line-height: 1.45;
     word-break: break-word;
+}
+
+.batch-unloading-card__meta {
+    color: #5f6f93;
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1.45;
+}
+
+.ration-upload-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    min-height: 180px;
+    padding: 1.25rem;
+    border: 2px dashed rgba(78, 115, 223, 0.3);
+    border-radius: 1rem;
+    background: linear-gradient(180deg, rgba(248, 249, 252, 0.92), rgba(255, 255, 255, 0.98));
+    color: #4f5d75;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
+}
+
+.ration-upload-dropzone:hover,
+.ration-upload-dropzone:focus {
+    outline: none;
+    transform: translateY(-1px);
+    border-color: rgba(78, 115, 223, 0.5);
+    box-shadow: 0 14px 28px rgba(78, 115, 223, 0.12);
+}
+
+.ration-upload-dropzone.is-dragover {
+    border-color: #4e73df;
+    background: linear-gradient(180deg, rgba(232, 239, 255, 0.95), rgba(255, 255, 255, 0.98));
+    box-shadow: 0 16px 32px rgba(78, 115, 223, 0.16);
+}
+
+.ration-upload-dropzone.is-disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.ration-upload-dropzone__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 999px;
+    background: rgba(78, 115, 223, 0.12);
+    color: #2e59d9;
+    font-size: 1.4rem;
+}
+
+.ration-upload-dropzone__title {
+    color: #2f3a4f;
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.ration-upload-dropzone__meta {
+    color: #6b7a96;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.ration-groups-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.ration-groups-preview__badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.38rem 0.72rem;
+    border-radius: 999px;
+    background: #eef3ff;
+    color: #2e59d9;
+    font-size: 0.84rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.ration-status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 104px;
+    padding: 0.42rem 0.82rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.ration-status-badge.is-active {
+    color: #0f6848;
+    background: #d9f7ea;
+}
+
+.ration-status-badge.is-inactive {
+    color: #5a5c69;
+    background: #eef1f6;
+}
+
+.ration-table-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.ration-table-list__item {
+    line-height: 1.35;
+}
+
+.ration-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    min-width: 150px;
+}
+
+.ration-action-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+@media (max-width: 991.98px) {
+    .ration-upload-dropzone {
+        min-height: 150px;
+    }
 }
 
 .telemetry-page-meta {
@@ -727,6 +928,10 @@
 
     .dashboard-mini-table {
         min-width: 560px;
+    }
+
+    .batch-edit-actions {
+        align-items: stretch;
     }
 
     .batch-unloading-card {

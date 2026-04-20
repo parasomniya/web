@@ -2,6 +2,7 @@ $(document).ready(function () {
     const query = new URLSearchParams(window.location.search);
     const batchId = parsePositiveInteger(query.get("id"));
     const returnDate = normalizeDateValue(query.get("date"));
+    const canWrite = Boolean(window.AppAuth?.hasWriteAccess?.());
 
     const detailsTitle = document.getElementById("batchDetailsTitle");
     const detailsPageTitle = document.getElementById("batchDetailsPageTitle");
@@ -10,6 +11,8 @@ $(document).ready(function () {
     const endTime = document.getElementById("batchDetailsEndTime");
     const barnName = document.getElementById("batchDetailsBarnName");
     const remainingWeight = document.getElementById("batchDetailsRemainingWeight");
+    const unloadProgressMeta = document.getElementById("batchUnloadProgressMeta");
+    const unloadProgressBar = document.getElementById("batchUnloadProgressBar");
     const backLink = document.getElementById("batchDetailsBackLink");
     const ingredientListBody = document.getElementById("batchIngredientsTableBody");
     const planFactBody = document.getElementById("batchPlanFactTableBody");
@@ -18,6 +21,19 @@ $(document).ready(function () {
     const deviationTotal = document.getElementById("batchDeviationTotal");
     const telemetryEmpty = document.getElementById("batchTelemetryEmpty");
     const telemetryCanvas = document.getElementById("batchTelemetryChart");
+    const editCard = document.getElementById("batchEditCard");
+    const editMeta = document.getElementById("batchEditMeta");
+    const editState = document.getElementById("batchEditState");
+    const editRationSelect = document.getElementById("batchEditRationSelect");
+    const editRationHint = document.getElementById("batchEditRationHint");
+    const editGroupSelect = document.getElementById("batchEditGroupSelect");
+    const editGroupHint = document.getElementById("batchEditGroupHint");
+    const editSubmitButton = document.getElementById("batchEditSubmitButton");
+
+    const batchUrl = window.AppAuth?.getApiUrl?.(`/api/batches/${batchId}`) || `/api/batches/${batchId}`;
+    const telemetryUrl = window.AppAuth?.getApiUrl?.(`/api/batches/${batchId}/telemetry`) || `/api/batches/${batchId}/telemetry`;
+    const rationsUrl = window.AppAuth?.getApiUrl?.("/api/rations") || "/api/rations";
+    const groupsUrl = window.AppAuth?.getApiUrl?.("/api/groups") || "/api/groups";
 
     const dateTimeFormatter = new Intl.DateTimeFormat("ru-RU", {
         day: "2-digit",
@@ -39,6 +55,31 @@ $(document).ready(function () {
         maximumFractionDigits: 1,
     });
 
+    const state = {
+        batch: null,
+        isBatchLoading: false,
+        isSaving: false,
+        ingredientUpdateId: null,
+        batchError: "",
+        editorMessage: null,
+        rations: [],
+        groups: [],
+        lookupStatus: {
+            rations: {
+                loading: false,
+                loaded: false,
+                error: "",
+            },
+            groups: {
+                loading: false,
+                loaded: false,
+                error: "",
+            },
+        },
+        loadRequestId: 0,
+        lookupRequestId: 0,
+    };
+
     let telemetryChart = null;
 
     function parsePositiveInteger(value) {
@@ -48,6 +89,15 @@ $(document).ready(function () {
 
     function normalizeDateValue(value) {
         return /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : "";
+    }
+
+    function normalizeNullableId(value) {
+        if (value === null || value === undefined || value === "") {
+            return null;
+        }
+
+        const parsed = Number.parseInt(value, 10);
+        return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
     }
 
     function buildBackLink() {
@@ -126,14 +176,14 @@ $(document).ready(function () {
         return `${weightFormatter.format(numericValue)} кг`;
     }
 
-    function formatSignedWeight(value) {
+    function formatSignedPercent(value) {
         const numericValue = Number(value);
         if (!Number.isFinite(numericValue)) {
             return "--";
         }
 
         const prefix = numericValue > 0 ? "+" : "";
-        return `${prefix}${weightFormatter.format(numericValue)} кг`;
+        return `${prefix}${weightFormatter.format(numericValue)}%`;
     }
 
     function renderViolationBadge(value) {
@@ -144,12 +194,50 @@ $(document).ready(function () {
         `;
     }
 
+    function isUnknownIngredientName(value) {
+        const normalized = String(value ?? "").trim().toLowerCase();
+        return !normalized || normalized === "unknown";
+    }
+
+    function getIngredientDisplayName(value) {
+        return String(value ?? "").trim();
+    }
+
+    function getReplacementIngredientOptions() {
+        const rationIngredients = Array.isArray(state.batch?.ration?.ingredients) ? state.batch.ration.ingredients : [];
+        const seenNames = new Set();
+
+        return rationIngredients.reduce((accumulator, ingredient) => {
+            const ingredientName = getIngredientDisplayName(ingredient?.name);
+            if (!ingredientName || seenNames.has(ingredientName)) {
+                return accumulator;
+            }
+
+            seenNames.add(ingredientName);
+            accumulator.push(ingredientName);
+            return accumulator;
+        }, []);
+    }
+
     function setText(element, value) {
         if (!element) {
             return;
         }
 
         element.textContent = value ?? "--";
+    }
+
+    function buildAuthHeaders(includeJson) {
+        const headers = window.AppAuth?.getAuthHeaders?.({ includeJson: Boolean(includeJson) }) || {};
+
+        if (!includeJson) {
+            return headers;
+        }
+
+        return {
+            "Content-Type": "application/json",
+            ...headers,
+        };
     }
 
     function setLoadingState() {
@@ -160,9 +248,14 @@ $(document).ready(function () {
         setText(endTime, "--");
         setText(barnName, "--");
         setText(remainingWeight, "--");
+        setText(unloadProgressMeta, "--");
         setText(planTotal, "--");
         setText(factTotal, "--");
         setText(deviationTotal, "--");
+
+        if (unloadProgressBar) {
+            unloadProgressBar.style.width = "0%";
+        }
 
         if (ingredientListBody) {
             ingredientListBody.innerHTML = '<tr><td colspan="4" class="batch-detail-empty">Загрузка...</td></tr>';
@@ -184,6 +277,38 @@ $(document).ready(function () {
         setText(endTime, batch?.endTime ? formatDateTime(batch.endTime) : "В процессе");
         setText(barnName, batch?.unloadingInfo?.barnName || "Коровник не выбран");
         setText(remainingWeight, formatWeight(batch?.unloadingInfo?.remainingWeight));
+        renderUnloadProgress(batch?.unloadingInfo?.progress || null);
+    }
+
+    function renderUnloadProgress(progress) {
+        if (unloadProgressBar) {
+            unloadProgressBar.style.width = "0%";
+        }
+
+        if (!progress) {
+            setText(unloadProgressMeta, "--");
+            return;
+        }
+
+        const targetWeight = Number(progress?.target_weight);
+        const unloadedFact = Number(progress?.unloaded_fact);
+
+        if (!Number.isFinite(targetWeight) || targetWeight <= 0 || !Number.isFinite(unloadedFact)) {
+            setText(unloadProgressMeta, "--");
+            return;
+        }
+
+        const rawPercent = Math.max((unloadedFact / targetWeight) * 100, 0);
+        const progressWidth = Math.min(rawPercent, 100);
+
+        if (unloadProgressBar) {
+            unloadProgressBar.style.width = `${progressWidth}%`;
+        }
+
+        setText(
+            unloadProgressMeta,
+            `${formatWeight(unloadedFact)} / ${formatWeight(targetWeight)} (${weightFormatter.format(rawPercent)}%)`
+        );
     }
 
     function renderIngredientList(rows) {
@@ -196,14 +321,66 @@ $(document).ready(function () {
             return;
         }
 
+        const replacementOptions = getReplacementIngredientOptions();
+        const hasReplacementOptions = replacementOptions.length > 0;
+        const hasRation = Boolean(normalizeNullableId(state.batch?.rationId) || normalizeNullableId(state.batch?.ration?.id));
+
         ingredientListBody.innerHTML = rows.map((row) => `
             <tr>
                 <td>${escapeHtml(formatTime(row?.time))}</td>
-                <td><strong>${escapeHtml(row?.name || "Без названия")}</strong></td>
-                <td>${escapeHtml(formatWeight(row?.fact))}</td>
-                <td>${renderViolationBadge(asBoolean(row?.isViolation))}</td>
+                <td>${renderIngredientCell(row, hasRation, hasReplacementOptions, replacementOptions)}</td>
+                <td>${escapeHtml(formatWeight(row?.fact ?? row?.actualWeight))}</td>
+                <td>${renderViolationBadge(asBoolean(row?.isViolation ?? row?.is_violation))}</td>
             </tr>
         `).join("");
+    }
+
+    function renderIngredientCell(row, hasRation, hasReplacementOptions, replacementOptions) {
+        const ingredientId = normalizeNullableId(row?.id);
+        const ingredientName = getIngredientDisplayName(row?.name);
+        const isUnknown = isUnknownIngredientName(ingredientName);
+
+        if (!isUnknown || !canWrite || ingredientId === null) {
+            return `<strong>${escapeHtml(ingredientName || "Без названия")}</strong>`;
+        }
+
+        if (state.ingredientUpdateId === ingredientId) {
+            return `
+                <div>
+                    <strong class="d-block text-warning">Unknown</strong>
+                    <small class="text-muted d-block mt-1">Сохраняем выбранный корм...</small>
+                </div>
+            `;
+        }
+
+        const isDisabled = state.isBatchLoading || state.isSaving || !hasRation || !hasReplacementOptions;
+        const disabledAttribute = isDisabled ? " disabled" : "";
+        const optionsMarkup = replacementOptions
+            .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+            .join("");
+
+        let hint = "Выберите корм вместо Unknown.";
+        if (!hasRation) {
+            hint = "Сначала привяжите рацион к замесу.";
+        } else if (!hasReplacementOptions) {
+            hint = "В привязанном рационе нет ингредиентов для выбора.";
+        }
+
+        return `
+            <div>
+                <label class="sr-only" for="batchIngredientSelect${ingredientId}">Выбор корма</label>
+                <select
+                    id="batchIngredientSelect${ingredientId}"
+                    class="form-control form-control-sm"
+                    data-role="ingredient-replacement"
+                    data-ingredient-id="${ingredientId}"${disabledAttribute}
+                >
+                    <option value="">Выберите корм</option>
+                    ${optionsMarkup}
+                </select>
+                <small class="text-muted d-block mt-1">${escapeHtml(hint)}</small>
+            </div>
+        `;
     }
 
     function renderPlanFact(rows) {
@@ -219,24 +396,27 @@ $(document).ready(function () {
             return;
         }
 
-        const totals = rows.reduce((acc, row) => {
-            acc.plan += toNumber(row?.plan);
-            acc.fact += toNumber(row?.fact);
-            acc.deviation += toNumber(row?.deviation);
-            return acc;
-        }, { plan: 0, fact: 0, deviation: 0 });
+        const totals = rows.reduce((accumulator, row) => {
+            accumulator.plan += toNumber(row?.plan);
+            accumulator.fact += toNumber(row?.fact);
+            return accumulator;
+        }, { plan: 0, fact: 0 });
+
+        const totalDeviationPercent = totals.plan > 0
+            ? ((totals.fact - totals.plan) / totals.plan) * 100
+            : null;
 
         setText(planTotal, formatWeight(totals.plan));
         setText(factTotal, formatWeight(totals.fact));
-        setText(deviationTotal, formatSignedWeight(totals.deviation));
+        setText(deviationTotal, formatSignedPercent(totalDeviationPercent));
 
         planFactBody.innerHTML = rows.map((row) => `
             <tr>
                 <td>${escapeHtml(row?.name || "Без названия")}</td>
                 <td>${escapeHtml(formatWeight(row?.plan))}</td>
                 <td>${escapeHtml(formatWeight(row?.fact))}</td>
-                <td>${escapeHtml(formatSignedWeight(row?.deviation))}</td>
-                <td>${renderViolationBadge(asBoolean(row?.isViolation))}</td>
+                <td>${escapeHtml(formatSignedPercent(row?.deviation_percent ?? row?.deviationPercent))}</td>
+                <td>${renderViolationBadge(asBoolean(row?.isViolation ?? row?.is_violation))}</td>
             </tr>
         `).join("");
     }
@@ -325,6 +505,291 @@ $(document).ready(function () {
         });
     }
 
+    function setEditCardVisible(visible) {
+        if (!editCard) {
+            return;
+        }
+
+        editCard.hidden = !visible;
+    }
+
+    function setEditState(message, tone) {
+        if (!editState) {
+            return;
+        }
+
+        const tones = ["info", "warning", "danger"];
+        editState.classList.remove("d-none");
+        editState.classList.remove("batch-edit-state--info", "batch-edit-state--warning", "batch-edit-state--danger");
+
+        if (!message) {
+            editState.textContent = "";
+            editState.classList.add("d-none");
+            return;
+        }
+
+        editState.textContent = message;
+        editState.classList.add(`batch-edit-state--${tones.includes(tone) ? tone : "info"}`);
+    }
+
+    function getCurrentRationOption(batch) {
+        const rationId = normalizeNullableId(batch?.rationId);
+        if (rationId === null) {
+            return null;
+        }
+
+        return {
+            id: rationId,
+            name: batch?.ration?.name || batch?.rationName || `Рацион #${rationId}`,
+            isActive: batch?.ration?.isActive,
+        };
+    }
+
+    function getCurrentGroupOption(batch) {
+        const groupId = normalizeNullableId(batch?.groupId);
+        if (groupId === null) {
+            return null;
+        }
+
+        return {
+            id: groupId,
+            name: batch?.group?.name || batch?.groupName || `Группа #${groupId}`,
+        };
+    }
+
+    function formatRationOptionLabel(ration) {
+        if (!ration) {
+            return "";
+        }
+
+        const name = ration?.name || `Рацион #${ration.id}`;
+        return ration?.isActive === false ? `${name} (неактивен)` : name;
+    }
+
+    function formatGroupOptionLabel(group) {
+        return group?.name || `Группа #${group?.id}`;
+    }
+
+    function renderSelectOptions(selectElement, items, emptyLabel, currentId, currentOption, getLabel) {
+        if (!selectElement) {
+            return;
+        }
+
+        const normalizedCurrentId = normalizeNullableId(currentId);
+        const options = [`<option value="">${escapeHtml(emptyLabel)}</option>`];
+        const seenIds = new Set();
+
+        (Array.isArray(items) ? items : []).forEach((item) => {
+            const id = normalizeNullableId(item?.id);
+            if (id === null || seenIds.has(id)) {
+                return;
+            }
+
+            seenIds.add(id);
+            options.push(`<option value="${id}">${escapeHtml(getLabel(item))}</option>`);
+        });
+
+        if (normalizedCurrentId !== null && currentOption && !seenIds.has(normalizedCurrentId)) {
+            options.push(`<option value="${normalizedCurrentId}">${escapeHtml(getLabel(currentOption))}</option>`);
+        }
+
+        selectElement.innerHTML = options.join("");
+        selectElement.value = normalizedCurrentId === null ? "" : String(normalizedCurrentId);
+    }
+
+    function buildLookupHint(resourceName, status, items, currentOption) {
+        if (status.loading) {
+            return `Загружаем список ${resourceName}...`;
+        }
+
+        if (status.error) {
+            const currentLabel = currentOption?.name ? ` Текущее значение: ${currentOption.name}.` : "";
+            return `Не удалось загрузить список ${resourceName}.${currentLabel}`;
+        }
+
+        if (!items.length) {
+            return `Список ${resourceName} пока пуст.`;
+        }
+
+        if (currentOption?.name) {
+            return `Текущее значение: ${currentOption.name}.`;
+        }
+
+        return `Можно оставить поле пустым.`;
+    }
+
+    function getComputedEditorState() {
+        if (!canWrite) {
+            return null;
+        }
+
+        if (state.editorMessage?.message) {
+            return state.editorMessage;
+        }
+
+        if (state.isSaving) {
+            return {
+                tone: "info",
+                message: "Сохраняем изменения и пересчитываем замес...",
+            };
+        }
+
+        if (state.isBatchLoading && !state.batch) {
+            return {
+                tone: "info",
+                message: "Загружаем данные замеса...",
+            };
+        }
+
+        if (state.batchError) {
+            return {
+                tone: "danger",
+                message: state.batchError,
+            };
+        }
+
+        const rationsLoading = state.lookupStatus.rations.loading;
+        const groupsLoading = state.lookupStatus.groups.loading;
+        if (rationsLoading || groupsLoading) {
+            return {
+                tone: "info",
+                message: "Загружаем справочники рационов и групп...",
+            };
+        }
+
+        const hasRationsError = Boolean(state.lookupStatus.rations.error);
+        const hasGroupsError = Boolean(state.lookupStatus.groups.error);
+
+        if (hasRationsError && hasGroupsError) {
+            return {
+                tone: "warning",
+                message: "Не удалось загрузить списки рационов и групп. Редактирование временно недоступно.",
+            };
+        }
+
+        if (hasRationsError) {
+            return {
+                tone: "warning",
+                message: "Список рационов недоступен. Можно изменить только группу.",
+            };
+        }
+
+        if (hasGroupsError) {
+            return {
+                tone: "warning",
+                message: "Список групп недоступен. Можно изменить только рацион.",
+            };
+        }
+
+        return null;
+    }
+
+    function getSelectedNullableId(selectElement, fallbackValue) {
+        if (!selectElement) {
+            return normalizeNullableId(fallbackValue);
+        }
+
+        return normalizeNullableId(selectElement.value);
+    }
+
+    function hasEditorChanges() {
+        if (!state.batch) {
+            return false;
+        }
+
+        const selectedRationId = getSelectedNullableId(editRationSelect, state.batch.rationId);
+        const selectedGroupId = getSelectedNullableId(editGroupSelect, state.batch.groupId);
+
+        return selectedRationId !== normalizeNullableId(state.batch.rationId)
+            || selectedGroupId !== normalizeNullableId(state.batch.groupId);
+    }
+
+    function updateEditButtonState() {
+        if (!editSubmitButton) {
+            return;
+        }
+
+        const canEditRation = state.lookupStatus.rations.loaded && !state.lookupStatus.rations.error;
+        const canEditGroup = state.lookupStatus.groups.loaded && !state.lookupStatus.groups.error;
+        const hasEditableField = canEditRation || canEditGroup;
+
+        editSubmitButton.disabled = !canWrite
+            || !state.batch
+            || Boolean(state.batchError)
+            || !hasEditableField
+            || state.isBatchLoading
+            || state.isSaving
+            || !hasEditorChanges();
+
+        editSubmitButton.textContent = state.isSaving ? "Сохраняем..." : "Пересчитать";
+    }
+
+    function renderBatchEditor(batch) {
+        if (!editCard) {
+            return;
+        }
+
+        setEditCardVisible(canWrite);
+        if (!canWrite) {
+            return;
+        }
+
+        const currentRation = getCurrentRationOption(batch);
+        const currentGroup = getCurrentGroupOption(batch);
+
+        renderSelectOptions(
+            editRationSelect,
+            state.rations,
+            "Без рациона",
+            batch?.rationId,
+            currentRation,
+            formatRationOptionLabel
+        );
+
+        renderSelectOptions(
+            editGroupSelect,
+            state.groups,
+            "Без группы",
+            batch?.groupId,
+            currentGroup,
+            formatGroupOptionLabel
+        );
+
+        if (editRationSelect) {
+            editRationSelect.disabled = state.isSaving
+                || state.isBatchLoading
+                || Boolean(state.batchError)
+                || !state.lookupStatus.rations.loaded
+                || Boolean(state.lookupStatus.rations.error);
+        }
+
+        if (editGroupSelect) {
+            editGroupSelect.disabled = state.isSaving
+                || state.isBatchLoading
+                || Boolean(state.batchError)
+                || !state.lookupStatus.groups.loaded
+                || Boolean(state.lookupStatus.groups.error);
+        }
+
+        setText(editRationHint, buildLookupHint("рационов", state.lookupStatus.rations, state.rations, currentRation));
+        setText(editGroupHint, buildLookupHint("групп", state.lookupStatus.groups, state.groups, currentGroup));
+
+        if (editMeta) {
+            const currentGroupName = batch?.group?.name || batch?.groupName || "без группы";
+            const currentRationName = batch?.ration?.name || batch?.rationName || "без рациона";
+            setText(
+                editMeta,
+                batch
+                    ? `Сейчас: ${currentGroupName}, ${currentRationName}. После сохранения данные перечитаются с сервера.`
+                    : "После сохранения замес перечитается с сервера."
+            );
+        }
+
+        const editorState = getComputedEditorState();
+        setEditState(editorState?.message || "", editorState?.tone);
+        updateEditButtonState();
+    }
+
     async function readErrorMessage(response) {
         const contentType = response.headers.get("content-type") || "";
 
@@ -344,46 +809,176 @@ $(document).ready(function () {
         }
     }
 
-    async function fetchJson(url) {
+    async function requestJson(url, options) {
+        const requestOptions = options || {};
+        const method = requestOptions.method || "GET";
+        const includeJson = Boolean(requestOptions.includeJson);
         const response = await fetch(url, {
-            method: "GET",
-            headers: window.AppAuth?.getAuthHeaders?.() || {},
+            ...requestOptions,
+            method,
+            headers: {
+                ...buildAuthHeaders(includeJson),
+                ...(requestOptions.headers || {}),
+            },
         });
 
         if (!response.ok) {
             const message = await readErrorMessage(response);
-            throw new Error(message || "Не удалось загрузить данные");
+            throw new Error(message || "Не удалось выполнить запрос");
+        }
+
+        if (response.status === 204) {
+            return null;
+        }
+
+        const contentType = response.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+            return null;
         }
 
         return response.json();
+    }
+
+    async function fetchJson(url) {
+        return requestJson(url, { method: "GET" });
+    }
+
+    async function patchJson(url, payload) {
+        return requestJson(url, {
+            method: "PATCH",
+            includeJson: true,
+            body: JSON.stringify(payload),
+        });
+    }
+
+    async function handleIngredientReplacementChange(event) {
+        const selectElement = event?.target;
+        if (!(selectElement instanceof HTMLSelectElement) || selectElement.dataset.role !== "ingredient-replacement") {
+            return;
+        }
+
+        const ingredientId = normalizeNullableId(selectElement.dataset.ingredientId);
+        const ingredientName = getIngredientDisplayName(selectElement.value);
+
+        if (ingredientId === null || !ingredientName || state.ingredientUpdateId !== null) {
+            if (!ingredientName) {
+                selectElement.value = "";
+            }
+            return;
+        }
+
+        state.ingredientUpdateId = ingredientId;
+        renderIngredientList(Array.isArray(state.batch?.actualIngredients) ? state.batch.actualIngredients : []);
+
+        try {
+            await patchJson(`${batchUrl}/ingredients/${ingredientId}`, { ingredientName });
+            const didReload = await loadBatchDetails();
+            if (didReload) {
+                window.AppAuth?.showAlert?.("Ингредиент обновлен", "success");
+            }
+        } catch (error) {
+            window.AppAuth?.showAlert?.(error.message || "Не удалось обновить ингредиент", "danger");
+        } finally {
+            state.ingredientUpdateId = null;
+            renderIngredientList(Array.isArray(state.batch?.actualIngredients) ? state.batch.actualIngredients : []);
+        }
+    }
+
+    async function loadLookupOptions() {
+        if (!canWrite) {
+            return;
+        }
+
+        const requestId = ++state.lookupRequestId;
+        state.lookupStatus.rations.loading = true;
+        state.lookupStatus.groups.loading = true;
+        state.lookupStatus.rations.error = "";
+        state.lookupStatus.groups.error = "";
+        renderBatchEditor(state.batch);
+
+        const [rationsResult, groupsResult] = await Promise.allSettled([
+            fetchJson(rationsUrl),
+            fetchJson(groupsUrl),
+        ]);
+
+        if (requestId !== state.lookupRequestId) {
+            return;
+        }
+
+        state.lookupStatus.rations.loading = false;
+        state.lookupStatus.groups.loading = false;
+
+        if (rationsResult.status === "fulfilled") {
+            state.rations = Array.isArray(rationsResult.value) ? rationsResult.value : [];
+            state.lookupStatus.rations.loaded = true;
+            state.lookupStatus.rations.error = "";
+        } else {
+            state.rations = [];
+            state.lookupStatus.rations.loaded = false;
+            state.lookupStatus.rations.error = rationsResult.reason?.message || "Не удалось загрузить рационы";
+        }
+
+        if (groupsResult.status === "fulfilled") {
+            state.groups = Array.isArray(groupsResult.value) ? groupsResult.value : [];
+            state.lookupStatus.groups.loaded = true;
+            state.lookupStatus.groups.error = "";
+        } else {
+            state.groups = [];
+            state.lookupStatus.groups.loaded = false;
+            state.lookupStatus.groups.error = groupsResult.reason?.message || "Не удалось загрузить группы";
+        }
+
+        renderBatchEditor(state.batch);
     }
 
     async function loadBatchDetails() {
         if (!batchId) {
             setText(detailsTitle, "Замес не найден");
             setText(detailsPageTitle, "Детали замеса");
+            state.batchError = "Не указан идентификатор замеса";
+            renderBatchEditor(state.batch);
             window.AppAuth?.showAlert?.("Не указан идентификатор замеса", "danger");
-            return;
+            return false;
         }
 
+        const requestId = ++state.loadRequestId;
+        state.isBatchLoading = true;
+        state.batchError = "";
+        state.editorMessage = null;
         setLoadingState();
+        renderBatchEditor(state.batch);
 
         try {
             const [batch, telemetry] = await Promise.all([
-                fetchJson(window.AppAuth?.getApiUrl?.(`/api/batches/${batchId}`) || `/api/batches/${batchId}`),
-                fetchJson(window.AppAuth?.getApiUrl?.(`/api/batches/${batchId}/telemetry`) || `/api/batches/${batchId}/telemetry`),
+                fetchJson(batchUrl),
+                fetchJson(telemetryUrl),
             ]);
 
-            const rows = Array.isArray(batch?.ingredients) ? batch.ingredients : [];
+            if (requestId !== state.loadRequestId) {
+                return false;
+            }
+
+            const actualRows = Array.isArray(batch?.actualIngredients) ? batch.actualIngredients : [];
+            const summaryRows = Array.isArray(batch?.ingredients) ? batch.ingredients : [];
+
+            state.batch = batch;
 
             renderBatchSummary(batch);
-            renderIngredientList(rows);
-            renderPlanFact(rows);
+            renderIngredientList(actualRows);
+            renderPlanFact(summaryRows);
             renderTelemetry(telemetry);
+            renderBatchEditor(batch);
+            return true;
         } catch (error) {
+            if (requestId !== state.loadRequestId) {
+                return false;
+            }
+
             console.error("Ошибка загрузки деталей замеса:", error);
+            state.batchError = error.message || "Не удалось загрузить детали замеса";
             setText(detailsTitle, batchId ? `Замес #${batchId}` : "Замес");
-            window.AppAuth?.showAlert?.(error.message || "Не удалось загрузить детали замеса", "danger");
+            setText(detailsPageTitle, "Детали замеса");
+            window.AppAuth?.showAlert?.(state.batchError, "danger");
 
             if (ingredientListBody) {
                 ingredientListBody.innerHTML = '<tr><td colspan="4" class="batch-detail-empty">Не удалось загрузить данные</td></tr>';
@@ -394,11 +989,84 @@ $(document).ready(function () {
             }
 
             renderTelemetry([]);
+            renderBatchEditor(state.batch);
+            return false;
+        } finally {
+            if (requestId === state.loadRequestId) {
+                state.isBatchLoading = false;
+                renderBatchEditor(state.batch);
+            }
+        }
+    }
+
+    async function handleBatchEditSubmit() {
+        if (!state.batch || state.isSaving || !hasEditorChanges()) {
+            return;
+        }
+
+        const payload = {
+            rationId: getSelectedNullableId(editRationSelect, state.batch.rationId),
+            groupId: getSelectedNullableId(editGroupSelect, state.batch.groupId),
+        };
+
+        state.isSaving = true;
+        state.editorMessage = {
+            tone: "info",
+            message: "Сохраняем изменения и пересчитываем замес...",
+        };
+        renderBatchEditor(state.batch);
+
+        try {
+            await patchJson(batchUrl, payload);
+            const didReload = await loadBatchDetails();
+            if (didReload) {
+                window.AppAuth?.showAlert?.("Замес пересчитан", "success");
+            }
+        } catch (error) {
+            const message = error.message || "Не удалось пересчитать замес";
+            state.editorMessage = {
+                tone: "danger",
+                message,
+            };
+            renderBatchEditor(state.batch);
+            window.AppAuth?.showAlert?.(message, "danger");
+        } finally {
+            state.isSaving = false;
+            if (!state.batchError) {
+                state.editorMessage = null;
+            }
+            renderBatchEditor(state.batch);
         }
     }
 
     if (backLink) {
         backLink.href = buildBackLink();
+    }
+
+    if (editRationSelect) {
+        editRationSelect.addEventListener("change", function () {
+            state.editorMessage = null;
+            updateEditButtonState();
+        });
+    }
+
+    if (editGroupSelect) {
+        editGroupSelect.addEventListener("change", function () {
+            state.editorMessage = null;
+            updateEditButtonState();
+        });
+    }
+
+    if (editSubmitButton) {
+        editSubmitButton.addEventListener("click", handleBatchEditSubmit);
+    }
+
+    if (ingredientListBody) {
+        ingredientListBody.addEventListener("change", handleIngredientReplacementChange);
+    }
+
+    if (canWrite) {
+        loadLookupOptions();
     }
 
     loadBatchDetails();
