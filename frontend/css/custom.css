@@ -387,6 +387,10 @@
     transition: width 0.25s ease;
 }
 
+.dashboard-progress-bar.is-over {
+    background: linear-gradient(90deg, #f6c23e 0%, #e74a3b 100%);
+}
+
 .dashboard-mini-table-wrap {
     border: 1px solid #e3e6f0;
     border-radius: 0.75rem;
@@ -578,6 +582,70 @@
     font-size: 0.85rem;
     font-weight: 600;
     line-height: 1.4;
+}
+
+.batch-ingredient-editor {
+    min-width: 220px;
+}
+
+.batch-ingredient-editor__controls {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+}
+
+.batch-ingredient-editor__trigger {
+    display: inline-flex;
+    align-items: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #2e59d9;
+    font-weight: 700;
+    line-height: 1.4;
+    text-decoration: underline;
+    text-decoration-style: dashed;
+    cursor: pointer;
+}
+
+.batch-ingredient-editor__trigger:hover:not(:disabled),
+.batch-ingredient-editor__trigger:focus-visible:not(:disabled) {
+    color: #224abe;
+    outline: none;
+}
+
+.batch-ingredient-editor__trigger:disabled {
+    color: #858796;
+    text-decoration: none;
+    cursor: not-allowed;
+}
+
+.batch-ingredient-editor__select {
+    min-width: 220px;
+    flex: 1 1 220px;
+}
+
+.batch-ingredient-editor__cancel {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #6c757d;
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.batch-ingredient-editor__cancel:hover:not(:disabled),
+.batch-ingredient-editor__cancel:focus-visible:not(:disabled) {
+    color: #4e73df;
+    outline: none;
+}
+
+.batch-ingredient-editor__cancel:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 .batch-unloading-card {

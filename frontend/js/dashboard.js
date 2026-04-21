@@ -55,7 +55,7 @@ function isEmptyTelemetry(data) {
 }
 
 function getLatestApiUrl() {
-    return isAdmin() ? `${API_BASE}/admin/latest` : `${API_BASE}/current`;
+    return `${API_BASE}/current`;
 }
 
 function getHistoryApiUrl() {
@@ -263,54 +263,12 @@ function isUnloadMode(mode) {
     return normalizeModeKey(mode) === "unloading";
 }
 
-function formatBatchMetricValue(value, digits = 1) {
-    const number = parseNumber(value);
-    return number === null ? "--" : number.toFixed(digits);
-}
-
-function getActiveBatchRows(batch) {
-    if (Array.isArray(batch?.ingredients)) {
-        return batch.ingredients;
-    }
-
-    if (Array.isArray(batch?.actualIngredients)) {
-        return batch.actualIngredients;
-    }
-
-    return [];
-}
-
-function getBatchPlanNumber(row) {
-    const factNumber = parseNumber(row?.fact ?? row?.actualWeight);
-    const planNumber = parseNumber(row?.plan ?? row?.plannedWeight);
-
-    if (planNumber === null) {
-        return null;
-    }
-
-    if (planNumber <= 0 && factNumber !== null && factNumber > 0) {
-        return null;
-    }
-
-    return planNumber;
-}
-
-function getBatchDeviationPercent(row, planNumber, factNumber) {
-    const explicitPercent = parseNumber(row?.deviation_percent ?? row?.deviationPercent);
-    if (explicitPercent !== null) {
-        return explicitPercent;
-    }
-
-    if (planNumber === null || factNumber === null || planNumber <= 0) {
-        return null;
-    }
-
-    return ((factNumber - planNumber) / planNumber) * 100;
-}
-
 function renderUnloadProgress(mode, unloadProgress) {
-    const isVisible = mode === "Выгрузка" && unloadProgress;
+    const isVisible = getModeLabel(mode) === "Выгрузка";
     const bar = document.getElementById("dashboardUnloadProgressBar");
+    const targetValue = parseNumber(unloadProgress?.target_weight);
+    const factValue = parseNumber(unloadProgress?.unloaded_fact);
+    const hasProgressData = targetValue !== null || factValue !== null;
 
     setSectionVisible("dashboardUnloadProgressCard", Boolean(isVisible));
 
@@ -320,15 +278,25 @@ function renderUnloadProgress(mode, unloadProgress) {
 
     if (!isVisible) {
         bar.style.width = "0%";
+        bar.classList.remove("is-over");
         setText("dashboardUnloadProgressMeta", "--");
         return;
     }
 
-    const target = Math.max(parseNumber(unloadProgress?.target_weight) ?? 0, 0);
-    const fact = Math.max(parseNumber(unloadProgress?.unloaded_fact) ?? 0, 0);
-    const progress = target > 0 ? Math.min((fact / target) * 100, 100) : 0;
+    if (!hasProgressData) {
+        bar.style.width = "0%";
+        bar.classList.remove("is-over");
+        setText("dashboardUnloadProgressMeta", "--");
+        return;
+    }
 
-    bar.style.width = `${progress}%`;
+    const target = Math.max(targetValue ?? 0, 0);
+    const fact = Math.max(factValue ?? 0, 0);
+    const progress = target > 0 ? (fact / target) * 100 : 0;
+    const fillPercent = Math.max(Math.min(progress, 100), 0);
+
+    bar.style.width = `${fillPercent}%`;
+    bar.classList.toggle("is-over", progress > 100);
     setText(
         "dashboardUnloadProgressMeta",
         `${formatMetric(fact, 1)} / ${formatMetric(target, 1)} кг (${progress.toFixed(0)}%)`
@@ -341,10 +309,8 @@ function renderActiveBatch(batch) {
         return;
     }
 
-    const rows = Array.isArray(batch?.ingredients)
-        ? batch.ingredients
-        : (Array.isArray(batch?.actualIngredients) ? batch.actualIngredients : []);
-    const isVisible = Boolean(batch);
+    const rows = Array.isArray(batch?.ingredients) ? batch.ingredients : [];
+    const isVisible = rows.length > 0;
 
     setSectionVisible("dashboardActiveBatchCard", isVisible);
 
@@ -361,23 +327,12 @@ function renderActiveBatch(batch) {
     metaParts.push(`Компонентов: ${rows.length}`);
     setText("dashboardActiveBatchMeta", metaParts.join(" | "));
 
-    if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="dashboard-mini-table-empty">Нет данных по текущему замесу</td></tr>';
-        return;
-    }
-
     tbody.innerHTML = rows.map((row) => {
-        const name = escapeHtml(row?.name ?? row?.ingredientName ?? "--");
-        const planValue = row?.plan ?? row?.plannedWeight;
-        const factValue = row?.fact ?? row?.actualWeight;
-        const plan = formatMetric(planValue, 1);
-        const fact = formatMetric(factValue, 1);
-        const deviationPercentValue = row?.deviation_percent ?? row?.deviationPercent;
-        const deviationValue = row?.deviation;
-        const deviation = deviationPercentValue != null
-            ? formatSignedPercent(deviationPercentValue, 1)
-            : formatSignedMetric(deviationValue, "кг", 1);
-        const isViolation = asBoolean(row?.is_violation ?? row?.isViolation);
+        const name = escapeHtml(row?.name ?? "--");
+        const plan = formatMetric(row?.plan, 1);
+        const fact = formatMetric(row?.fact, 1);
+        const deviation = formatSignedPercent(row?.deviation_percent, 1);
+        const isViolation = asBoolean(row?.is_violation);
 
         return `
             <tr>

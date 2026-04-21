@@ -59,6 +59,7 @@ $(document).ready(function () {
         batch: null,
         isBatchLoading: false,
         isSaving: false,
+        ingredientEditorId: null,
         ingredientUpdateId: null,
         batchError: "",
         editorMessage: null,
@@ -344,17 +345,20 @@ $(document).ready(function () {
             return `<strong>${escapeHtml(ingredientName || "Без названия")}</strong>`;
         }
 
+        const isEditing = state.ingredientEditorId === ingredientId;
+
         if (state.ingredientUpdateId === ingredientId) {
             return `
-                <div>
+                <div class="batch-ingredient-editor">
                     <strong class="d-block text-warning">Unknown</strong>
                     <small class="text-muted d-block mt-1">Сохраняем выбранный корм...</small>
                 </div>
             `;
         }
 
-        const isDisabled = state.isBatchLoading || state.isSaving || !hasRation || !hasReplacementOptions;
-        const disabledAttribute = isDisabled ? " disabled" : "";
+        const isDisabled = state.isBatchLoading || state.isSaving;
+        const canOpenEditor = !isDisabled && hasRation && hasReplacementOptions;
+        const disabledAttribute = canOpenEditor ? "" : " disabled";
         const optionsMarkup = replacementOptions
             .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
             .join("");
@@ -366,18 +370,44 @@ $(document).ready(function () {
             hint = "В привязанном рационе нет ингредиентов для выбора.";
         }
 
+        if (!isEditing) {
+            return `
+                <div class="batch-ingredient-editor">
+                    <button
+                        type="button"
+                        class="batch-ingredient-editor__trigger"
+                        data-role="ingredient-replacement-trigger"
+                        data-ingredient-id="${ingredientId}"${disabledAttribute}
+                    >
+                        ${escapeHtml(ingredientName || "Unknown")}
+                    </button>
+                    <small class="text-muted d-block mt-1">${escapeHtml(hint)}</small>
+                </div>
+            `;
+        }
+
         return `
-            <div>
+            <div class="batch-ingredient-editor">
+                <div class="batch-ingredient-editor__controls">
                 <label class="sr-only" for="batchIngredientSelect${ingredientId}">Выбор корма</label>
                 <select
                     id="batchIngredientSelect${ingredientId}"
-                    class="form-control form-control-sm"
+                    class="form-control form-control-sm batch-ingredient-editor__select"
                     data-role="ingredient-replacement"
                     data-ingredient-id="${ingredientId}"${disabledAttribute}
                 >
                     <option value="">Выберите корм</option>
                     ${optionsMarkup}
                 </select>
+                <button
+                    type="button"
+                    class="batch-ingredient-editor__cancel"
+                    data-role="ingredient-replacement-cancel"
+                    data-ingredient-id="${ingredientId}"${isDisabled ? " disabled" : ""}
+                >
+                    Cancel
+                </button>
+                </div>
                 <small class="text-muted d-block mt-1">${escapeHtml(hint)}</small>
             </div>
         `;
@@ -709,17 +739,11 @@ $(document).ready(function () {
             return;
         }
 
-        const canEditRation = state.lookupStatus.rations.loaded && !state.lookupStatus.rations.error;
-        const canEditGroup = state.lookupStatus.groups.loaded && !state.lookupStatus.groups.error;
-        const hasEditableField = canEditRation || canEditGroup;
-
         editSubmitButton.disabled = !canWrite
             || !state.batch
             || Boolean(state.batchError)
-            || !hasEditableField
             || state.isBatchLoading
-            || state.isSaving
-            || !hasEditorChanges();
+            || state.isSaving;
 
         editSubmitButton.textContent = state.isSaving ? "Сохраняем..." : "Пересчитать";
     }
@@ -851,6 +875,41 @@ $(document).ready(function () {
         });
     }
 
+    function focusIngredientEditor(ingredientId) {
+        window.requestAnimationFrame(function () {
+            const selectElement = document.getElementById(`batchIngredientSelect${ingredientId}`);
+            if (selectElement instanceof HTMLSelectElement) {
+                selectElement.focus();
+            }
+        });
+    }
+
+    function handleIngredientReplacementClick(event) {
+        const control = event?.target?.closest?.("[data-role='ingredient-replacement-trigger'], [data-role='ingredient-replacement-cancel']");
+        if (!control) {
+            return;
+        }
+
+        const ingredientId = normalizeNullableId(control.dataset.ingredientId);
+        if (ingredientId === null || state.ingredientUpdateId !== null) {
+            return;
+        }
+
+        if (control.dataset.role === "ingredient-replacement-cancel") {
+            state.ingredientEditorId = null;
+            renderIngredientList(Array.isArray(state.batch?.actualIngredients) ? state.batch.actualIngredients : []);
+            return;
+        }
+
+        if (control instanceof HTMLButtonElement && control.disabled) {
+            return;
+        }
+
+        state.ingredientEditorId = ingredientId;
+        renderIngredientList(Array.isArray(state.batch?.actualIngredients) ? state.batch.actualIngredients : []);
+        focusIngredientEditor(ingredientId);
+    }
+
     async function handleIngredientReplacementChange(event) {
         const selectElement = event?.target;
         if (!(selectElement instanceof HTMLSelectElement) || selectElement.dataset.role !== "ingredient-replacement") {
@@ -872,6 +931,7 @@ $(document).ready(function () {
 
         try {
             await patchJson(`${batchUrl}/ingredients/${ingredientId}`, { ingredientName });
+            state.ingredientEditorId = null;
             const didReload = await loadBatchDetails();
             if (didReload) {
                 window.AppAuth?.showAlert?.("Ингредиент обновлен", "success");
@@ -943,6 +1003,7 @@ $(document).ready(function () {
 
         const requestId = ++state.loadRequestId;
         state.isBatchLoading = true;
+        state.ingredientEditorId = null;
         state.batchError = "";
         state.editorMessage = null;
         setLoadingState();
@@ -1000,7 +1061,7 @@ $(document).ready(function () {
     }
 
     async function handleBatchEditSubmit() {
-        if (!state.batch || state.isSaving || !hasEditorChanges()) {
+        if (!state.batch || state.isSaving) {
             return;
         }
 
@@ -1062,6 +1123,7 @@ $(document).ready(function () {
     }
 
     if (ingredientListBody) {
+        ingredientListBody.addEventListener("click", handleIngredientReplacementClick);
         ingredientListBody.addEventListener("change", handleIngredientReplacementChange);
     }
 
