@@ -19,8 +19,11 @@
     }
 
     renderUnloadProgress = function (mode, unloadProgress) {
-        const isVisible = isUnloadMode(mode) && unloadProgress;
+        const isVisible = getModeLabel(mode) === "Выгрузка";
         const bar = document.getElementById("dashboardUnloadProgressBar");
+        const targetValue = parseNumber(unloadProgress?.target_weight);
+        const factValue = parseNumber(unloadProgress?.unloaded_fact);
+        const hasProgressData = targetValue !== null || factValue !== null;
 
         setSectionVisible("dashboardUnloadProgressCard", Boolean(isVisible));
 
@@ -30,15 +33,25 @@
 
         if (!isVisible) {
             bar.style.width = "0%";
+            bar.classList.remove("is-over");
             setText("dashboardUnloadProgressMeta", "--");
             return;
         }
 
-        const target = Math.max(parseNumber(unloadProgress?.target_weight) ?? 0, 0);
-        const fact = Math.max(parseNumber(unloadProgress?.unloaded_fact) ?? 0, 0);
-        const progress = target > 0 ? Math.min((fact / target) * 100, 100) : 0;
+        if (!hasProgressData) {
+            bar.style.width = "0%";
+            bar.classList.remove("is-over");
+            setText("dashboardUnloadProgressMeta", "--");
+            return;
+        }
 
-        bar.style.width = `${progress}%`;
+        const target = Math.max(targetValue ?? 0, 0);
+        const fact = Math.max(factValue ?? 0, 0);
+        const progress = target > 0 ? (fact / target) * 100 : 0;
+        const fillPercent = Math.max(Math.min(progress, 100), 0);
+
+        bar.style.width = `${fillPercent}%`;
+        bar.classList.toggle("is-over", progress > 100);
         setText(
             "dashboardUnloadProgressMeta",
             `${formatMetric(fact, 1)} / ${formatMetric(target, 1)} кг (${progress.toFixed(0)}%)`
@@ -51,8 +64,8 @@
             return;
         }
 
-        const rows = getActiveBatchRows(batch);
-        const isVisible = Boolean(batch);
+        const rows = Array.isArray(batch?.ingredients) ? batch.ingredients : [];
+        const isVisible = rows.length > 0;
 
         setSectionVisible("dashboardActiveBatchCard", isVisible);
 
@@ -68,46 +81,29 @@
         }
         metaParts.push(`Компонентов: ${rows.length}`);
 
-        if (!rows.length) {
-            setText("dashboardActiveBatchMeta", metaParts.join(" | "));
-            tbody.innerHTML = '<tr><td colspan="5" class="dashboard-mini-table-empty">Компоненты текущего замеса ещё не поступили</td></tr>';
-            return;
-        }
-
-        const normalizedRows = rows.map((row) => {
-            const planNumber = getBatchPlanNumber(row);
-            const factNumber = parseNumber(row?.fact ?? row?.actualWeight);
-            const deviationPercent = getBatchDeviationPercent(row, planNumber, factNumber);
-
-            return {
-                name: escapeHtml(row?.name ?? row?.ingredientName ?? "--"),
-                plan: formatBatchMetricValue(planNumber, 1),
-                fact: formatBatchMetricValue(factNumber, 1),
-                deviation: formatSignedPercent(deviationPercent, 1),
-                isViolation: asBoolean(row?.is_violation ?? row?.isViolation),
-                hasPlan: planNumber !== null,
-            };
-        });
-
-        if (!normalizedRows.some((row) => row.hasPlan)) {
-            metaParts.push("план пока не передан");
-        }
-
         setText("dashboardActiveBatchMeta", metaParts.join(" | "));
 
-        tbody.innerHTML = normalizedRows.map((row) => `
-            <tr>
-                <td>${row.name}</td>
-                <td>${row.plan}</td>
-                <td>${row.fact}</td>
-                <td>${row.deviation}</td>
-                <td>
-                    <span class="dashboard-bool-badge ${row.isViolation ? "is-yes" : "is-no"}">
-                        ${row.isViolation ? "Да" : "Нет"}
-                    </span>
-                </td>
-            </tr>
-        `).join("");
+        tbody.innerHTML = rows.map((row) => {
+            const name = escapeHtml(row?.name ?? "--");
+            const plan = formatMetric(row?.plan, 1);
+            const fact = formatMetric(row?.fact, 1);
+            const deviation = formatSignedPercent(row?.deviation_percent, 1);
+            const isViolation = asBoolean(row?.is_violation);
+
+            return `
+                <tr>
+                    <td>${name}</td>
+                    <td>${plan}</td>
+                    <td>${fact}</td>
+                    <td>${deviation}</td>
+                    <td>
+                        <span class="dashboard-bool-badge ${isViolation ? "is-yes" : "is-no"}">
+                            ${isViolation ? "Да" : "Нет"}
+                        </span>
+                    </td>
+                </tr>
+            `;
+        }).join("");
     };
 
     renderDashboard = function (data) {
