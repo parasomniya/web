@@ -7,32 +7,23 @@ import { isValidLocation } from '../module-1/validator.js';
  */
 export class TelemetryProcessor {
   constructor() {
-    // Хранилище состояний по deviceId
     this.deviceStates = new Map();
   }
 
-  /**
-   * Возвращает начальное состояние для нового устройства
-   */
   getInitialState(weight = 0) {
     return {
-      lastZoneName: null,        // Зона из предыдущего пакета (для баннеров)
-      currentZone: null,         // Текущая активная зона загрузки
-      zoneStartWeight: weight,   // Вес в момент начала  загрузки в зоне
-      peakWeight: weight,        // Максимальный вес за цикл
-      isMixing: false,           // Флаг: идет набор веса?
-      isUnloading: false,        // Флаг: идет разгрузка?
-      lastUnloadWeight: null,    // Последний вес при разгрузке
-      lastIngredientName: null
+      lastZoneName: null,
+      currentZone: null,
+      zoneStartWeight: weight,
+      peakWeight: weight,
+      isMixing: false,
+      isUnloading: false,
+      lastUnloadWeight: null,
+      lastIngredientName: null,
+      isBatchStarted: false  // 🆕 Флаг: начат ли текущий замес
     };
   }
 
-  /**
-   * Обрабатывает один пакет телеметрии
-   * @param {Object} packet - Пакет телеметрии
-   * @param {Array} zonesConfig - Массив активных зон
-   * @returns {Object} Инструкция для контроллера
-   */
   processPacket(packet, zonesConfig) {
     const result = {
       isValid: true,
@@ -41,7 +32,6 @@ export class TelemetryProcessor {
       dbActions: []
     };
 
-    // ===== ШАГ 1: Базовая проверка координат =====
     const deviceId = packet.deviceId || packet.device_id || 'host_01';
     const lat = Number(packet.lat);
     const lon = Number(packet.lon);
@@ -53,19 +43,16 @@ export class TelemetryProcessor {
       return result;
     }
 
-    // ===== Получаем или создаем состояние устройства =====
     let state = this.deviceStates.get(deviceId);
     if (!state) {
       state = this.getInitialState(currentWeight);
       this.deviceStates.set(deviceId, state);
     }
 
-    // ===== ШАГ 2: Определение зоны и баннеров =====
     const activeZone = detectZoneObject(lat, lon, zonesConfig);
     const activeZoneName = activeZone?.name || null;
     const activeIngredientName = activeZone?.ingredient || activeZoneName;
     
-    // Если зона сменилась — генерируем баннер
     if (activeZoneName !== state.lastZoneName) {
       if (activeZoneName) {
         result.banner = {
@@ -76,22 +63,27 @@ export class TelemetryProcessor {
       state.lastZoneName = activeZoneName;
     }
 
-    // ===== ШАГ 3: Авто-Тара (Защита от "Васи с лопатой") =====
-    // Если трактор пустой и вес упал ниже стартового — обновляем дно
     if (!state.isMixing && !state.isUnloading) {
       if (currentWeight < state.zoneStartWeight) {
         state.zoneStartWeight = currentWeight;
       }
     }
 
-    // ===== ШАГ 4: Детекция загрузки (смена зоны) =====
+    // ===== ШАГ 4: Детекция загрузки =====
     if ((state.currentZone?.name || null) !== activeZoneName) {
-      // Проверяем, был ли в какой-то зоне до этого
       if (state.currentZone) {
         const delta = currentWeight - state.zoneStartWeight;
         
-        // Если набрал больше 30 кг — это загрузка
         if (delta > 30) {
+          // 🆕 START_BATCH — при начале первого замеса
+          if (!state.isBatchStarted) {
+            state.isBatchStarted = true;
+            result.dbActions.push({
+              type: 'START_BATCH',
+              startWeight: currentWeight
+            });
+          }
+
           state.isMixing = true;
           const ingredientName = state.currentZone.ingredient || state.currentZone.name || 'Unknown';
           state.lastIngredientName = ingredientName;
@@ -104,49 +96,47 @@ export class TelemetryProcessor {
         }
       }
 
-      // В любом случае обновляем якоря
       state.currentZone = activeZone ? { ...activeZone, ingredient: activeIngredientName } : null;
       state.zoneStartWeight = currentWeight;
     }
 
-    // ===== ШАГ 5: Поиск пика веса =====
     if (currentWeight > state.peakWeight) {
       state.peakWeight = currentWeight;
     }
 
-    // ===== ШАГ 6: Защита от недовыгрузки (новый цикл поверх старого) =====
+    // ===== ШАГ 6: Защита от недовыгрузки =====
     if (state.isUnloading && currentWeight > state.lastUnloadWeight + 50) {
       const leftoverWeight = state.lastUnloadWeight;
   
-      // 🆕 Логирование нарушения, если остаток > порога
       if (leftoverWeight > 50) {
-       result.dbActions.push({
+        result.dbActions.push({
           type: 'LEFTOVER_VIOLATION',
           leftoverWeight: Math.round(leftoverWeight),
         });
       }
 
-      // Существующая логика переноса остатка (сохраняется!)
       result.dbActions.push({
         type: 'FORCE_CLOSE_BATCH'
       });
 
-    state.zoneStartWeight = state.lastUnloadWeight;  // ← Перенос остатка
-    state.isMixing = false;
-    state.isUnloading = false;
-    state.peakWeight = currentWeight;
-    state.lastUnloadWeight = null;
+      state.zoneStartWeight = state.lastUnloadWeight;
+      state.isMixing = false;
+      state.isUnloading = false;
+      state.isBatchStarted = false;  // 🆕 Сброс флага
+      state.peakWeight = currentWeight;
+      state.lastUnloadWeight = null;
     }
 
-    // ===== ШАГ 7: Детекция выгрузки и завершение =====
-    // Если в замесе, пик > 400 кг, и вес упал сильно ниже пика
+    // ===== ШАГ 7: Детекция выгрузки =====
     if (state.isMixing && state.peakWeight > 400 && currentWeight < state.peakWeight - 200) {
       state.isUnloading = true;
       state.lastUnloadWeight = currentWeight;
 
+      // 🔄 UPDATE_UNLOAD → START_UNLOAD
       result.dbActions.push({
-        type: 'UPDATE_UNLOAD',
-        endWeight: Math.round(currentWeight)
+        type: 'START_UNLOAD',
+        startUnloadWeight: Math.round(currentWeight),
+        peakWeight: state.peakWeight
       });
     }
 
@@ -156,7 +146,6 @@ export class TelemetryProcessor {
         type: 'COMPLETE_BATCH'
       });
 
-      // Полностью удаляем состояние из памяти
       this.deviceStates.delete(deviceId);
     }
 
@@ -166,15 +155,13 @@ export class TelemetryProcessor {
       isMixing: state.isMixing,
       isUnloading: state.isUnloading,
       peakWeight: state.peakWeight,
-      lastIngredientName: state.lastIngredientName
+      lastIngredientName: state.lastIngredientName,
+      isBatchStarted: state.isBatchStarted
     };
 
     return result;
   }
 
-  /**
-   * Получение состояния конкретного устройства (для отладки)
-   */
   getState(deviceId) {
     const state = this.deviceStates.get(deviceId) || this.getInitialState();
     return {
@@ -188,9 +175,6 @@ export class TelemetryProcessor {
     return this.getState(deviceId);
   }
 
-  /**
-   * Очистка всех состояний (для тестов)
-   */
   clearStates() {
     this.deviceStates.clear();
   }
