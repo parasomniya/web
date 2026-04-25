@@ -18,7 +18,7 @@ export class TelemetryProcessor {
     return {
       lastZoneName: null,        // Зона из предыдущего пакета (для баннеров)
       currentZone: null,         // Текущая активная зона загрузки
-      zoneStartWeight: weight,   // Вес в момент начала загрузки в зоне
+      zoneStartWeight: weight,   // Вес в момент начала  загрузки в зоне
       peakWeight: weight,        // Максимальный вес за цикл
       isMixing: false,           // Флаг: идет набор веса?
       isUnloading: false,        // Флаг: идет разгрузка?
@@ -116,17 +116,26 @@ export class TelemetryProcessor {
 
     // ===== ШАГ 6: Защита от недовыгрузки (новый цикл поверх старого) =====
     if (state.isUnloading && currentWeight > state.lastUnloadWeight + 50) {
-      // Трактор не до конца выгрузился и поехал грузиться снова
+      const leftoverWeight = state.lastUnloadWeight;
+  
+      // 🆕 Логирование нарушения, если остаток > порога
+      if (leftoverWeight > 50) {
+       result.dbActions.push({
+          type: 'LEFTOVER_VIOLATION',
+          leftoverWeight: Math.round(leftoverWeight),
+        });
+      }
+
+      // Существующая логика переноса остатка (сохраняется!)
       result.dbActions.push({
         type: 'FORCE_CLOSE_BATCH'
       });
 
-      // Перерождаем состояние, сохраняя остаток
-      state.zoneStartWeight = state.lastUnloadWeight;
-      state.isMixing = false;
-      state.isUnloading = false;
-      state.peakWeight = currentWeight;
-      state.lastUnloadWeight = null;
+    state.zoneStartWeight = state.lastUnloadWeight;  // ← Перенос остатка
+    state.isMixing = false;
+    state.isUnloading = false;
+    state.peakWeight = currentWeight;
+    state.lastUnloadWeight = null;
     }
 
     // ===== ШАГ 7: Детекция выгрузки и завершение =====
