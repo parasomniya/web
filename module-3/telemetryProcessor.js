@@ -1,10 +1,6 @@
 import { detectZoneObject } from '../module-1/geo.js';
 import { isValidLocation } from '../module-1/validator.js';
 
-/**
- * Главный автомат состояний для обработки телеметрии
- * Отслеживает загрузки, выгрузки и перемещения между зонами
- */
 export class TelemetryProcessor {
   constructor() {
     this.deviceStates = new Map();
@@ -20,8 +16,17 @@ export class TelemetryProcessor {
       isUnloading: false,
       lastUnloadWeight: null,
       lastIngredientName: null,
-      isBatchStarted: false  // 🆕 Флаг: начат ли текущий замес
+      isBatchStarted: false
     };
+  }
+
+  /**
+   * Вычисляет текущий режим работы устройства
+   */
+  _getCurrentMode(state) {
+    if (state.isUnloading) return 'unloading';
+    if (state.isMixing) return 'loading';
+    return 'idle';
   }
 
   processPacket(packet, zonesConfig) {
@@ -75,7 +80,6 @@ export class TelemetryProcessor {
         const delta = currentWeight - state.zoneStartWeight;
         
         if (delta > 30) {
-          // 🆕 START_BATCH — при начале первого замеса
           if (!state.isBatchStarted) {
             state.isBatchStarted = true;
             result.dbActions.push({
@@ -122,7 +126,7 @@ export class TelemetryProcessor {
       state.zoneStartWeight = state.lastUnloadWeight;
       state.isMixing = false;
       state.isUnloading = false;
-      state.isBatchStarted = false;  // 🆕 Сброс флага
+      state.isBatchStarted = false;
       state.peakWeight = currentWeight;
       state.lastUnloadWeight = null;
     }
@@ -132,7 +136,6 @@ export class TelemetryProcessor {
       state.isUnloading = true;
       state.lastUnloadWeight = currentWeight;
 
-      // 🔄 UPDATE_UNLOAD → START_UNLOAD
       result.dbActions.push({
         type: 'START_UNLOAD',
         startUnloadWeight: Math.round(currentWeight),
@@ -149,6 +152,7 @@ export class TelemetryProcessor {
       this.deviceStates.delete(deviceId);
     }
 
+    // 🆕 Добавляем явный режим в output state
     result.state = {
       currentZone: activeZoneName,
       currentIngredient: activeIngredientName,
@@ -156,7 +160,8 @@ export class TelemetryProcessor {
       isUnloading: state.isUnloading,
       peakWeight: state.peakWeight,
       lastIngredientName: state.lastIngredientName,
-      isBatchStarted: state.isBatchStarted
+      isBatchStarted: state.isBatchStarted,
+      currentMode: this._getCurrentMode(state)  // ✅ Явный режим
     };
 
     return result;
@@ -167,7 +172,8 @@ export class TelemetryProcessor {
     return {
       ...state,
       currentZone: state.currentZone?.name || null,
-      currentIngredient: state.currentZone?.ingredient || state.lastIngredientName || null
+      currentIngredient: state.currentZone?.ingredient || state.lastIngredientName || null,
+      currentMode: this._getCurrentMode(state)  // ✅ И здесь тоже
     };
   }
 
