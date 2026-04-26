@@ -15,6 +15,7 @@ let map;
 let placemark;
 let rtkPlacemark = null;
 let routePolyline = null;
+let rtkRoutePolyline = null;
 let latestTelemetry = null;
 let latestRtkTelemetry = null;
 let storageZones = [];
@@ -71,6 +72,12 @@ function getHistoryApiUrl() {
     return isAdmin()
         ? `${API_BASE}/admin/history?limit=${HISTORY_LIMIT}`
         : `${API_BASE}/recent?limit=${HISTORY_LIMIT}`;
+}
+
+function getRtkHistoryApiUrl() {
+    return isAdmin()
+        ? `${RTK_API_BASE}/admin/history?limit=${HISTORY_LIMIT}`
+        : `${RTK_API_BASE}/history?limit=${HISTORY_LIMIT}`;
 }
 
 function getHeaders() {
@@ -896,20 +903,30 @@ function clearRoutePolyline() {
     routePolyline = null;
 }
 
-function renderRoute(historyRows) {
-    if (!map) return;
+function clearRtkRoutePolyline() {
+    if (!rtkRoutePolyline) return;
 
-    clearRoutePolyline();
+    map.geoObjects.remove(rtkRoutePolyline);
+    rtkRoutePolyline = null;
+}
 
+function buildRouteCoords(historyRows) {
     if (!Array.isArray(historyRows)) {
-        return;
+        return [];
     }
 
-    const routeCoords = historyRows
+    return historyRows
         .filter((row) => hasValidCoordinates(row?.lat, row?.lon))
         .slice()
         .reverse()
         .map((row) => [Number(row.lat), Number(row.lon)]);
+}
+
+function renderRoute(historyRows) {
+    if (!map) return;
+
+    clearRoutePolyline();
+    const routeCoords = buildRouteCoords(historyRows);
 
     if (routeCoords.length < 2) {
         return;
@@ -924,6 +941,27 @@ function renderRoute(historyRows) {
     });
 
     map.geoObjects.add(routePolyline);
+}
+
+function renderRtkRoute(historyRows) {
+    if (!map) return;
+
+    clearRtkRoutePolyline();
+    const routeCoords = buildRouteCoords(historyRows);
+
+    if (routeCoords.length < 2) {
+        return;
+    }
+
+    rtkRoutePolyline = new ymaps.Polyline(routeCoords, {
+        balloonContent: "RTK маршрут",
+    }, {
+        strokeColor: "#1cc88a",
+        strokeWidth: 4,
+        strokeOpacity: 0.8,
+    });
+
+    map.geoObjects.add(rtkRoutePolyline);
 }
 
 async function fetchLatest() {
@@ -963,17 +1001,30 @@ async function fetchLatest() {
 
 async function fetchHistory() {
     try {
-        const response = await fetch(getHistoryApiUrl(), { headers: getHeaders() });
-        if (!response.ok) {
+        const [hostResponse, rtkResponse] = await Promise.all([
+            fetch(getHistoryApiUrl(), { headers: getHeaders() }),
+            fetch(getRtkHistoryApiUrl(), { headers: getHeaders() }).catch(() => null),
+        ]);
+
+        if (!hostResponse.ok) {
             clearRoutePolyline();
+            clearRtkRoutePolyline();
             return;
         }
 
-        const historyRows = await response.json();
-        renderRoute(historyRows);
+        const hostHistoryRows = await hostResponse.json();
+        renderRoute(hostHistoryRows);
+
+        if (rtkResponse && rtkResponse.ok) {
+            const rtkHistoryRows = await rtkResponse.json();
+            renderRtkRoute(rtkHistoryRows);
+        } else {
+            clearRtkRoutePolyline();
+        }
     } catch (error) {
         console.error("Error fetching history:", error);
         clearRoutePolyline();
+        clearRtkRoutePolyline();
     }
 }
 
@@ -1188,6 +1239,7 @@ async function clearTelemetryHistory() {
 
         showBanner(null);
         clearRoutePolyline();
+        clearRtkRoutePolyline();
         latestTelemetry = null;
         renderDashboard(null);
         pendingTelemetryUndo = { rows: snapshotRows };
