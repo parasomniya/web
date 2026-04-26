@@ -13,7 +13,7 @@
     <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
-    <link href="css/custom.css" rel="stylesheet">
+    <link href="css/custom.css?v=20260426b" rel="stylesheet">
     <script src="js/app-auth.js?v=20260419a"></script>
     <script src="https://api-maps.yandex.ru/2.1/?apikey=3c050799-23a3-4bd9-a14a-b7eaf2e05511&lang=ru_RU"></script>
 
@@ -34,6 +34,44 @@
         .page-title {
             margin: 0;
             color: #5a5c69;
+        }
+
+        .telemetry-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .telemetry-summary-card {
+            padding: 16px 18px;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+        }
+
+        .telemetry-summary-card__label {
+            color: #858796;
+            font-size: 0.75rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .telemetry-summary-card__value {
+            color: #3a3b45;
+            font-size: 1rem;
+            font-weight: 700;
+            line-height: 1.35;
+            word-break: break-word;
+        }
+
+        .telemetry-summary-card__meta {
+            color: #6c757d;
+            font-size: 0.88rem;
+            font-weight: 600;
+            margin-top: 6px;
         }
 
         .content-layout {
@@ -169,12 +207,22 @@
         }
 
         @media (max-width: 992px) {
+            .telemetry-summary-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
             .content-layout {
                 grid-template-columns: 1fr;
             }
 
             #map {
                 height: 500px;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .telemetry-summary-grid {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -253,6 +301,29 @@
                             <h1 class="page-title">Зоны хранения</h1>
                         </div>
 
+                        <div class="telemetry-summary-grid">
+                            <div class="telemetry-summary-card">
+                                <div class="telemetry-summary-card__label">Host</div>
+                                <div class="telemetry-summary-card__value" id="hostMapStatus">Нет данных</div>
+                                <div class="telemetry-summary-card__meta" id="hostMapMeta">Координаты: --</div>
+                            </div>
+                            <div class="telemetry-summary-card">
+                                <div class="telemetry-summary-card__label">RTK</div>
+                                <div class="telemetry-summary-card__value" id="rtkMapStatus">Нет данных</div>
+                                <div class="telemetry-summary-card__meta" id="rtkMapMeta">Координаты: --</div>
+                            </div>
+                            <div class="telemetry-summary-card">
+                                <div class="telemetry-summary-card__label">RTK quality</div>
+                                <div class="telemetry-summary-card__value" id="rtkMapQuality">--</div>
+                                <div class="telemetry-summary-card__meta" id="rtkMapDevice">Устройство: --</div>
+                            </div>
+                            <div class="telemetry-summary-card">
+                                <div class="telemetry-summary-card__label">RTK зона</div>
+                                <div class="telemetry-summary-card__value" id="rtkMapZone">--</div>
+                                <div class="telemetry-summary-card__meta" id="rtkMapUpdated">Последний пакет: --</div>
+                            </div>
+                        </div>
+
                         <div class="content-layout">
                             <div class="map-card">
                                 <div class="card-header-custom">Карта зон</div>
@@ -266,6 +337,16 @@
                                             <i class="fas fa-expand-arrows-alt" aria-hidden="true"></i>
                                             <span class="map-action-button__label">Экран</span>
                                         </button>
+                                    </div>
+                                    <div class="map-marker-legend" aria-label="Обозначения меток">
+                                        <div class="map-marker-legend__item">
+                                            <span class="map-marker-legend__dot map-marker-legend__dot--host"></span>
+                                            <span>Host</span>
+                                        </div>
+                                        <div class="map-marker-legend__item">
+                                            <span class="map-marker-legend__dot map-marker-legend__dot--rtk"></span>
+                                            <span>RTK</span>
+                                        </div>
                                     </div>
                                     <div id="map" class="dashboard-map"></div>
                                 </div>
@@ -376,7 +457,7 @@
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260403a"></script>
-    <script src="js/storage-zones.js?v=20260403i"></script>
+    <script src="js/storage-zones.js?v=20260426c"></script>
 </body>
 
 </html>

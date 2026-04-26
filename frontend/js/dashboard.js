@@ -1,4 +1,5 @@
 const API_BASE = window.AppAuth?.getApiUrl?.("/api/telemetry/host") || "/api/telemetry/host";
+const RTK_API_BASE = window.AppAuth?.getApiUrl?.("/api/telemetry/rtk") || "/api/telemetry/rtk";
 const ZONES_API = window.AppAuth?.getApiUrl?.("/api/telemetry/zones") || "/api/telemetry/zones";
 const CLEAR_HISTORY_API = `${API_BASE}/admin/truncate`;
 const HISTORY_LIMIT = 100000;
@@ -6,18 +7,21 @@ const TEST_SECRET = "kill_all_telemetry_123";
 const DEFAULT_COORDS = [54.84, 83.09];
 const LATEST_POLL_INTERVAL_MS = 1000;
 const ZONES_POLL_INTERVAL_MS = 10000;
-const OFFLINE_THRESHOLD_MS = 30000;
+const OFFLINE_THRESHOLD_MS = 15000;
 const DEFAULT_MAP_TYPE = "yandex#map";
 const ZONE_BANNER_DISPLAY_MS = 4500;
 
 let map;
 let placemark;
+let rtkPlacemark = null;
 let routePolyline = null;
 let latestTelemetry = null;
+let latestRtkTelemetry = null;
 let storageZones = [];
 let zoneCircles = [];
 let hasLiveCoordinates = false;
 let isPlacemarkVisible = false;
+let isRtkPlacemarkVisible = false;
 let isFetchingZones = false;
 let mapTypeButtons = [];
 let idleCursorAccessor = null;
@@ -36,6 +40,7 @@ let mapTrackToggleButton = null;
 let mapCenterOnMarkerButton = null;
 let mapFullscreenButton = null;
 let mapWrapElement = null;
+let hasTelemetryAutoFocus = false;
 
 function isAdmin() {
     return Boolean(window.AppAuth?.isAdmin && window.AppAuth.isAdmin());
@@ -56,6 +61,10 @@ function isEmptyTelemetry(data) {
 
 function getLatestApiUrl() {
     return `${API_BASE}/current`;
+}
+
+function getRtkLatestApiUrl() {
+    return `${RTK_API_BASE}/current`;
 }
 
 function getHistoryApiUrl() {
@@ -395,6 +404,25 @@ function getPlacemarkPreset(isOnline) {
     return isOnline ? "islands#blueAutoIcon" : "islands#grayAutoIcon";
 }
 
+function getRtkPlacemarkPreset(data) {
+    if (!isPacketOnline(data?.timestamp)) {
+        return "islands#grayCircleDotIcon";
+    }
+
+    const label = String(data?.qualityLabel || data?.rtkQuality || "").toLowerCase();
+    const quality = Number(data?.quality);
+
+    if (label.includes("fixed") || quality >= 4) {
+        return "islands#greenCircleDotIcon";
+    }
+
+    if (label.includes("float") || quality >= 2) {
+        return "islands#yellowCircleDotIcon";
+    }
+
+    return "islands#blueCircleDotIcon";
+}
+
 function updatePlacemarkStatus(isOnline) {
     if (!placemark) return;
     placemark.options.set("preset", getPlacemarkPreset(isOnline));
@@ -418,6 +446,24 @@ function hidePlacemark() {
     isPlacemarkVisible = false;
 }
 
+function ensureRtkPlacemarkVisible() {
+    if (!map || !rtkPlacemark || isRtkPlacemarkVisible) {
+        return;
+    }
+
+    map.geoObjects.add(rtkPlacemark);
+    isRtkPlacemarkVisible = true;
+}
+
+function hideRtkPlacemark() {
+    if (!map || !rtkPlacemark || !isRtkPlacemarkVisible) {
+        return;
+    }
+
+    map.geoObjects.remove(rtkPlacemark);
+    isRtkPlacemarkVisible = false;
+}
+
 function isPacketOnline(timestamp) {
     if (!timestamp) return false;
 
@@ -427,12 +473,8 @@ function isPacketOnline(timestamp) {
     return (Date.now() - packetTime) < OFFLINE_THRESHOLD_MS;
 }
 
-function isRecentTelemetryActivity() {
-    return lastTelemetryChangeAt > 0 && (Date.now() - lastTelemetryChangeAt) < OFFLINE_THRESHOLD_MS;
-}
-
 function isTelemetryOnline(data) {
-    return isPacketOnline(data?.timestamp) || isRecentTelemetryActivity();
+    return isPacketOnline(data?.timestamp);
 }
 
 function hasValidCoordinates(lat, lon) {
@@ -506,10 +548,28 @@ function smoothMove(newCoords) {
 
 function getCurrentMarkerCoords() {
     if (!hasValidCoordinates(latestTelemetry?.lat, latestTelemetry?.lon)) {
+        if (hasValidCoordinates(latestRtkTelemetry?.lat, latestRtkTelemetry?.lon)) {
+            return [Number(latestRtkTelemetry.lat), Number(latestRtkTelemetry.lon)];
+        }
+
         return null;
     }
 
     return [Number(latestTelemetry.lat), Number(latestTelemetry.lon)];
+}
+
+function getVisibleTelemetryCoords() {
+    const coords = [];
+
+    if (hasValidCoordinates(latestTelemetry?.lat, latestTelemetry?.lon)) {
+        coords.push([Number(latestTelemetry.lat), Number(latestTelemetry.lon)]);
+    }
+
+    if (hasValidCoordinates(latestRtkTelemetry?.lat, latestRtkTelemetry?.lon)) {
+        coords.push([Number(latestRtkTelemetry.lat), Number(latestRtkTelemetry.lon)]);
+    }
+
+    return coords;
 }
 
 function isMapCenteredOnCoords(coords, toleranceMeters = 4) {
@@ -550,16 +610,37 @@ function centerMapOnMarker(options = {}) {
         return false;
     }
 
-    const coords = getCurrentMarkerCoords();
-    if (!coords) {
+    const coordsList = getVisibleTelemetryCoords();
+    if (!coordsList.length) {
         return false;
     }
 
-    if (!options.force && isMapCenteredOnCoords(coords)) {
-        return true;
+    if (coordsList.length === 1) {
+        const coords = coordsList[0];
+
+        if (!options.force && isMapCenteredOnCoords(coords)) {
+            return true;
+        }
+
+        return moveMapCenterToCoords(coords, options);
     }
 
-    return moveMapCenterToCoords(coords, options);
+    const lats = coordsList.map((coords) => coords[0]);
+    const lons = coordsList.map((coords) => coords[1]);
+
+    map.setBounds(
+        [
+            [Math.min(...lats), Math.min(...lons)],
+            [Math.max(...lats), Math.max(...lons)],
+        ],
+        {
+            checkZoomRange: true,
+            zoomMargin: 60,
+            duration: options.duration ?? 280,
+        }
+    );
+
+    return true;
 }
 
 function syncMapActionButtons() {
@@ -676,6 +757,10 @@ function updateMapPosition(data, isOnline) {
     if (!hasLiveCoordinates) {
         placemark.geometry.setCoordinates(newCoords);
         hasLiveCoordinates = true;
+        if (!hasTelemetryAutoFocus) {
+            centerMapOnMarker({ force: true, duration: 300 });
+            hasTelemetryAutoFocus = true;
+        }
         return;
     }
 
@@ -683,6 +768,61 @@ function updateMapPosition(data, isOnline) {
 
     if (isMarkerTrackingEnabled) {
         centerMapOnMarker({ duration: 220 });
+    }
+}
+
+function getRtkQualityLabel(data) {
+    if (!data) {
+        return "--";
+    }
+
+    return data.qualityLabel || data.rtkQuality || (data.quality != null ? `Q${data.quality}` : "--");
+}
+
+function updateRtkMapPosition(data) {
+    if (!hasValidCoordinates(data?.lat, data?.lon)) {
+        hideRtkPlacemark();
+        return;
+    }
+
+    const coords = [Number(data.lat), Number(data.lon)];
+    const qualityLabel = getRtkQualityLabel(data);
+    const zoneName = getCurrentZoneName(coords[0], coords[1]) || data?.zone?.name || "Вне зоны";
+    const isOnline = isPacketOnline(data?.timestamp);
+    const balloonContent = `
+        <strong>RTK</strong><br>
+        Устройство: ${escapeHtml(data?.deviceId || "--")}<br>
+        Статус: ${isOnline ? "Свежий пакет" : "Нет свежих пакетов"}<br>
+        Quality: ${escapeHtml(qualityLabel)}<br>
+        Координаты: ${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}<br>
+        Зона: ${escapeHtml(zoneName)}
+    `;
+
+    if (!rtkPlacemark) {
+        rtkPlacemark = new ymaps.Placemark(
+            coords,
+            {
+                balloonContent,
+                hintContent: `RTK • ${qualityLabel}`,
+            },
+            {
+                preset: getRtkPlacemarkPreset(data),
+            }
+        );
+    } else {
+        rtkPlacemark.geometry.setCoordinates(coords);
+        rtkPlacemark.properties.set({
+            balloonContent,
+            hintContent: `RTK • ${qualityLabel}`,
+        });
+        rtkPlacemark.options.set("preset", getRtkPlacemarkPreset(data));
+    }
+
+    ensureRtkPlacemarkVisible();
+
+    if (!hasTelemetryAutoFocus) {
+        centerMapOnMarker({ force: true, duration: 300 });
+        hasTelemetryAutoFocus = true;
     }
 }
 
@@ -788,20 +928,33 @@ function renderRoute(historyRows) {
 
 async function fetchLatest() {
     try {
-        const response = await fetch(getLatestApiUrl(), { headers: getHeaders() });
-        if (!response.ok) {
+        const [hostResponse, rtkResponse] = await Promise.all([
+            fetch(getLatestApiUrl(), { headers: getHeaders() }),
+            fetch(getRtkLatestApiUrl(), { headers: getHeaders() }).catch(() => null),
+        ]);
+
+        if (!hostResponse.ok) {
             renderDashboard(latestTelemetry);
             return;
         }
 
-        latestTelemetry = await response.json();
+        latestTelemetry = await hostResponse.json();
         noteTelemetryActivity(latestTelemetry);
         if (latestTelemetry.banner) {
             showBanner(latestTelemetry.banner);
         } else if (currentBannerType && currentBannerType !== "zone_enter") {
             showBanner(null);
         }
+
+        if (rtkResponse && rtkResponse.ok) {
+            latestRtkTelemetry = await rtkResponse.json();
+        } else if (rtkResponse && rtkResponse.status === 404) {
+            latestRtkTelemetry = null;
+            hideRtkPlacemark();
+        }
+
         renderDashboard(latestTelemetry);
+        updateRtkMapPosition(latestRtkTelemetry);
     } catch (error) {
         console.error("Error fetching latest:", error);
         renderDashboard(latestTelemetry);

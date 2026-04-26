@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
 
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
-    <link href="css/custom.css" rel="stylesheet">
+    <link href="css/custom.css?v=20260426b" rel="stylesheet">
     <script src="js/app-auth.js?v=20260419a"></script>
 </head>
 
@@ -282,7 +282,7 @@
                             <div class="col-xl-2 col-md-4 mb-4">
                                 <div class="card border-left-primary shadow h-100 py-2">
                                     <div class="card-body">
-                                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">RTK age</div>
+                                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Качество</div>
                                         <div class="h6 mb-0 font-weight-bold text-gray-800" id="rtkAge">--</div>
                                     </div>
                                 </div>
@@ -290,8 +290,24 @@
                             <div class="col-xl-2 col-md-4 mb-4">
                                 <div class="card border-left-secondary shadow h-100 py-2">
                                     <div class="card-body">
-                                        <div class="text-xs font-weight-bold text-secondary text-uppercase mb-1">Координаты</div>
+                                        <div class="text-xs font-weight-bold text-secondary text-uppercase mb-1">Валидность</div>
+                                        <div class="h6 mb-0 font-weight-bold text-gray-800" id="rtkValid">--</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-xl-2 col-md-4 mb-4">
+                                <div class="card border-left-info shadow h-100 py-2">
+                                    <div class="card-body">
+                                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Координаты</div>
                                         <div class="h6 mb-0 font-weight-bold text-gray-800" id="rtkCoordinates">--</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-xl-2 col-md-4 mb-4">
+                                <div class="card border-left-dark shadow h-100 py-2">
+                                    <div class="card-body">
+                                        <div class="text-xs font-weight-bold text-dark text-uppercase mb-1">Зона</div>
+                                        <div class="h6 mb-0 font-weight-bold text-gray-800" id="rtkZone">--</div>
                                     </div>
                                 </div>
                             </div>
@@ -301,11 +317,37 @@
                             <div class="card-header py-3 d-sm-flex align-items-center justify-content-between">
                                 <div>
                                     <h6 class="m-0 font-weight-bold text-primary">Поток «RTK»</h6>
-                                    <div class="small text-muted mt-1">Интерфейс подготовлен под отдельный API, backend в этом шаге не менялся.</div>
+                                    <div class="small text-muted mt-1">Пакеты RTK, статус решения, диагностические признаки и положение в зоне.</div>
                                 </div>
                                 <div class="telemetry-panel-status mt-3 mt-sm-0" id="rtkPanelStatus">Ожидание ответа API...</div>
                             </div>
                             <div class="card-body">
+                                <div class="rtk-meta-grid mb-4">
+                                    <div class="rtk-meta-card">
+                                        <div class="rtk-meta-card__label">Спутники</div>
+                                        <div class="rtk-meta-card__value" id="rtkSatellites">--</div>
+                                    </div>
+                                    <div class="rtk-meta-card">
+                                        <div class="rtk-meta-card__label">Wi-Fi</div>
+                                        <div class="rtk-meta-card__value" id="rtkWifi">--</div>
+                                    </div>
+                                    <div class="rtk-meta-card">
+                                        <div class="rtk-meta-card__label">RSSI</div>
+                                        <div class="rtk-meta-card__value" id="rtkRssi">--</div>
+                                    </div>
+                                    <div class="rtk-meta-card">
+                                        <div class="rtk-meta-card__label">SD</div>
+                                        <div class="rtk-meta-card__value" id="rtkSdReady">--</div>
+                                    </div>
+                                    <div class="rtk-meta-card">
+                                        <div class="rtk-meta-card__label">Очередь RAM</div>
+                                        <div class="rtk-meta-card__value" id="rtkQueue">--</div>
+                                    </div>
+                                    <div class="rtk-meta-card">
+                                        <div class="rtk-meta-card__label">Free heap</div>
+                                        <div class="rtk-meta-card__value" id="rtkHeap">--</div>
+                                    </div>
+                                </div>
                                 <div class="table-responsive telemetry-table-wrap">
                                     <table class="table table-bordered telemetry-table" width="100%" cellspacing="0">
                                         <thead>
@@ -314,17 +356,23 @@
                                                 <th>Устройство</th>
                                                 <th>Lat</th>
                                                 <th>Lon</th>
-                                                <th>RTK quality</th>
-                                                <th>RTK age</th>
+                                                <th>Valid</th>
+                                                <th>Quality</th>
+                                                <th>Quality label</th>
+                                                <th>Спутники</th>
                                                 <th>Скорость</th>
                                                 <th>Курс</th>
-                                                <th>Напряжение</th>
+                                                <th>Wi-Fi</th>
+                                                <th>RSSI</th>
+                                                <th>SD</th>
+                                                <th>Heap</th>
+                                                <th>Зона</th>
                                                 <th>Прочее</th>
                                             </tr>
                                         </thead>
                                         <tbody id="rtkTelemetryTable">
                                             <tr>
-                                                <td colspan="10" class="telemetry-empty-state">Поток RTK будет отображаться здесь после подключения отдельного API.</td>
+                                                <td colspan="15" class="telemetry-empty-state">Загрузка RTK данных...</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -430,7 +478,7 @@
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260403a"></script>
-    <script src="js/telemetry.js?v=20260403b"></script>
+    <script src="js/telemetry.js?v=20260426b"></script>
     <script src="js/admin-users.js?v=20260420a"></script>
 
 </body>

@@ -6,6 +6,11 @@ import { authenticate, requireWriteAccess } from "../../middleware/auth.js"; // 
 const router = Router();
 const VALID_ROLES = ['ADMIN', 'DIRECTOR', 'GUEST'];
 
+function parseUserId(value) {
+    const id = parseInt(value, 10);
+    return Number.isInteger(id) ? id : null;
+}
+
 function isValidEmail(email) {
     if (!email) return true;
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -90,15 +95,36 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
 // ============================================================================
 router.patch('/:id/role', authenticate, requireWriteAccess, async (req, res) => {
     try {
+        const userId = parseUserId(req.params.id);
         const { role } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ error: 'Некорректный ID пользователя' });
+        }
         
         // Проверяем, что прислали правильную роль (согласно enum в schema.prisma)
         if (!VALID_ROLES.includes(role)) {
             return res.status(400).json({ error: 'Недопустимая роль. Доступны: ADMIN, DIRECTOR, GUEST' });
         }
 
+        const existingUser = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, username: true, role: true }
+        });
+
+        if (!existingUser) {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+
+        if (existingUser.role === 'ADMIN' && role !== 'ADMIN') {
+            const adminCount = await prisma.user.count({ where: { role: 'ADMIN' } });
+            if (adminCount <= 1) {
+                return res.status(409).json({ error: 'Нельзя снять роль у последнего администратора' });
+            }
+        }
+
         const updatedUser = await prisma.user.update({
-            where: { id: parseInt(req.params.id) },
+            where: { id: userId },
             data: { role },
             select: { id: true, username: true, role: true } 
         });
@@ -118,15 +144,37 @@ router.patch('/:id/role', authenticate, requireWriteAccess, async (req, res) => 
 // ============================================================================
 router.delete('/:id', authenticate, requireWriteAccess, async (req, res) => {
     try {
+        const userId = parseUserId(req.params.id);
+        if (!userId) {
+            return res.status(400).json({ error: 'Некорректный ID пользователя' });
+        }
+
+        if (req.user?.id === userId) {
+            return res.status(400).json({ error: 'Нельзя удалить текущего пользователя из активной сессии' });
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, username: true, role: true }
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+
+        if (user.role === 'ADMIN') {
+            const adminCount = await prisma.user.count({ where: { role: 'ADMIN' } });
+            if (adminCount <= 1) {
+                return res.status(409).json({ error: 'Нельзя удалить последнего администратора' });
+            }
+        }
+
         await prisma.user.delete({
-            where: { id: parseInt(req.params.id) }
+            where: { id: userId }
         });
         res.json({ status: 'ok', message: 'Пользователь удален' });
     } catch (error) {
         console.error('[Ошибка DELETE /users/:id]:', error);
-        if (error.code === 'P2025') {
-            return res.status(404).json({ error: 'Пользователь не найден' });
-        }
         res.status(500).json({ error: 'Ошибка при удалении пользователя' });
     }
 });

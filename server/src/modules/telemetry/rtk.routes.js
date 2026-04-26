@@ -1,0 +1,408 @@
+import { Router } from 'express'
+import prisma from '../../database.js'
+import { authenticate, requireAdmin, requireReadAccess } from '../../middleware/auth.js'
+import { calculateHaversine, detectZoneObject } from '../../../../module-1/geo.js'
+
+const router = Router()
+const DEFAULT_RECENT_LIMIT = 5
+const DEFAULT_HISTORY_LIMIT = 20
+const DEFAULT_ZONE_SECONDS = 30
+const MAX_ZONE_SECONDS = 3600
+const MAX_ZONE_SCAN_ROWS = 5000
+
+function parseTimestamp(value) {
+  if (!value) return new Date()
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function parseNumber(value) {
+  if (value === undefined || value === null || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseBoolean(value) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'true' || normalized === '1') return true
+    if (normalized === 'false' || normalized === '0') return false
+  }
+  return null
+}
+
+function parseInteger(value) {
+  if (value === undefined || value === null || value === '') return null
+  const parsed = parseInt(value, 10)
+  return Number.isInteger(parsed) ? parsed : null
+}
+
+function parseLimit(value, fallback) {
+  const parsed = parseInteger(value)
+  if (!parsed || parsed <= 0) return fallback
+  return Math.min(parsed, 500)
+}
+
+function getRequestedDeviceId(req) {
+  const value = req.query.deviceId || req.query.device_id
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function normalizeRtkPacket(raw) {
+  const timestamp = parseTimestamp(raw.timestamp)
+  const lat = parseNumber(raw.lat)
+  const lon = parseNumber(raw.lon)
+  const qualityLabelRaw = raw.quality_label ?? raw.rtkQuality ?? raw.rtk_quality ?? raw.solution_label
+  const qualityNumberRaw = raw.quality ?? raw.fixQuality ?? raw.fix_quality ?? raw.solution
+  const rtkQualityRaw = qualityLabelRaw ?? qualityNumberRaw
+  const fixTypeRaw = raw.fixType ?? raw.fix_type ?? raw.mode ?? raw.solutionType ?? raw.solution_type ?? qualityLabelRaw ?? qualityNumberRaw
+
+  return {
+    deviceId: String(raw.deviceId || raw.device_id || 'host_01').trim() || 'host_01',
+    timestamp,
+    lat,
+    lon,
+    rtkQuality: rtkQualityRaw !== undefined && rtkQualityRaw !== null && String(rtkQualityRaw).trim() !== ''
+      ? String(rtkQualityRaw).trim()
+      : null,
+    rtkAge: parseNumber(raw.rtkAge ?? raw.rtk_age ?? raw.age ?? raw.ageSeconds ?? raw.age_seconds),
+    speed: parseNumber(raw.speed ?? raw.speedKmh ?? raw.speed_kmh),
+    course: parseNumber(raw.course ?? raw.heading ?? raw.azimuth),
+    supplyVoltage: parseNumber(raw.supplyVoltage ?? raw.supply_voltage ?? raw.voltage ?? raw.vcc),
+    satellites: parseInteger(raw.satellites ?? raw.gpsSatellites ?? raw.gps_satellites ?? raw.sats ?? raw.sat_count),
+    fixType: fixTypeRaw !== undefined && fixTypeRaw !== null && String(fixTypeRaw).trim() !== ''
+      ? String(fixTypeRaw).trim()
+      : null,
+    rawPayload: JSON.stringify(raw)
+  }
+}
+
+function validateRtkPacket(packet) {
+  if (!packet.timestamp) {
+    return 'Некорректный timestamp'
+  }
+
+  if (!Number.isFinite(packet.lat) || packet.lat < -90 || packet.lat > 90) {
+    return 'Некорректная широта lat'
+  }
+
+  if (!Number.isFinite(packet.lon) || packet.lon < -180 || packet.lon > 180) {
+    return 'Некорректная долгота lon'
+  }
+
+  return null
+}
+
+function buildEmptyRtkResponse(deviceId = null) {
+  return {
+    id: null,
+    deviceId,
+    timestamp: null,
+    lat: null,
+    lon: null,
+    rtkQuality: null,
+    rtkAge: null,
+    speed: null,
+    course: null,
+    supplyVoltage: null,
+    satellites: null,
+    fixType: null,
+    valid: null,
+    quality: null,
+    qualityLabel: null,
+    rawGga: null,
+    eventsReaderOk: null,
+    wifiConnected: null,
+    wifiSsid: null,
+    wifiProfile: null,
+    rssiDbm: null,
+    sdReady: null,
+    ramQueueLen: null,
+    freeHeapBytes: null,
+    zone: null
+  }
+}
+
+async function loadActiveZones() {
+  return prisma.storageZone.findMany({
+    where: { active: true },
+    orderBy: { id: 'asc' }
+  })
+}
+
+function serializeZone(zone, lat, lon) {
+  if (!zone) return null
+
+  const distance = Number.isFinite(lat) && Number.isFinite(lon)
+    ? Math.round(calculateHaversine(lat, lon, Number(zone.lat), Number(zone.lon)) * 10) / 10
+    : null
+
+  return {
+    id: zone.id,
+    name: zone.name,
+    ingredient: zone.ingredient,
+    radius: zone.radius,
+    distanceMeters: distance
+  }
+}
+
+function parseRawPayload(rawPayload) {
+  if (typeof rawPayload !== 'string' || !rawPayload.trim()) {
+    return null
+  }
+
+  try {
+    return JSON.parse(rawPayload)
+  } catch (error) {
+    return null
+  }
+}
+
+function serializeRtkTelemetry(row, zones = []) {
+  if (!row) return null
+
+  const raw = parseRawPayload(row.rawPayload) || {}
+  const zone = detectZoneObject(row.lat, row.lon, zones)
+
+  return {
+    ...row,
+    valid: parseBoolean(raw.valid),
+    quality: parseInteger(raw.quality),
+    qualityLabel: raw.quality_label ?? raw.rtkQuality ?? raw.rtk_quality ?? row.rtkQuality ?? null,
+    rawGga: raw.raw_gga ?? raw.rawGga ?? null,
+    eventsReaderOk: parseBoolean(raw.events_reader_ok ?? raw.eventsReaderOk),
+    wifiConnected: parseBoolean(raw.wifi_connected ?? raw.wifiConnected),
+    wifiSsid: raw.wifi_ssid ?? raw.wifiSsid ?? null,
+    wifiProfile: raw.wifi_profile ?? raw.wifiProfile ?? null,
+    rssiDbm: parseInteger(raw.rssi_dbm ?? raw.rssiDbm),
+    sdReady: parseBoolean(raw.sd_ready ?? raw.sdReady),
+    ramQueueLen: parseInteger(raw.ram_queue_len ?? raw.ramQueueLen),
+    freeHeapBytes: parseInteger(raw.free_heap_bytes ?? raw.freeHeapBytes),
+    zone: serializeZone(zone, row.lat, row.lon)
+  }
+}
+
+async function getLatestRtkPoint(deviceId) {
+  return prisma.rtkTelemetry.findFirst({
+    where: deviceId ? { deviceId } : undefined,
+    orderBy: [
+      { timestamp: 'desc' },
+      { id: 'desc' }
+    ]
+  })
+}
+
+async function buildLatestResponse(deviceId) {
+  const latest = await getLatestRtkPoint(deviceId)
+  if (!latest) {
+    return buildEmptyRtkResponse(deviceId)
+  }
+
+  const zones = await loadActiveZones()
+  return serializeRtkTelemetry(latest, zones)
+}
+
+async function findLatestZonePoint(zoneId, seconds, deviceId) {
+  const zone = await prisma.storageZone.findUnique({ where: { id: zoneId } })
+  if (!zone) {
+    return { missingZone: true }
+  }
+
+  const since = new Date(Date.now() - seconds * 1000)
+  const rows = await prisma.rtkTelemetry.findMany({
+    where: {
+      timestamp: { gte: since },
+      ...(deviceId ? { deviceId } : {})
+    },
+    orderBy: [
+      { timestamp: 'desc' },
+      { id: 'desc' }
+    ],
+    take: MAX_ZONE_SCAN_ROWS
+  })
+
+  const point = rows.find((row) =>
+    calculateHaversine(row.lat, row.lon, Number(zone.lat), Number(zone.lon)) <= Number(zone.radius)
+  ) || null
+
+  return {
+    missingZone: false,
+    zone,
+    point
+  }
+}
+
+router.post('/', async (req, res) => {
+  try {
+    const packet = normalizeRtkPacket(req.body || {})
+    const validationError = validateRtkPacket(packet)
+
+    if (validationError) {
+      return res.status(400).json({ error: validationError })
+    }
+
+    const created = await prisma.rtkTelemetry.create({
+      data: packet
+    })
+
+    res.status(201).json({ status: 'ok', id: created.id })
+  } catch (error) {
+    console.error('[Ошибка POST /api/telemetry/rtk]:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.get('/current', authenticate, requireReadAccess, async (req, res) => {
+  try {
+    const deviceId = getRequestedDeviceId(req)
+    const latest = await buildLatestResponse(deviceId)
+    res.json(latest)
+  } catch (error) {
+    console.error('[Ошибка GET /api/telemetry/rtk/current]:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.get('/latest', authenticate, requireReadAccess, async (req, res) => {
+  try {
+    const deviceId = getRequestedDeviceId(req)
+    const latest = await buildLatestResponse(deviceId)
+    res.json(latest)
+  } catch (error) {
+    console.error('[Ошибка GET /api/telemetry/rtk/latest]:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.get('/recent', authenticate, requireReadAccess, async (req, res) => {
+  try {
+    const deviceId = getRequestedDeviceId(req)
+    const limit = parseLimit(req.query.limit, DEFAULT_RECENT_LIMIT)
+    const zones = await loadActiveZones()
+    const rows = await prisma.rtkTelemetry.findMany({
+      where: deviceId ? { deviceId } : undefined,
+      orderBy: [
+        { timestamp: 'desc' },
+        { id: 'desc' }
+      ],
+      take: limit
+    })
+    res.json(rows.map((row) => serializeRtkTelemetry(row, zones)))
+  } catch (error) {
+    console.error('[Ошибка GET /api/telemetry/rtk/recent]:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.get('/history', authenticate, requireReadAccess, async (req, res) => {
+  try {
+    const deviceId = getRequestedDeviceId(req)
+    const limit = parseLimit(req.query.limit, DEFAULT_HISTORY_LIMIT)
+    const zones = await loadActiveZones()
+    const rows = await prisma.rtkTelemetry.findMany({
+      where: deviceId ? { deviceId } : undefined,
+      orderBy: [
+        { timestamp: 'desc' },
+        { id: 'desc' }
+      ],
+      take: limit
+    })
+    res.json(rows.map((row) => serializeRtkTelemetry(row, zones)))
+  } catch (error) {
+    console.error('[Ошибка GET /api/telemetry/rtk/history]:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.get('/zone/latest', authenticate, requireReadAccess, async (req, res) => {
+  try {
+    const zoneId = parseInteger(req.query.zoneId ?? req.query.zone_id)
+    const seconds = parseLimit(req.query.seconds, DEFAULT_ZONE_SECONDS)
+    const deviceId = getRequestedDeviceId(req)
+
+    if (!zoneId || zoneId <= 0) {
+      return res.status(400).json({ error: 'Некорректный zoneId' })
+    }
+
+    const boundedSeconds = Math.min(Math.max(seconds, 1), MAX_ZONE_SECONDS)
+    const result = await findLatestZonePoint(zoneId, boundedSeconds, deviceId)
+
+    if (result.missingZone) {
+      return res.status(404).json({ error: 'Зона не найдена' })
+    }
+
+    res.json({
+      found: Boolean(result.point),
+      zone: serializeZone(result.zone, result.point?.lat ?? null, result.point?.lon ?? null),
+      searchedSeconds: boundedSeconds,
+      point: serializeRtkTelemetry(result.point, [result.zone])
+    })
+  } catch (error) {
+    console.error('[Ошибка GET /api/telemetry/rtk/zone/latest]:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.get('/zone/current', authenticate, requireReadAccess, async (req, res) => {
+  try {
+    const zoneId = parseInteger(req.query.zoneId ?? req.query.zone_id)
+    const seconds = parseLimit(req.query.seconds, DEFAULT_ZONE_SECONDS)
+    const deviceId = getRequestedDeviceId(req)
+
+    if (!zoneId || zoneId <= 0) {
+      return res.status(400).json({ error: 'Некорректный zoneId' })
+    }
+
+    const boundedSeconds = Math.min(Math.max(seconds, 1), MAX_ZONE_SECONDS)
+    const result = await findLatestZonePoint(zoneId, boundedSeconds, deviceId)
+
+    if (result.missingZone) {
+      return res.status(404).json({ error: 'Зона не найдена' })
+    }
+
+    res.json({
+      found: Boolean(result.point),
+      zone: serializeZone(result.zone, result.point?.lat ?? null, result.point?.lon ?? null),
+      searchedSeconds: boundedSeconds,
+      point: serializeRtkTelemetry(result.point, [result.zone])
+    })
+  } catch (error) {
+    console.error('[Ошибка GET /api/telemetry/rtk/zone/current]:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.get('/admin/latest', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const deviceId = getRequestedDeviceId(req)
+    const latest = await buildLatestResponse(deviceId)
+    res.json(latest)
+  } catch (error) {
+    console.error('[Ошибка GET /api/telemetry/rtk/admin/latest]:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.get('/admin/history', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const deviceId = getRequestedDeviceId(req)
+    const limit = parseLimit(req.query.limit, DEFAULT_HISTORY_LIMIT)
+    const zones = await loadActiveZones()
+    const rows = await prisma.rtkTelemetry.findMany({
+      where: deviceId ? { deviceId } : undefined,
+      orderBy: [
+        { timestamp: 'desc' },
+        { id: 'desc' }
+      ],
+      take: limit
+    })
+    res.json(rows.map((row) => serializeRtkTelemetry(row, zones)))
+  } catch (error) {
+    console.error('[Ошибка GET /api/telemetry/rtk/admin/history]:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+export default router
