@@ -5,9 +5,22 @@
  * Запуск: node emulator.js --mode=auto --host=http://localhost:3000 --tractor-id=TR-01
  */
 
+// ================= CLI =================
+const args = {};
+process.argv.slice(2).forEach(arg => {
+  const [k, v] = arg.split('=');
+  if (k) args[k.replace('--', '')] = v;
+});
+
+if (args.mode !== 'auto') {
+  console.log('Usage: node emulator.js --mode=auto --host=<URL> [--tractor-id=ID] [--token=JWT]');
+  process.exit(1);
+}
+
 // ================= НАСТРОЙКИ =================
 const CONFIG = {
-  tractorId: process.env.TRACTOR_ID || 'EMULATOR-01',
+  tractorId: args['tractor-id'] || process.env.TRACTOR_ID || 'EMULATOR-01',
+  authToken: args.token || process.env.AUTH_TOKEN || '',
   speedKmh: 15,
   tickMs: 1000,
   loadRate: 30,      // кг/сек
@@ -72,7 +85,15 @@ const calcDistance = (p1, p2) => {
 async function fetchZones(baseUrl) {
   const url = `${baseUrl}/api/telemetry/zones`;
   log(`🌐 Загрузка зон: ${url}`);
-  const res = await fetch(url);
+  const headers = {};
+  if (CONFIG.authToken) {
+    headers.Authorization = `Bearer ${CONFIG.authToken}`;
+  }
+
+  const res = await fetch(url, { headers });
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(`GET /zones -> ${res.status}. Нужен --token=<JWT> для доступа к защищенному API зон`);
+  }
   if (!res.ok) throw new Error(`GET /zones -> ${res.status}`);
   const data = await res.json();
   const zones = Array.isArray(data) ? data.filter(z => z.active !== false) : [];
@@ -101,9 +122,17 @@ function applyPhysicsAndNoise() {
   // 1. Потеря связи
   if (STATE.signalLossEnd > now) {
     STATE.currentPos.gpsValid = false;
-  } else if (Math.random() < CONFIG.noise.signalLossChance) {
+    STATE.currentPos.lat = 0;
+    STATE.currentPos.lon = 0;
+  } else {
+    STATE.currentPos.gpsValid = true;
+    if (Math.random() < CONFIG.noise.signalLossChance) {
     STATE.signalLossEnd = now + randInt(...CONFIG.noise.signalLossDurationSec);
     log(`📡 Связь потеряна на ${Math.round(STATE.signalLossEnd - now)} сек`);
+    STATE.currentPos.gpsValid = false;
+    STATE.currentPos.lat = 0;
+    STATE.currentPos.lon = 0;
+    }
   }
 
   // 2. Если связь есть - берем идеальные координаты и накладываем шум
@@ -338,20 +367,11 @@ async function runLoop(hostUrl) {
   }
 }
 
-// ================= CLI =================
-const args = {};
-process.argv.slice(2).forEach(arg => {
-  const [k, v] = arg.split('=');
-  if (k) args[k.replace('--', '')] = v;
-});
-
-if (args.mode !== 'auto') {
-  console.log('Usage: node emulator.js --mode=auto --host=<URL> [--tractor-id=ID]');
-  process.exit(1);
-}
-
 const host = (args.host || 'http://localhost:3000').replace(/\/+$/, '');
-log(`🚀 Start. Host: ${host}`);
+log(`🚀 Start. Host: ${host}. Tractor: ${CONFIG.tractorId}`);
+if (!CONFIG.authToken) {
+  log('ℹ️ Для загрузки зон нужен JWT: добавь --token=<JWT> или AUTH_TOKEN');
+}
 runLoop(host).catch(err => {
   log(`💀 Fatal: ${err.stack}`);
   process.exit(1);

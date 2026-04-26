@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import prisma from "../../database.js" // Проверь правильность пути к database.js
+import { authenticate, requireAdmin } from "../../middleware/auth.js"
 
 const router = Router()
 
@@ -33,7 +34,7 @@ router.post('/', async (req, res) => {
 })
 
 // GET: Получение последних событий (пригодится для вывода на фронтенд)
-router.get('/', async (req, res) => {
+router.get('/', authenticate, requireAdmin, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 20
     const events = await prisma.deviceEvent.findMany({

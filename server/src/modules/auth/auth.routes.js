@@ -6,6 +6,7 @@ import nodemailer from 'nodemailer' // Отправка email
 
 const router = Router()
 const SECRET_KEY = process.env.JWT_SECRET || 'super_secret_farm_key_123'
+const TOKEN_COOKIE_NAME = 'token'
 
 function isSmtpConfigured() {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
@@ -25,6 +26,16 @@ function parseSmtpSecure(port) {
     return String(process.env.SMTP_SECURE).trim().toLowerCase() === 'true'
   }
   return port === 465
+}
+
+function getAuthCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 30 * 24 * 60 * 60 * 1000
+  }
 }
 
 // Настройка почты
@@ -58,12 +69,7 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign({ id: user.id, role: user.role }, SECRET_KEY, { expiresIn: '24h' })
     
     // Устанавливаем токен в cookie для доступа к защищенным страницам
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 дней
-    })
+    res.cookie(TOKEN_COOKIE_NAME, token, getAuthCookieOptions())
     
     // Возвращаем токен и роль, чтобы фронтенд знал, какие вкладки показывать
     res.json({ token, role: user.role }) 
@@ -75,7 +81,8 @@ router.post('/login', async (req, res) => {
 
 // Выход из системы (очистка cookie)
 router.post('/logout', (req, res) => {
-  res.clearCookie('token')
+  const { maxAge, ...clearCookieOptions } = getAuthCookieOptions()
+  res.clearCookie(TOKEN_COOKIE_NAME, clearCookieOptions)
   res.json({ status: 'ok', message: 'Вы успешно вышли из системы' })
 })
 

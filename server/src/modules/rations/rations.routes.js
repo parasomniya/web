@@ -8,6 +8,10 @@ import { processRationRows } from '../../../../module-2/rationManager.js';
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
+function normalizeRationName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
 function parseId(value) {
   const id = parseInt(value, 10);
   return Number.isInteger(id) ? id : null;
@@ -38,11 +42,28 @@ function parseExcel(fileBuffer) {
     return {
       success: parsed.success,
       data: parsed.success ? parsed.data : null,
+      errors: parsed.errors,
       error: parsed.errors.join('; ')
     };
   } catch (error) {
-    return { success: false, data: null, error: error.message };
+    return {
+      success: false,
+      data: null,
+      errors: ['Не удалось прочитать Excel-файл. Проверьте структуру листа и формат данных'],
+      error: 'Не удалось прочитать Excel-файл. Проверьте структуру листа и формат данных'
+    };
   }
+}
+
+async function findRationByNormalizedName(name) {
+  const normalizedName = normalizeRationName(name);
+  if (!normalizedName) return null;
+
+  const rations = await prisma.ration.findMany({
+    select: { id: true, name: true }
+  });
+
+  return rations.find((item) => normalizeRationName(item.name) === normalizedName) || null;
 }
 
 // ============================================================================
@@ -50,7 +71,7 @@ function parseExcel(fileBuffer) {
 // ============================================================================
 router.post('/upload', requireWriteAccess, upload.single('file'), async (req, res) => {
   try {
-    const rationName = req.body.name?.trim();
+    const rationName = String(req.body.name || '').trim().replace(/\s+/g, ' ');
     
     if (!rationName) return res.status(400).json({ error: 'Необходимо указать название рациона' });
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
@@ -59,7 +80,7 @@ router.post('/upload', requireWriteAccess, upload.single('file'), async (req, re
     }
 
     // ЗАДАЧА: Уникальность названий для рационов
-    const existing = await prisma.ration.findFirst({ where: { name: rationName } });
+    const existing = await findRationByNormalizedName(rationName);
     if (existing) {
       return res.status(400).json({ error: `Рацион с названием "${rationName}" уже существует. Выберите другое имя или удалите старый.` });
     }
@@ -69,7 +90,10 @@ router.post('/upload', requireWriteAccess, upload.single('file'), async (req, re
 
     // ЗАДАЧА: Обработка ошибок для пользователя в парсинге
     if (!parsedResult.success) {
-      return res.status(400).json({ error: `Ошибка в Excel файле: ${parsedResult.error}` });
+      return res.status(400).json({
+        error: `Ошибка в Excel файле: ${parsedResult.errors?.[0] || parsedResult.error}`,
+        details: parsedResult.errors || []
+      });
     }
 
     let selectedGroupIds = [];
@@ -79,7 +103,7 @@ router.post('/upload', requireWriteAccess, upload.single('file'), async (req, re
             if (!Array.isArray(groupIds)) {
                 return res.status(400).json({ error: 'groups должен быть JSON-массивом ID групп' });
             }
-            selectedGroupIds = groupIds.map(id => parseInt(id, 10));
+            selectedGroupIds = [...new Set(groupIds.map(id => parseInt(id, 10)))];
         } catch (e) {
             return res.status(400).json({ error: 'groups должен быть корректным JSON-массивом ID групп' });
         }
@@ -120,8 +144,22 @@ router.post('/upload', requireWriteAccess, upload.single('file'), async (req, re
         });
     }
 
+    const rationWithGroups = await prisma.ration.findUnique({
+      where: { id: newRation.id },
+      include: {
+        ingredients: true,
+        livestockGroups: {
+          select: {
+            id: true,
+            name: true,
+            headcount: true
+          }
+        }
+      }
+    });
+
     console.log(`[Рационы] Загружен рацион "${rationName}"`);
-    res.status(201).json({ status: 'ok', ration: newRation });
+    res.status(201).json({ status: 'ok', ration: rationWithGroups || newRation });
 
   } catch (error) {
     console.error('[Ошибка POST /upload]:', error);
@@ -138,7 +176,16 @@ router.post('/upload', requireWriteAccess, upload.single('file'), async (req, re
 router.get('/', requireReadAccess, async (req, res) => {
   try {
     const rations = await prisma.ration.findMany({
-      include: { ingredients: true },
+      include: {
+        ingredients: true,
+        livestockGroups: {
+          select: {
+            id: true,
+            name: true,
+            headcount: true
+          }
+        }
+      },
       orderBy: { createdAt: 'desc' }
     });
     res.json(rations);

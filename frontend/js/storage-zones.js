@@ -2,6 +2,7 @@ const API_HOST = window.AppAuth?.getApiUrl?.("") || "";
 
 const ZONES_API = API_HOST + "/api/telemetry/zones";
 const TELEMETRY_API = API_HOST + "/api/telemetry/host/current";
+const RTK_TELEMETRY_API = API_HOST + "/api/telemetry/rtk/current";
 
 const CREATE_MODE_TITLE = "Добавление зоны";
 const EDIT_MODE_TITLE = "Редактирование зоны";
@@ -12,20 +13,24 @@ const DEFAULT_STATUS_MESSAGE = "Готово к работе";
 const DEFAULT_MAP_CENTER = [52.428863, 85.706438];
 const DEFAULT_MAP_ZOOM = 15;
 const DEFAULT_MAP_TYPE = "yandex#map";
+const TELEMETRY_FRESHNESS_MS = 15000;
 
 let map;
 let deviceMarker = null;
+let rtkMarker = null;
 
 let zones = [];
 let zoneCircles = [];
 let selectedZoneId = null;
 let lastTelemetry = null;
+let lastRtkTelemetry = null;
 let suppressNextMapClick = false;
 let mapTypeButtons = [];
 let idleCursorAccessor = null;
 let dragCursorAccessor = null;
 let mapFullscreenButton = null;
 let mapWrapElement = null;
+let hasTelemetryAutoFocus = false;
 
 ymaps.ready(init);
 
@@ -68,6 +73,23 @@ function getZoneLabel(zone) {
     return ingredient || name || "Без названия";
 }
 
+function hasTelemetryTimestamp(value) {
+    if (!value) {
+        return false;
+    }
+
+    const timestamp = new Date(value).getTime();
+    return !Number.isNaN(timestamp);
+}
+
+function isFreshTelemetry(value) {
+    if (!hasTelemetryTimestamp(value)) {
+        return false;
+    }
+
+    return (Date.now() - new Date(value).getTime()) < TELEMETRY_FRESHNESS_MS;
+}
+
 function getSelectedZone() {
     return zones.find((item) => String(item.id) === String(selectedZoneId)) || null;
 }
@@ -101,9 +123,9 @@ function init() {
     resetZoneEditor();
 
     loadZones();
-    loadTelemetry();
+    refreshTelemetryLayers();
 
-    setInterval(loadTelemetry, 5000);
+    setInterval(refreshTelemetryLayers, 5000);
 }
 
 function updateMapTypeButtons() {
@@ -726,26 +748,131 @@ async function onDeleteZoneClick() {
 
 async function loadTelemetry() {
     try {
-        const response = await fetch(TELEMETRY_API, {
-            headers: getHeaders(),
-        });
+        const [hostResponse, rtkResponse] = await Promise.allSettled([
+            fetch(TELEMETRY_API, { headers: getHeaders() }),
+            fetch(RTK_TELEMETRY_API, { headers: getHeaders() }),
+        ]);
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Ошибка телеметрии: ${response.status} ${errorText}`);
-        }
-
-        const data = await response.json();
-        lastTelemetry = data;
-        updateDeviceMarker(data);
+        await handleHostTelemetryResponse(hostResponse);
+        await handleRtkTelemetryResponse(rtkResponse);
     } catch (error) {
         console.error(error);
-        setStatus("Не удалось получить текущую точку");
+        setStatus("Не удалось получить текущую телеметрию");
+    }
+}
+
+function getVisibleTelemetryCoords() {
+    const coords = [];
+
+    if (lastTelemetry && Number.isFinite(Number(lastTelemetry.lat)) && Number.isFinite(Number(lastTelemetry.lon))) {
+        coords.push([Number(lastTelemetry.lat), Number(lastTelemetry.lon)]);
+    }
+
+    if (lastRtkTelemetry && Number.isFinite(Number(lastRtkTelemetry.lat)) && Number.isFinite(Number(lastRtkTelemetry.lon))) {
+        coords.push([Number(lastRtkTelemetry.lat), Number(lastRtkTelemetry.lon)]);
+    }
+
+    return coords;
+}
+
+function focusMapOnTelemetry(options = {}) {
+    if (!map) {
+        return false;
+    }
+
+    const coordsList = getVisibleTelemetryCoords();
+    if (!coordsList.length) {
+        return false;
+    }
+
+    if (coordsList.length === 1) {
+        map.setCenter(coordsList[0], options.zoom ?? 15, {
+            checkZoomRange: true,
+            duration: options.duration ?? 300,
+        });
+        return true;
+    }
+
+    const lats = coordsList.map((coords) => coords[0]);
+    const lons = coordsList.map((coords) => coords[1]);
+
+    map.setBounds(
+        [
+            [Math.min(...lats), Math.min(...lons)],
+            [Math.max(...lats), Math.max(...lons)],
+        ],
+        {
+            checkZoomRange: true,
+            zoomMargin: 60,
+            duration: options.duration ?? 300,
+        }
+    );
+
+    return true;
+}
+
+async function handleHostTelemetryResponse(result) {
+    if (result.status !== "fulfilled") {
+        console.error(result.reason);
+        updateHostSummary(null);
+        return;
+    }
+
+    const response = result.value;
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Ошибка host телеметрии: ${response.status} ${errorText}`);
+        updateHostSummary(null);
+        return;
+    }
+
+    const data = await response.json();
+    lastTelemetry = data;
+    updateDeviceMarker(data);
+    updateHostSummary(data);
+}
+
+async function handleRtkTelemetryResponse(result) {
+    if (result.status !== "fulfilled") {
+        console.error(result.reason);
+        updateRtkSummary(null);
+        return;
+    }
+
+    const response = result.value;
+    if (response.status === 404) {
+        updateRtkSummary(null);
+        return;
+    }
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Ошибка RTK телеметрии: ${response.status} ${errorText}`);
+        updateRtkSummary(null);
+        return;
+    }
+
+    const data = await response.json();
+    lastRtkTelemetry = data;
+    updateRtkMarker(data);
+    updateRtkSummary(data);
+}
+
+async function refreshTelemetryLayers() {
+    try {
+        await loadTelemetry();
+    } catch (error) {
+        console.error(error);
+        setStatus("Не удалось получить текущие точки");
     }
 }
 
 function updateDeviceMarker(data) {
     if (!data || data.lat == null || data.lon == null) {
+        if (deviceMarker) {
+            map.geoObjects.remove(deviceMarker);
+            deviceMarker = null;
+        }
         return;
     }
 
@@ -755,17 +882,174 @@ function updateDeviceMarker(data) {
         deviceMarker = new ymaps.Placemark(
             coords,
             {
-                balloonContent: "Текущая точка кормораздатчика",
+                balloonContent: `
+                    <strong>Host</strong><br>
+                    Режим: ${escapeHtml(data.mode || "Ожидание")}<br>
+                    Координаты: ${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}<br>
+                    Пакет: ${isFreshTelemetry(data.timestamp) ? "свежий" : "устаревший"}
+                `,
+                hintContent: `Host • ${isFreshTelemetry(data.timestamp) ? "свежий пакет" : "нет свежих пакетов"}`,
             },
             {
-                preset: "islands#redIcon",
+                preset: isFreshTelemetry(data.timestamp) ? "islands#redIcon" : "islands#grayIcon",
             }
         );
 
         map.geoObjects.add(deviceMarker);
     } else {
         deviceMarker.geometry.setCoordinates(coords);
+        deviceMarker.properties.set({
+            balloonContent: `
+                <strong>Host</strong><br>
+                Режим: ${escapeHtml(data.mode || "Ожидание")}<br>
+                Координаты: ${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}<br>
+                Пакет: ${isFreshTelemetry(data.timestamp) ? "свежий" : "устаревший"}
+            `,
+            hintContent: `Host • ${isFreshTelemetry(data.timestamp) ? "свежий пакет" : "нет свежих пакетов"}`,
+        });
+        deviceMarker.options.set("preset", isFreshTelemetry(data.timestamp) ? "islands#redIcon" : "islands#grayIcon");
     }
+
+    if (!hasTelemetryAutoFocus) {
+        focusMapOnTelemetry({ duration: 300 });
+        hasTelemetryAutoFocus = true;
+    }
+}
+
+function getRtkQualityLabel(data) {
+    if (!data) {
+        return "--";
+    }
+
+    return data.qualityLabel || data.rtkQuality || (data.quality != null ? `Q${data.quality}` : "--");
+}
+
+function getRtkMarkerPreset(data) {
+    if (!isFreshTelemetry(data?.timestamp)) {
+        return "islands#grayCircleDotIcon";
+    }
+
+    const label = String(data?.qualityLabel || data?.rtkQuality || "").toLowerCase();
+    const quality = Number(data?.quality);
+
+    if (label.includes("fixed") || quality >= 4) {
+        return "islands#greenCircleDotIcon";
+    }
+
+    if (label.includes("float") || quality >= 2) {
+        return "islands#yellowCircleDotIcon";
+    }
+
+    return "islands#grayCircleDotIcon";
+}
+
+function updateRtkMarker(data) {
+    if (!data || data.lat == null || data.lon == null) {
+        if (rtkMarker) {
+            map.geoObjects.remove(rtkMarker);
+            rtkMarker = null;
+        }
+        return;
+    }
+
+    const coords = [Number(data.lat), Number(data.lon)];
+    const qualityLabel = getRtkQualityLabel(data);
+    const zoneName = data?.zone?.name || "Вне зоны";
+    const packetState = isFreshTelemetry(data?.timestamp) ? "свежий" : "устаревший";
+    const balloonContent = `
+        <strong>RTK</strong><br>
+        Устройство: ${escapeHtml(data.deviceId || "--")}<br>
+        Пакет: ${packetState}<br>
+        Quality: ${escapeHtml(qualityLabel)}<br>
+        Координаты: ${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}<br>
+        Зона: ${escapeHtml(zoneName)}
+    `;
+
+    if (rtkMarker === null) {
+        rtkMarker = new ymaps.Placemark(
+            coords,
+            {
+                balloonContent,
+                hintContent: `RTK • ${qualityLabel} • ${packetState}`,
+            },
+            {
+                preset: getRtkMarkerPreset(data),
+            }
+        );
+
+        map.geoObjects.add(rtkMarker);
+    } else {
+        rtkMarker.geometry.setCoordinates(coords);
+        rtkMarker.properties.set({
+            balloonContent,
+            hintContent: `RTK • ${qualityLabel} • ${packetState}`,
+        });
+        rtkMarker.options.set("preset", getRtkMarkerPreset(data));
+    }
+
+    if (!hasTelemetryAutoFocus) {
+        focusMapOnTelemetry({ duration: 300 });
+        hasTelemetryAutoFocus = true;
+    }
+}
+
+function updateHostSummary(data) {
+    const statusElement = document.getElementById("hostMapStatus");
+    const metaElement = document.getElementById("hostMapMeta");
+
+    if (!statusElement || !metaElement) {
+        return;
+    }
+
+    if (!data || data.lat == null || data.lon == null) {
+        statusElement.textContent = "Нет данных";
+        metaElement.textContent = "Координаты: --";
+        return;
+    }
+
+    const isFresh = isFreshTelemetry(data.timestamp);
+    statusElement.textContent = isFresh ? "Онлайн" : "Нет свежих пакетов";
+    metaElement.textContent = `${data.mode || "Ожидание"} • ${Number(data.lat).toFixed(6)}, ${Number(data.lon).toFixed(6)}`;
+}
+
+function updateRtkSummary(data) {
+    const statusElement = document.getElementById("rtkMapStatus");
+    const metaElement = document.getElementById("rtkMapMeta");
+    const qualityElement = document.getElementById("rtkMapQuality");
+    const deviceElement = document.getElementById("rtkMapDevice");
+    const zoneElement = document.getElementById("rtkMapZone");
+    const updatedElement = document.getElementById("rtkMapUpdated");
+
+    if (!statusElement || !metaElement || !qualityElement || !deviceElement || !zoneElement || !updatedElement) {
+        return;
+    }
+
+    if (!data || data.lat == null || data.lon == null) {
+        statusElement.textContent = "Нет данных";
+        metaElement.textContent = "Координаты: --";
+        qualityElement.textContent = "--";
+        deviceElement.textContent = "Устройство: --";
+        zoneElement.textContent = "--";
+        updatedElement.textContent = "Последний пакет: --";
+        return;
+    }
+
+    const isFresh = isFreshTelemetry(data.timestamp);
+    statusElement.textContent = !isFresh ? "Нет свежих пакетов" : (data.valid === false ? "Невалидный пакет" : "Онлайн");
+    metaElement.textContent = `Координаты: ${Number(data.lat).toFixed(6)}, ${Number(data.lon).toFixed(6)}`;
+    qualityElement.textContent = getRtkQualityLabel(data);
+    deviceElement.textContent = `Устройство: ${data.deviceId || "--"}`;
+    zoneElement.textContent = data?.zone?.name || "Вне зоны";
+    updatedElement.textContent = `Последний пакет: ${formatDateTime(data.timestamp)}`;
+}
+
+function formatDateTime(value) {
+    if (!value) {
+        return "--";
+    }
+
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "--" : date.toLocaleString("ru-RU");
 }
 
 function goToCurrentPoint() {

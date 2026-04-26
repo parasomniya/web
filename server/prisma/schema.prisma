@@ -25,6 +25,23 @@ model Telemetry {
   eventsReaderOk Boolean  @default(false)
 }
 
+model RtkTelemetry {
+  id            Int      @id @default(autoincrement())
+  deviceId      String
+  timestamp     DateTime
+  lat           Float
+  lon           Float
+  rtkQuality    String?
+  rtkAge        Float?
+  speed         Float?
+  course        Float?
+  supplyVoltage Float?
+  satellites    Int?
+  fixType       String?
+  rawPayload    String
+  createdAt     DateTime @default(now())
+}
+
 model StorageZone {
   id         Int      @id @default(autoincrement())
   name       String

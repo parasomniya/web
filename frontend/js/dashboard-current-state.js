@@ -150,16 +150,20 @@
 
     fetchLatest = async function () {
         try {
-            const response = await fetch(getLatestApiUrl(), { headers: getHeaders() });
-            if (!response.ok) {
-                const errorMessage = await readDashboardErrorMessage(response);
+            const [hostResponse, rtkResponse] = await Promise.all([
+                fetch(getLatestApiUrl(), { headers: getHeaders() }),
+                fetch(getRtkLatestApiUrl(), { headers: getHeaders() }).catch(() => null),
+            ]);
+
+            if (!hostResponse.ok) {
+                const errorMessage = await readDashboardErrorMessage(hostResponse);
                 latestFetchState.status = !isEmptyTelemetry(latestTelemetry) ? "stale" : "error";
                 latestFetchState.errorMessage = errorMessage || "Не удалось обновить текущее состояние.";
                 renderDashboard(latestTelemetry);
                 return;
             }
 
-            latestTelemetry = await response.json();
+            latestTelemetry = await hostResponse.json();
             latestFetchState.hasLoadedAtLeastOnce = true;
             latestFetchState.status = isEmptyTelemetry(latestTelemetry) ? "empty" : "ready";
             latestFetchState.errorMessage = "";
@@ -171,7 +175,15 @@
                 showBanner(null);
             }
 
+            if (rtkResponse && rtkResponse.ok) {
+                latestRtkTelemetry = await rtkResponse.json();
+            } else if (rtkResponse && rtkResponse.status === 404) {
+                latestRtkTelemetry = null;
+                hideRtkPlacemark();
+            }
+
             renderDashboard(latestTelemetry);
+            updateRtkMapPosition(latestRtkTelemetry);
         } catch (error) {
             console.error("Error fetching latest:", error);
             latestFetchState.status = !isEmptyTelemetry(latestTelemetry) ? "stale" : "error";
