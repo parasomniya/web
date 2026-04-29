@@ -140,6 +140,30 @@
             margin-top: 20px;
         }
 
+        .shape-section {
+            display: none;
+        }
+
+        .shape-section.is-active {
+            display: block;
+        }
+
+        .shape-coords-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .shape-coords-grid .form-group {
+            margin-bottom: 0;
+        }
+
+        .shape-note {
+            margin-top: 10px;
+            color: #858796;
+            font-size: 0.9rem;
+        }
+
         .table thead th {
             white-space: nowrap;
         }
@@ -217,6 +241,10 @@
 
             #map {
                 height: 500px;
+            }
+
+            .shape-coords-grid {
+                grid-template-columns: 1fr;
             }
         }
 
@@ -382,6 +410,14 @@
                                             </div>
 
                                             <div class="form-group">
+                                                <label for="shapeType">Форма зоны</label>
+                                                <select id="shapeType" class="form-control">
+                                                    <option value="CIRCLE">Кружок</option>
+                                                    <option value="SQUARE">Квадрат</option>
+                                                </select>
+                                            </div>
+
+                                            <div class="form-group">
                                                 <label for="lat">Lat</label>
                                                 <input id="lat" class="form-control" type="number" step="any" required>
                                             </div>
@@ -391,9 +427,57 @@
                                                 <input id="lon" class="form-control" type="number" step="any" required>
                                             </div>
 
-                                            <div class="form-group">
-                                                <label for="radius">Радиус (метры)</label>
-                                                <input id="radius" class="form-control" type="number" min="1" placeholder="20" value="20">
+                                            <div id="circleFields" class="shape-section is-active">
+                                                <div class="form-group">
+                                                    <label for="radius">Радиус (метры)</label>
+                                                    <input id="radius" class="form-control" type="number" min="1" placeholder="20" value="20">
+                                                </div>
+                                            </div>
+
+                                            <div id="squareFields" class="shape-section">
+                                                <div class="form-group">
+                                                    <label for="sideMeters">Сторона квадрата (метры)</label>
+                                                    <input id="sideMeters" class="form-control" type="number" min="1" step="any" inputmode="numeric" placeholder="40" value="40">
+                                                </div>
+
+                                                <div class="shape-coords-grid">
+                                                    <div class="form-group">
+                                                        <label for="squareCorner1Lat">Угол 1 Lat</label>
+                                                        <input id="squareCorner1Lat" class="form-control" type="number" step="any">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="squareCorner1Lon">Угол 1 Lon</label>
+                                                        <input id="squareCorner1Lon" class="form-control" type="number" step="any">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="squareCorner2Lat">Угол 2 Lat</label>
+                                                        <input id="squareCorner2Lat" class="form-control" type="number" step="any">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="squareCorner2Lon">Угол 2 Lon</label>
+                                                        <input id="squareCorner2Lon" class="form-control" type="number" step="any">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="squareCorner3Lat">Угол 3 Lat</label>
+                                                        <input id="squareCorner3Lat" class="form-control" type="number" step="any">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="squareCorner3Lon">Угол 3 Lon</label>
+                                                        <input id="squareCorner3Lon" class="form-control" type="number" step="any">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="squareCorner4Lat">Угол 4 Lat</label>
+                                                        <input id="squareCorner4Lat" class="form-control" type="number" step="any">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="squareCorner4Lon">Угол 4 Lon</label>
+                                                        <input id="squareCorner4Lon" class="form-control" type="number" step="any">
+                                                    </div>
+                                                </div>
+
+                                                <div class="shape-note">
+                                                    Можно двигать каждый угол отдельно и получать произвольный четырёхугольник.
+                                                </div>
                                             </div>
 
                                             <div class="form-group">
@@ -430,9 +514,10 @@
                                         <thead>
                                             <tr>
                                                 <th>Ингредиент</th>
+                                                <th>Форма</th>
                                                 <th>Lat</th>
                                                 <th>Lon</th>
-                                                <th>Радиус</th>
+                                                <th>Размер</th>
                                                 <th>Активна</th>
                                             </tr>
                                         </thead>
@@ -463,8 +548,8 @@
     <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
-    <script src="js/sidebar-enhancements.js?v=20260428b"></script>
-    <script src="js/storage-zones.js?v=20260428a"></script>
+    <script src="js/sidebar-enhancements.js?v=20260403a"></script>
+    <script src="js/storage-zones.js?v=20260429c"></script>
 </body>
 
 </html>
