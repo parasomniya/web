@@ -2,6 +2,8 @@
     const routeMap = {
         "/login": "/login.html",
         "/reset-password": "/reset-password.html",
+        "/digest/settings": "/digest-settings.html",
+        "/violations": "/violations.html",
     };
 
     const normalizedPath = window.location.pathname.length > 1
@@ -13,7 +15,6 @@
         return;
     }
 
-    // Use async fetch instead of sync XMLHttpRequest
     fetch(targetPage)
         .then(response => {
             if (response.status >= 200 && response.status < 300) {

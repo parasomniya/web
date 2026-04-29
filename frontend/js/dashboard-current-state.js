@@ -1,4 +1,17 @@
 (function () {
+    const WARNING_API_URL = window.AppAuth?.getApiUrl?.("/api/telemetry/warnings/current") || "/api/telemetry/warnings/current";
+    const CAN_VIEW_WARNING_SECTION = window.AppAuth?.isAdmin?.() === true;
+    const WARNING_SECTION_TITLE = "Технические предупреждения";
+    const WARNING_EMPTY_TEXT = "Активных предупреждений нет.";
+    const WARNING_LOADING_TEXT = "Ожидание телеметрии...";
+    const WARNING_STUB_META = "Заглушки до подключения warning API";
+    const WARNING_BACKEND_META = "Источник: backend warning API";
+
+    let latestWarningItems = [];
+    let latestWarningSource = "stub";
+    let latestWarningUpdatedAt = null;
+    let warningApiAvailability = "unknown";
+
     async function readDashboardErrorMessage(response) {
         const contentType = response.headers.get("content-type") || "";
 
@@ -16,6 +29,290 @@
         } catch (error) {
             return "";
         }
+    }
+
+    function normalizeWarningSeverity(value) {
+        const normalized = String(value || "").trim().toLowerCase();
+
+        if (
+            normalized.includes("danger") ||
+            normalized.includes("error") ||
+            normalized.includes("critical") ||
+            normalized.includes("alarm")
+        ) {
+            return "danger";
+        }
+
+        if (
+            normalized.includes("info") ||
+            normalized.includes("notice") ||
+            normalized.includes("hint")
+        ) {
+            return "info";
+        }
+
+        return "warning";
+    }
+
+    function normalizeWarningItem(item, index) {
+        if (!item) {
+            return null;
+        }
+
+        if (typeof item === "string") {
+            return {
+                code: `warning_${index + 1}`,
+                title: item,
+                message: "",
+                severity: "warning",
+            };
+        }
+
+        if (item.active === false || item.enabled === false || item.resolved === true) {
+            return null;
+        }
+
+        const title = String(
+            item.title ||
+            item.label ||
+            item.name ||
+            item.message ||
+            item.text ||
+            item.code ||
+            `warning_${index + 1}`
+        ).trim();
+
+        const rawMessage = item.message || item.text || item.description || item.details || "";
+        const message = String(rawMessage).trim();
+
+        if (!title) {
+            return null;
+        }
+
+        return {
+            code: String(item.code || item.key || item.id || `warning_${index + 1}`),
+            title,
+            message: message === title ? "" : message,
+            severity: normalizeWarningSeverity(item.severity || item.level || item.tone || item.status),
+        };
+    }
+
+    function normalizeWarningPayload(payload) {
+        const rawItems = Array.isArray(payload)
+            ? payload
+            : Array.isArray(payload?.items)
+                ? payload.items
+                : Array.isArray(payload?.warnings)
+                    ? payload.warnings
+                    : [];
+
+        return {
+            items: rawItems
+                .map((item, index) => normalizeWarningItem(item, index))
+                .filter(Boolean),
+            source: "backend",
+            updatedAt: payload?.updatedAt || payload?.timestamp || payload?.generatedAt || null,
+        };
+    }
+
+    function getFreshPacketsWarningMessage(data) {
+        if (latestFetchState.status === "error") {
+            return latestFetchState.errorMessage || "Не удалось обновить телеметрию.";
+        }
+
+        if (latestFetchState.status === "empty" || isEmptyTelemetry(data)) {
+            return "Телеметрия ещё не поступала.";
+        }
+
+        const packetTime = formatDateTime(data?.timestamp);
+        if (packetTime !== "--") {
+            return `Последний пакет устарел. Последнее время: ${packetTime}.`;
+        }
+
+        return `Телеметрия не обновлялась дольше ${Math.round(OFFLINE_THRESHOLD_MS / 1000)} сек.`;
+    }
+
+    function buildFallbackWarnings(data, rtkData) {
+        const items = [];
+        const hasLoadedTelemetry = latestFetchState.hasLoadedAtLeastOnce;
+        const isInitialLoading = latestFetchState.status === "loading" && !hasLoadedTelemetry;
+
+        if (isInitialLoading) {
+            return items;
+        }
+
+        const hasFreshHostPacket =
+            !isEmptyTelemetry(data) &&
+            latestFetchState.status !== "error" &&
+            latestFetchState.status !== "empty" &&
+            isPacketOnline(data?.timestamp);
+
+        if (!hasFreshHostPacket) {
+            items.push({
+                code: "no_fresh_packets",
+                title: "Нет свежих пакетов",
+                message: getFreshPacketsWarningMessage(data),
+                severity: latestFetchState.status === "error" ? "danger" : "warning",
+            });
+            return items;
+        }
+
+        const gpsQuality = Number(data?.gpsQuality);
+        const hasGpsCoordinates = hasValidCoordinates(data?.lat, data?.lon);
+        const hasGpsFlag = data?.gpsValid == null ? true : asBoolean(data.gpsValid);
+        const hasGps = hasGpsCoordinates && hasGpsFlag && (!Number.isFinite(gpsQuality) || gpsQuality > 0);
+
+        if (!hasGps) {
+            items.push({
+                code: "no_gps",
+                title: "Нет GPS",
+                message: "Координаты не определены или GPS fix отсутствует.",
+                severity: "danger",
+            });
+        }
+
+        const hasFreshRtkPacket = Boolean(rtkData) && isPacketOnline(rtkData?.timestamp);
+        if (!hasFreshRtkPacket) {
+            items.push({
+                code: "no_rtk",
+                title: "Нет RTK",
+                message: "Не удалось получить актуальный RTK пакет.",
+                severity: "warning",
+            });
+        }
+
+        const hasConfiguredZones = Array.isArray(storageZones) && storageZones.some((zone) => zone?.active);
+        if (hasConfiguredZones && hasGpsCoordinates) {
+            const zoneName = getCurrentZoneName(Number(data.lat), Number(data.lon));
+            if (!zoneName) {
+                items.push({
+                    code: "unknown_zone",
+                    title: "Неизвестная зона",
+                    message: "Текущие координаты не попали ни в одну активную зону.",
+                    severity: "warning",
+                });
+            }
+        }
+
+        return items;
+    }
+
+    function getRenderedWarningItems(data) {
+        if (latestWarningSource === "backend") {
+            return Array.isArray(latestWarningItems) ? latestWarningItems : [];
+        }
+
+        return buildFallbackWarnings(data, latestRtkTelemetry);
+    }
+
+    function getWarningsMetaText(items) {
+        if (latestFetchState.status === "loading" && !latestFetchState.hasLoadedAtLeastOnce) {
+            return WARNING_LOADING_TEXT;
+        }
+
+        const countLabel = items.length > 0 ? `Активно: ${items.length}` : "Система в норме";
+        const sourceLabel = latestWarningSource === "backend" ? WARNING_BACKEND_META : WARNING_STUB_META;
+        const updatedLabel = latestWarningUpdatedAt ? ` | ${formatDateTime(latestWarningUpdatedAt)}` : "";
+
+        return `${countLabel} | ${sourceLabel}${updatedLabel}`;
+    }
+
+    function renderWarnings(data) {
+        const sectionElement = document.getElementById("dashboardWarningsSection");
+        const titleElement = document.getElementById("dashboardWarningsHeading");
+        const metaElement = document.getElementById("dashboardWarningsMeta");
+        const listElement = document.getElementById("dashboardWarningsList");
+
+        if (!CAN_VIEW_WARNING_SECTION) {
+            if (sectionElement) {
+                sectionElement.hidden = true;
+            }
+            return;
+        }
+
+        if (!titleElement || !metaElement || !listElement) {
+            return;
+        }
+
+        const items = getRenderedWarningItems(data);
+
+        titleElement.textContent = WARNING_SECTION_TITLE;
+        metaElement.textContent = getWarningsMetaText(items);
+
+        if (!items.length) {
+            listElement.innerHTML = `<div class="dashboard-warning-empty">${escapeHtml(WARNING_EMPTY_TEXT)}</div>`;
+            return;
+        }
+
+        listElement.innerHTML = items.map((item) => {
+            const severity = normalizeWarningSeverity(item?.severity);
+            const title = escapeHtml(item?.title || "Предупреждение");
+            const message = item?.message
+                ? `<div class="dashboard-warning-item__message">${escapeHtml(item.message)}</div>`
+                : "";
+
+            return `
+                <article class="dashboard-warning-item dashboard-warning-item--${severity}" data-warning-code="${escapeHtml(item?.code || "")}">
+                    <div class="dashboard-warning-item__icon" aria-hidden="true">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="dashboard-warning-item__content">
+                        <div class="dashboard-warning-item__title">${title}</div>
+                        ${message}
+                    </div>
+                </article>
+            `;
+        }).join("");
+    }
+
+    async function syncWarningsFromResponse(response, data, rtkData) {
+        if (!CAN_VIEW_WARNING_SECTION) {
+            latestWarningItems = [];
+            latestWarningSource = "stub";
+            latestWarningUpdatedAt = null;
+            return;
+        }
+
+        if (!response || !response.ok) {
+            latestWarningItems = buildFallbackWarnings(data, rtkData);
+            latestWarningSource = "stub";
+            latestWarningUpdatedAt = data?.timestamp || rtkData?.timestamp || null;
+            return;
+        }
+
+        try {
+            const payload = await response.json();
+            const normalized = normalizeWarningPayload(payload);
+            latestWarningItems = normalized.items;
+            latestWarningSource = normalized.source;
+            latestWarningUpdatedAt = normalized.updatedAt || data?.timestamp || rtkData?.timestamp || null;
+        } catch (error) {
+            latestWarningItems = buildFallbackWarnings(data, rtkData);
+            latestWarningSource = "stub";
+            latestWarningUpdatedAt = data?.timestamp || rtkData?.timestamp || null;
+        }
+    }
+
+    async function fetchWarningsResponse() {
+        if (!CAN_VIEW_WARNING_SECTION || warningApiAvailability === "unavailable") {
+            return null;
+        }
+
+        const response = await fetch(WARNING_API_URL, {
+            headers: getHeaders(),
+            cache: "no-store",
+        }).catch(() => null);
+
+        if (response?.ok) {
+            warningApiAvailability = "available";
+            return response;
+        }
+
+        if (response?.status === 404) {
+            warningApiAvailability = "unavailable";
+        }
+
+        return response;
     }
 
     renderUnloadProgress = function (mode, unloadProgress) {
@@ -108,6 +405,7 @@
 
     renderDashboard = function (data) {
         updateCurrentStateNotice(data);
+        renderWarnings(data);
 
         if (isEmptyTelemetry(data)) {
             resetTelemetryActivity();
@@ -150,15 +448,19 @@
 
     fetchLatest = async function () {
         try {
-            const [hostResponse, rtkResponse] = await Promise.all([
+            const [hostResponse, rtkResponse, warningsResponse] = await Promise.all([
                 fetch(getLatestApiUrl(), { headers: getHeaders() }),
                 fetch(getRtkLatestApiUrl(), { headers: getHeaders() }).catch(() => null),
+                fetchWarningsResponse(),
             ]);
 
             if (!hostResponse.ok) {
                 const errorMessage = await readDashboardErrorMessage(hostResponse);
                 latestFetchState.status = !isEmptyTelemetry(latestTelemetry) ? "stale" : "error";
                 latestFetchState.errorMessage = errorMessage || "Не удалось обновить текущее состояние.";
+                latestWarningSource = "stub";
+                latestWarningItems = buildFallbackWarnings(latestTelemetry, latestRtkTelemetry);
+                latestWarningUpdatedAt = latestTelemetry?.timestamp || latestRtkTelemetry?.timestamp || null;
                 renderDashboard(latestTelemetry);
                 return;
             }
@@ -182,12 +484,17 @@
                 hideRtkPlacemark();
             }
 
+            await syncWarningsFromResponse(warningsResponse, latestTelemetry, latestRtkTelemetry);
+
             renderDashboard(latestTelemetry);
             updateRtkMapPosition(latestRtkTelemetry);
         } catch (error) {
             console.error("Error fetching latest:", error);
             latestFetchState.status = !isEmptyTelemetry(latestTelemetry) ? "stale" : "error";
             latestFetchState.errorMessage = "Не удалось обновить текущее состояние.";
+            latestWarningSource = "stub";
+            latestWarningItems = buildFallbackWarnings(latestTelemetry, latestRtkTelemetry);
+            latestWarningUpdatedAt = latestTelemetry?.timestamp || latestRtkTelemetry?.timestamp || null;
             renderDashboard(latestTelemetry);
         }
     };

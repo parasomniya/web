@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='50' font-size='48'%3E%F0%9F%90%84%3C/text%3E%3C/svg%3E">
+
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <title>Группы</title>
+
+    <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
+
+    <link href="css/sb-admin-2.min.css" rel="stylesheet">
+    <link href="css/custom.css?v=20260429a" rel="stylesheet">
+    <script src="js/app-auth.js?v=20260419a"></script>
+</head>
+
+<body id="page-top">
+
+    <div id="wrapper">
+
+        <ul class="navbar-nav bg-gradient-primary sidebar sidebar-dark accordion" id="accordionSidebar">
+
+            <a class="sidebar-brand d-flex align-items-center justify-content-center" href="index.html">
+                <div class="sidebar-brand-icon">
+                    <i class="fas fa-tractor"></i>
+                </div>
+                <div class="sidebar-brand-text mx-3">Кормление КРС</div>
+            </a>
+
+            <hr class="sidebar-divider my-0">
+
+            <li class="nav-item">
+                <a class="nav-link" href="index.html">
+                    <i class="fas fa-fw fa-home"></i>
+                    <span>Главная</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="tables.html">
+                    <i class="fas fa-fw fa-table"></i>
+                    <span>Замесы</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="rations.html">
+                    <i class="fas fa-fw fa-utensils"></i>
+                    <span>Рационы</span>
+                </a>
+            </li>
+
+            <li class="nav-item active">
+                <a class="nav-link" href="groups.html">
+                    <i class="fas fa-fw fa-tractor"></i>
+                    <span>Группы</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="map-zones.html">
+                    <i class="fas fa-fw fa-map"></i>
+                    <span>Зоны хранения</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="telemetry-admin.html">
+                    <i class="fas fa-fw fa-broadcast-tower"></i>
+                    <span>Телеметрия</span>
+                </a>
+            </li>
+
+            <hr class="sidebar-divider d-none d-md-block">
+
+            <div class="text-center d-none d-md-inline">
+                <button class="rounded-circle border-0" id="sidebarToggle"></button>
+            </div>
+
+        </ul>
+
+        <div id="content-wrapper" class="d-flex flex-column">
+
+            <div id="content">
+
+                <nav class="navbar navbar-expand navbar-light bg-white topbar mb-4 static-top shadow">
+
+                    <button id="sidebarToggleTop" class="btn btn-link d-md-none rounded-circle mr-3">
+                        <i class="fa fa-bars"></i>
+                    </button>
+
+                    <span class="ml-3 font-weight-bold">Группы</span>
+
+                </nav>
+
+                <div class="container-fluid">
+                    <div data-page-alerts></div>
+
+                    <div class="d-sm-flex align-items-center justify-content-between mb-4">
+                        <div>
+                            <h1 class="h3 mb-1 text-gray-800">Группы</h1>
+                            <p class="mb-0 text-muted">Список групп с поголовьем, рационом и геозоной.</p>
+                        </div>
+                        <button id="groupsReloadButton" type="button" class="btn btn-outline-primary btn-sm mt-3 mt-sm-0">
+                            <i class="fas fa-sync-alt mr-1"></i>
+                            Обновить
+                        </button>
+                    </div>
+
+                    <div class="alert alert-light border-left-primary shadow-sm mb-4 d-none" data-readonly-banner>
+                        Доступен режим просмотра. Создание групп доступно ролям с правом записи.
+                    </div>
+
+                    <div class="card shadow mb-4" data-requires-write hidden>
+                        <div class="card-header py-3">
+                            <h6 class="m-0 font-weight-bold text-primary">Новая группа</h6>
+                        </div>
+                        <div class="card-body">
+                            <form id="groupCreateForm" novalidate autocomplete="off">
+                                <input type="text" name="fake-username" autocomplete="username" tabindex="-1" aria-hidden="true" class="d-none">
+                                <input type="password" name="fake-password" autocomplete="current-password" tabindex="-1" aria-hidden="true" class="d-none">
+                                <div class="form-row">
+                                    <div class="col-lg-4 mb-3">
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupNameInput">Название</label>
+                                        <input id="groupNameInput" name="group_title" type="text" class="form-control" maxlength="120" autocomplete="section-group off" autocapitalize="off" autocorrect="off" spellcheck="false">
+                                    </div>
+                                    <div class="col-lg-2 col-md-4 mb-3">
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupHeadcountInput">Поголовье</label>
+                                        <input id="groupHeadcountInput" name="headcount" type="number" class="form-control" min="1" step="1" placeholder="120" autocomplete="off">
+                                    </div>
+                                    <div class="col-lg-3 col-md-4 mb-3">
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupRationSelect">Рацион</label>
+                                        <select id="groupRationSelect" name="rationId" class="custom-select groups-ration-select">
+                                            <option value="">Без рациона</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-lg-3 col-md-4 mb-3">
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupRadiusInput">Радиус, м</label>
+                                        <input id="groupRadiusInput" name="radius" type="number" class="form-control" min="1" step="0.1" value="30" placeholder="30">
+                                    </div>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="col-lg-3 col-md-6 mb-3">
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupLatInput">Широта</label>
+                                        <input id="groupLatInput" name="lat" type="number" class="form-control" min="-90" max="90" step="0.000001" placeholder="55.041500" autocomplete="off">
+                                    </div>
+                                    <div class="col-lg-3 col-md-6 mb-3">
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupLonInput">Долгота</label>
+                                        <input id="groupLonInput" name="lon" type="number" class="form-control" min="-180" max="180" step="0.000001" placeholder="82.934600" autocomplete="off">
+                                    </div>
+                                    <div class="col-lg-6 mb-3 d-flex align-items-end">
+                                        <div class="groups-form-hint">
+                                            Координаты можно не заполнять. Если указываете точку, заполните и широту, и долготу.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between">
+                                    <div id="groupsFormMeta" class="small text-muted mb-3 mb-sm-0">Подтягиваем список рационов...</div>
+                                    <button id="groupCreateSubmitButton" type="submit" class="btn btn-primary">
+                                        <i class="fas fa-plus mr-1"></i>
+                                        Создать группу
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="card shadow mb-4">
+                        <div class="card-header py-3 d-sm-flex align-items-center justify-content-between">
+                            <div>
+                                <h6 class="m-0 font-weight-bold text-primary">Таблица групп</h6>
+                            </div>
+                            <div id="groupsPanelMeta" class="small text-muted mt-3 mt-sm-0">Загрузка...</div>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-bordered mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Название</th>
+                                            <th>Поголовье</th>
+                                            <th>Рацион</th>
+                                            <th>Координаты</th>
+                                            <th>Радиус</th>
+                                            <th data-requires-write hidden>Действия</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="groupsTableBody">
+                                        <tr>
+                                            <td colspan="6" class="telemetry-empty-state">Загрузка групп...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal fade" id="groupEditModal" tabindex="-1" role="dialog" aria-labelledby="groupEditModalTitle" aria-hidden="true" data-requires-write hidden>
+                        <div class="modal-dialog modal-lg" role="document">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="groupEditModalTitle">Редактирование группы</h5>
+                                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                        <span aria-hidden="true">&times;</span>
+                                    </button>
+                                </div>
+                                <div class="modal-body">
+                                    <form id="groupEditForm" novalidate autocomplete="off">
+                                        <input type="text" name="fake-group-edit-user" autocomplete="username" tabindex="-1" aria-hidden="true" class="d-none">
+                                        <input type="password" name="fake-group-edit-password" autocomplete="current-password" tabindex="-1" aria-hidden="true" class="d-none">
+                                        <div class="form-row">
+                                            <div class="col-lg-4 mb-3">
+                                                <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupEditName">Группа</label>
+                                                <input id="groupEditName" type="text" class="form-control" disabled>
+                                            </div>
+                                            <div class="col-lg-2 col-md-4 mb-3">
+                                                <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupEditHeadcountInput">Поголовье</label>
+                                                <input id="groupEditHeadcountInput" type="number" class="form-control" min="1" step="1" autocomplete="off">
+                                            </div>
+                                            <div class="col-lg-3 col-md-4 mb-3">
+                                                <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupEditRationSelect">Рацион</label>
+                                                <select id="groupEditRationSelect" class="custom-select groups-ration-select">
+                                                    <option value="">Без рациона</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-lg-3 col-md-4 mb-3">
+                                                <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupEditRadiusInput">Радиус, м</label>
+                                                <input id="groupEditRadiusInput" type="number" class="form-control" min="1" step="0.1" autocomplete="off">
+                                            </div>
+                                        </div>
+
+                                        <div class="form-row">
+                                            <div class="col-lg-3 col-md-6 mb-3">
+                                                <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupEditLatInput">Широта</label>
+                                                <input id="groupEditLatInput" type="number" class="form-control" min="-90" max="90" step="0.000001" autocomplete="off">
+                                            </div>
+                                            <div class="col-lg-3 col-md-6 mb-3">
+                                                <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupEditLonInput">Долгота</label>
+                                                <input id="groupEditLonInput" type="number" class="form-control" min="-180" max="180" step="0.000001" autocomplete="off">
+                                            </div>
+                                            <div class="col-lg-6 mb-3 d-flex align-items-end">
+                                                <div id="groupEditMeta" class="groups-form-hint">
+                                                    Можно изменить поголовье, рацион и геозону. Чтобы сбросить точку, очистите оба поля координат.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                                <div class="modal-footer d-flex flex-column flex-sm-row justify-content-between align-items-stretch align-items-sm-center">
+                                    <button id="groupDeleteButton" type="button" class="btn btn-outline-danger mb-2 mb-sm-0">
+                                        <i class="fas fa-trash-alt mr-1"></i>
+                                        Удалить группу
+                                    </button>
+                                    <div class="d-flex flex-column flex-sm-row align-items-stretch">
+                                        <button type="button" class="btn btn-secondary mb-2 mb-sm-0 mr-sm-2" data-dismiss="modal">Отмена</button>
+                                        <button id="groupEditSaveButton" type="submit" form="groupEditForm" class="btn btn-primary">
+                                            <i class="fas fa-save mr-1"></i>
+                                            Сохранить
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <footer class="sticky-footer bg-white">
+                <div class="container my-auto">
+                    <div class="copyright text-center my-auto">
+                        <span>© Система контроля рациона</span>
+                    </div>
+                </div>
+            </footer>
+
+        </div>
+
+    </div>
+
+    <a class="scroll-to-top rounded" href="#page-top">
+        <i class="fas fa-angle-up"></i>
+    </a>
+
+    <script src="vendor/jquery/jquery.min.js"></script>
+    <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
+
+    <script src="js/sb-admin-2.min.js"></script>
+    <script src="js/sidebar-enhancements.js?v=20260428b"></script>
+    <script src="js/groups.js?v=20260429a"></script>
+
+</body>
+
+</html>
