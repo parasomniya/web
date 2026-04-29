@@ -9,6 +9,7 @@ const EDIT_MODE_TITLE = "Редактирование зоны";
 const CREATE_SUBMIT_LABEL = "Добавить зону";
 const EDIT_SUBMIT_LABEL = "Сохранить зону";
 const DEFAULT_ZONE_RADIUS = 20;
+const DEFAULT_SQUARE_SIDE = 40;
 const DEFAULT_STATUS_MESSAGE = "Готово к работе";
 const DEFAULT_MAP_CENTER = [52.428863, 85.706438];
 const DEFAULT_MAP_ZOOM = 15;
@@ -31,6 +32,31 @@ let dragCursorAccessor = null;
 let mapFullscreenButton = null;
 let mapWrapElement = null;
 let hasTelemetryAutoFocus = false;
+let previewShape = null;
+let previewCornerMarkers = [];
+
+const shapeTypeInput = document.getElementById("shapeType");
+const circleFields = document.getElementById("circleFields");
+const squareFields = document.getElementById("squareFields");
+const sideMetersInput = document.getElementById("sideMeters");
+const squareCornerInputs = [
+    {
+        lat: document.getElementById("squareCorner1Lat"),
+        lon: document.getElementById("squareCorner1Lon"),
+    },
+    {
+        lat: document.getElementById("squareCorner2Lat"),
+        lon: document.getElementById("squareCorner2Lon"),
+    },
+    {
+        lat: document.getElementById("squareCorner3Lat"),
+        lon: document.getElementById("squareCorner3Lon"),
+    },
+    {
+        lat: document.getElementById("squareCorner4Lat"),
+        lon: document.getElementById("squareCorner4Lon"),
+    },
+];
 
 ymaps.ready(init);
 
@@ -73,6 +99,160 @@ function getZoneLabel(zone) {
     return ingredient || name || "Без названия";
 }
 
+function parseNumberValue(value) {
+    if (value === "" || value === null || value === undefined) {
+        return null;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeShapeType(value) {
+    return String(value || "CIRCLE").trim().toUpperCase() === "SQUARE" ? "SQUARE" : "CIRCLE";
+}
+
+function isValidLat(value) {
+    return Number.isFinite(value) && value >= -90 && value <= 90;
+}
+
+function isValidLon(value) {
+    return Number.isFinite(value) && value >= -180 && value <= 180;
+}
+
+function metersPerLonDegree(lat) {
+    return Math.max(Math.cos(lat * Math.PI / 180) * 111320, 1);
+}
+
+function buildSquareBoundsFromCenter(lat, lon, sideMeters) {
+    const halfSideMeters = sideMeters / 2;
+    const latDelta = halfSideMeters / 111320;
+    const lonDelta = halfSideMeters / metersPerLonDegree(lat);
+
+    return {
+        lat,
+        lon,
+        sideMeters,
+        squareMinLat: lat - latDelta,
+        squareMinLon: lon - lonDelta,
+        squareMaxLat: lat + latDelta,
+        squareMaxLon: lon + lonDelta,
+    };
+}
+
+function buildSquarePolygonFromCenter(lat, lon, sideMeters) {
+    const bounds = buildSquareBoundsFromCenter(lat, lon, sideMeters);
+    return [
+        [bounds.squareMaxLat, bounds.squareMinLon],
+        [bounds.squareMaxLat, bounds.squareMaxLon],
+        [bounds.squareMinLat, bounds.squareMaxLon],
+        [bounds.squareMinLat, bounds.squareMinLon],
+    ];
+}
+
+function buildSquareMetaFromBounds(minLat, minLon, maxLat, maxLon) {
+    const normalizedMinLat = Math.min(minLat, maxLat);
+    const normalizedMaxLat = Math.max(minLat, maxLat);
+    const normalizedMinLon = Math.min(minLon, maxLon);
+    const normalizedMaxLon = Math.max(minLon, maxLon);
+    const lat = (normalizedMinLat + normalizedMaxLat) / 2;
+    const lon = (normalizedMinLon + normalizedMaxLon) / 2;
+    const latMeters = (normalizedMaxLat - normalizedMinLat) * 111320;
+    const lonMeters = (normalizedMaxLon - normalizedMinLon) * metersPerLonDegree(lat);
+
+    return {
+        lat,
+        lon,
+        sideMeters: Math.max(latMeters, lonMeters),
+        squareMinLat: normalizedMinLat,
+        squareMinLon: normalizedMinLon,
+        squareMaxLat: normalizedMaxLat,
+        squareMaxLon: normalizedMaxLon,
+    };
+}
+
+function getSquarePolygonCoords(zone) {
+    if (Array.isArray(zone.polygonCoords) && zone.polygonCoords.length >= 4) {
+        return [zone.polygonCoords.map((point) => [Number(point[0]), Number(point[1])])];
+    }
+
+    return [buildSquarePolygonFromCenter(
+        Number(zone.lat),
+        Number(zone.lon),
+        Number(zone.sideMeters || DEFAULT_SQUARE_SIDE)
+    )];
+}
+
+function getSquareCornerCoords(zone) {
+    return getSquarePolygonCoords(zone)[0];
+}
+
+function normalizeZone(zone) {
+    let polygonCoords = null;
+
+    if (zone.polygonCoords) {
+        try {
+            const parsed = typeof zone.polygonCoords === "string" ? JSON.parse(zone.polygonCoords) : zone.polygonCoords;
+            if (Array.isArray(parsed) && parsed.length >= 4) {
+                polygonCoords = parsed.map((point) => [Number(point[0]), Number(point[1])]);
+            }
+        } catch {
+            polygonCoords = null;
+        }
+    }
+
+    const normalized = {
+        ...zone,
+        shapeType: normalizeShapeType(zone.shapeType),
+        lat: Number(zone.lat),
+        lon: Number(zone.lon),
+        radius: Number(zone.radius ?? DEFAULT_ZONE_RADIUS),
+        sideMeters: parseNumberValue(zone.sideMeters),
+        polygonCoords,
+        squareMinLat: parseNumberValue(zone.squareMinLat),
+        squareMinLon: parseNumberValue(zone.squareMinLon),
+        squareMaxLat: parseNumberValue(zone.squareMaxLat),
+        squareMaxLon: parseNumberValue(zone.squareMaxLon),
+    };
+
+    if (normalized.shapeType === "SQUARE" && Array.isArray(normalized.polygonCoords) && normalized.polygonCoords.length >= 4) {
+        const lats = normalized.polygonCoords.map((point) => Number(point[0]));
+        const lons = normalized.polygonCoords.map((point) => Number(point[1]));
+        Object.assign(
+            normalized,
+            buildSquareMetaFromBounds(
+                Math.min(...lats),
+                Math.min(...lons),
+                Math.max(...lats),
+                Math.max(...lons)
+            )
+        );
+    } else if (
+        normalized.shapeType === "SQUARE" &&
+        isValidLat(normalized.squareMinLat) &&
+        isValidLon(normalized.squareMinLon) &&
+        isValidLat(normalized.squareMaxLat) &&
+        isValidLon(normalized.squareMaxLon)
+    ) {
+        normalized.polygonCoords = buildSquarePolygonFromCenter(
+            normalized.lat,
+            normalized.lon,
+            normalized.sideMeters || DEFAULT_SQUARE_SIDE
+        );
+        Object.assign(
+            normalized,
+            buildSquareMetaFromBounds(
+                normalized.squareMinLat,
+                normalized.squareMinLon,
+                normalized.squareMaxLat,
+                normalized.squareMaxLon
+            )
+        );
+    }
+
+    return normalized;
+}
+
 function hasTelemetryTimestamp(value) {
     if (!value) {
         return false;
@@ -96,6 +276,94 @@ function getSelectedZone() {
 
 function isCreateMode() {
     return !selectedZoneId;
+}
+
+function getCurrentShapeType() {
+    return normalizeShapeType(shapeTypeInput?.value);
+}
+
+function updateShapeSections() {
+    const shapeType = getCurrentShapeType();
+    circleFields?.classList.toggle("is-active", shapeType === "CIRCLE");
+    squareFields?.classList.toggle("is-active", shapeType === "SQUARE");
+}
+
+function setSquareCornerInputs(polygonCoords) {
+    if (!Array.isArray(polygonCoords) || polygonCoords.length < 4) {
+        return;
+    }
+
+    squareCornerInputs.forEach((inputs, index) => {
+        const point = polygonCoords[index];
+        if (!inputs?.lat || !inputs?.lon || !point) {
+            return;
+        }
+
+        inputs.lat.value = Number(point[0]).toFixed(7);
+        inputs.lon.value = Number(point[1]).toFixed(7);
+    });
+}
+
+function readSquareCornerInputs() {
+    const coords = squareCornerInputs.map((inputs) => {
+        const lat = parseNumberValue(inputs?.lat?.value);
+        const lon = parseNumberValue(inputs?.lon?.value);
+        return isValidLat(lat) && isValidLon(lon) ? [lat, lon] : null;
+    });
+
+    return coords.every(Boolean) ? coords : null;
+}
+
+function computeMetaFromPolygon(polygonCoords) {
+    if (!Array.isArray(polygonCoords) || polygonCoords.length < 4) {
+        return null;
+    }
+
+    const lats = polygonCoords.map((point) => Number(point[0]));
+    const lons = polygonCoords.map((point) => Number(point[1]));
+    const boundsMeta = buildSquareMetaFromBounds(
+        Math.min(...lats),
+        Math.min(...lons),
+        Math.max(...lats),
+        Math.max(...lons)
+    );
+
+    return {
+        ...boundsMeta,
+        polygonCoords,
+    };
+}
+
+function syncSquareInputsFromCenterAndSide() {
+    const lat = parseNumberValue(document.getElementById("lat")?.value);
+    const lon = parseNumberValue(document.getElementById("lon")?.value);
+    const sideMeters = parseNumberValue(sideMetersInput?.value) ?? DEFAULT_SQUARE_SIDE;
+
+    if (!isValidLat(lat) || !isValidLon(lon) || sideMeters <= 0) {
+        return null;
+    }
+
+    const polygonCoords = buildSquarePolygonFromCenter(lat, lon, sideMeters);
+    const meta = computeMetaFromPolygon(polygonCoords);
+    setSquareCornerInputs(polygonCoords);
+    return meta;
+}
+
+function syncSquareDerivedFieldsFromBounds() {
+    const polygonCoords = readSquareCornerInputs();
+    if (!polygonCoords) {
+        return null;
+    }
+
+    const meta = computeMetaFromPolygon(polygonCoords);
+    const latInput = document.getElementById("lat");
+    const lonInput = document.getElementById("lon");
+
+    if (latInput) latInput.value = Number(meta.lat).toFixed(7);
+    if (lonInput) lonInput.value = Number(meta.lon).toFixed(7);
+    if (sideMetersInput) sideMetersInput.value = String(Math.max(1, Math.round(meta.sideMeters)));
+
+    return meta;
 }
 
 function init() {
@@ -259,6 +527,58 @@ function bindUI() {
     if (goToDeviceBtn) {
         goToDeviceBtn.addEventListener("click", goToCurrentPoint);
     }
+
+    shapeTypeInput?.addEventListener("change", () => {
+        updateShapeSections();
+
+        if (getCurrentShapeType() === "SQUARE") {
+            syncSquareInputsFromCenterAndSide();
+        }
+
+        renderZonePreview();
+    });
+
+    ["ingredient", "lat", "lon", "radius", "active"].forEach((id) => {
+        const input = document.getElementById(id);
+        input?.addEventListener("input", () => {
+            if ((id === "lat" || id === "lon") && getCurrentShapeType() === "SQUARE") {
+                syncSquareInputsFromCenterAndSide();
+            }
+            renderZonePreview();
+        });
+        input?.addEventListener("change", () => {
+            if ((id === "lat" || id === "lon") && getCurrentShapeType() === "SQUARE") {
+                syncSquareInputsFromCenterAndSide();
+            }
+            renderZonePreview();
+        });
+    });
+
+    sideMetersInput?.addEventListener("input", () => {
+        syncSquareInputsFromCenterAndSide();
+        renderZonePreview();
+    });
+
+    sideMetersInput?.addEventListener("change", () => {
+        const value = parseNumberValue(sideMetersInput.value) ?? DEFAULT_SQUARE_SIDE;
+        sideMetersInput.value = String(Math.max(1, Math.round(value)));
+        syncSquareInputsFromCenterAndSide();
+        renderZonePreview();
+    });
+
+    sideMetersInput?.addEventListener("blur", () => {
+        const value = parseNumberValue(sideMetersInput.value) ?? DEFAULT_SQUARE_SIDE;
+        sideMetersInput.value = String(Math.max(1, Math.round(value)));
+        syncSquareInputsFromCenterAndSide();
+        renderZonePreview();
+    });
+
+    squareCornerInputs.forEach((inputs) => {
+        [inputs?.lat, inputs?.lon].forEach((input) => input?.addEventListener("input", () => {
+            syncSquareDerivedFieldsFromBounds();
+            renderZonePreview();
+        }));
+    });
 }
 
 function bindOutsideSelectionReset() {
@@ -298,6 +618,10 @@ function bindMapClick() {
 
         const coords = event.get("coords");
         setFormCoordinates(coords);
+        if (getCurrentShapeType() === "SQUARE") {
+            syncSquareInputsFromCenterAndSide();
+        }
+        renderZonePreview();
 
         const selectedZone = getSelectedZone();
         if (selectedZone) {
@@ -321,6 +645,93 @@ function setFormCoordinates(coords) {
     lonInput.value = Number(coords[1]).toFixed(6);
 }
 
+function clearZonePreview() {
+    if (previewShape) {
+        map.geoObjects.remove(previewShape);
+        previewShape = null;
+    }
+
+    previewCornerMarkers.forEach((marker) => map.geoObjects.remove(marker));
+    previewCornerMarkers = [];
+}
+
+function handleSquareCornerDrag(cornerIndex, coords) {
+    const polygonCoords = readSquareCornerInputs();
+    if (!polygonCoords || !polygonCoords[cornerIndex]) {
+        return;
+    }
+
+    polygonCoords[cornerIndex] = [Number(coords[0]), Number(coords[1])];
+    setSquareCornerInputs(polygonCoords);
+    const meta = syncSquareDerivedFieldsFromBounds();
+    if (meta && previewShape) {
+        previewShape.geometry.setCoordinates([polygonCoords]);
+    }
+}
+
+function renderZonePreview() {
+    clearZonePreview();
+
+    if (!canWrite()) {
+        return;
+    }
+
+    const zoneData = readZoneFormValues();
+    if (!validateZoneForm(zoneData)) {
+        return;
+    }
+
+    if (zoneData.shapeType === "SQUARE") {
+        const polygonCoords = zoneData.polygonCoords || getSquareCornerCoords(zoneData);
+        previewShape = new ymaps.Polygon(
+            [polygonCoords],
+            {},
+            {
+                fillColor: "#1cc88a22",
+                strokeColor: "#1cc88a",
+                strokeWidth: 2,
+                strokeStyle: "dash",
+            }
+        );
+
+        map.geoObjects.add(previewShape);
+
+        polygonCoords.forEach((coords, index) => {
+            const marker = new ymaps.Placemark(coords, {}, {
+                preset: "islands#greenCircleDotIcon",
+                draggable: true,
+            });
+
+            marker.events.add("drag", () => {
+                handleSquareCornerDrag(index, marker.geometry.getCoordinates());
+            });
+
+            marker.events.add("dragend", () => {
+                handleSquareCornerDrag(index, marker.geometry.getCoordinates());
+                renderZonePreview();
+            });
+
+            previewCornerMarkers.push(marker);
+            map.geoObjects.add(marker);
+        });
+
+        return;
+    }
+
+    previewShape = new ymaps.Circle(
+        [[Number(zoneData.lat), Number(zoneData.lon)], Number(zoneData.radius)],
+        {},
+        {
+            fillColor: "#4e73df22",
+            strokeColor: "#4e73df",
+            strokeWidth: 2,
+            strokeStyle: "dash",
+        }
+    );
+
+    map.geoObjects.add(previewShape);
+}
+
 async function loadZones() {
     try {
         const response = await fetch(ZONES_API, {
@@ -332,7 +743,7 @@ async function loadZones() {
             throw new Error(`Ошибка загрузки зон: ${response.status} ${errorText}`);
         }
 
-        zones = await response.json();
+        zones = (await response.json()).map(normalizeZone);
         syncSelectedZoneAfterReload();
     } catch (error) {
         console.error(error);
@@ -358,6 +769,7 @@ function syncSelectedZoneAfterReload() {
 function refreshSelectionUI() {
     drawZones();
     renderTable();
+    renderZonePreview();
     updateFormMode();
 }
 
@@ -368,30 +780,56 @@ function drawZones() {
     zones.filter((zone) => Boolean(zone.active)).forEach((zone) => {
         const isSelected = String(zone.id) === String(selectedZoneId);
 
-        const circle = new ymaps.Circle(
-            [[Number(zone.lat), Number(zone.lon)], Number(zone.radius)],
-            {
-                balloonContent: `
-                    <strong>${escapeHtml(getZoneLabel(zone))}</strong><br>
-                    Lat: ${zone.lat}<br>
-                    Lon: ${zone.lon}<br>
-                    Радиус: ${zone.radius} м
-                `,
-            },
-            {
-                fillColor: isSelected ? "#f6c23e55" : "#00c85355",
-                strokeColor: isSelected ? "#d18b00" : "#1e88e5",
-                strokeWidth: isSelected ? 4 : 2,
-            }
-        );
+        const shapeLabel = zone.shapeType === "SQUARE" ? "Квадрат" : "Кружок";
+        const sizeLabel = zone.shapeType === "SQUARE"
+            ? `${Math.max(1, Math.round(Number(zone.sideMeters || DEFAULT_SQUARE_SIDE)))} м`
+            : `${zone.radius} м`;
 
-        circle.events.add("click", function () {
+        const zoneObject = zone.shapeType === "SQUARE" &&
+            Array.isArray(zone.polygonCoords) &&
+            zone.polygonCoords.length >= 4
+            ? new ymaps.Polygon(
+                getSquarePolygonCoords(zone),
+                {
+                    balloonContent: `
+                        <strong>${escapeHtml(getZoneLabel(zone))}</strong><br>
+                        Форма: ${shapeLabel}<br>
+                        Lat: ${zone.lat}<br>
+                        Lon: ${zone.lon}<br>
+                        Размер: ${sizeLabel}
+                    `,
+                },
+                {
+                    fillColor: isSelected ? "#f6c23e55" : "#00c85355",
+                    strokeColor: isSelected ? "#d18b00" : "#1e88e5",
+                    strokeWidth: isSelected ? 4 : 2,
+                }
+            )
+            : new ymaps.Circle(
+                [[Number(zone.lat), Number(zone.lon)], Number(zone.radius)],
+                {
+                    balloonContent: `
+                        <strong>${escapeHtml(getZoneLabel(zone))}</strong><br>
+                        Форма: ${shapeLabel}<br>
+                        Lat: ${zone.lat}<br>
+                        Lon: ${zone.lon}<br>
+                        Размер: ${sizeLabel}
+                    `,
+                },
+                {
+                    fillColor: isSelected ? "#f6c23e55" : "#00c85355",
+                    strokeColor: isSelected ? "#d18b00" : "#1e88e5",
+                    strokeWidth: isSelected ? 4 : 2,
+                }
+            );
+
+        zoneObject.events.add("click", function () {
             suppressNextMapClick = true;
             selectZone(zone.id, { focusMap: false });
         });
 
-        map.geoObjects.add(circle);
-        zoneCircles.push(circle);
+        map.geoObjects.add(zoneObject);
+        zoneCircles.push(zoneObject);
     });
 }
 
@@ -406,7 +844,7 @@ function renderTable() {
     if (!zones.length) {
         table.innerHTML = `
             <tr>
-                <td colspan="5" class="text-center text-muted">
+                <td colspan="6" class="text-center text-muted">
                     Зоны пока не добавлены
                 </td>
             </tr>
@@ -431,7 +869,7 @@ function renderTable() {
             const separatorRow = document.createElement("tr");
             separatorRow.className = "zones-separator-row";
             separatorRow.innerHTML = `
-                <td colspan="5" class="zones-separator-cell">
+                <td colspan="6" class="zones-separator-cell">
                     Неактивные зоны
                 </td>
             `;
@@ -449,9 +887,10 @@ function renderTable() {
 
         row.innerHTML = `
             <td>${escapeHtml(getZoneLabel(zone))}</td>
+            <td>${zone.shapeType === "SQUARE" ? "Квадрат" : "Кружок"}</td>
             <td>${Number(zone.lat).toFixed(6)}</td>
             <td>${Number(zone.lon).toFixed(6)}</td>
-            <td>${zone.radius}</td>
+            <td>${zone.shapeType === "SQUARE" ? (Math.max(1, Math.round(Number(zone.sideMeters || DEFAULT_SQUARE_SIDE))) + " м") : zone.radius + " м"}</td>
             <td>
                 <span class="badge-soft ${zone.active ? "active" : "inactive"}">
                     ${zone.active ? "Да" : "Нет"}
@@ -530,6 +969,16 @@ function fillZoneForm(zone) {
     if (lonInput) lonInput.value = Number(zone.lon).toFixed(6);
     if (radiusInput) radiusInput.value = zone.radius;
     if (activeInput) activeInput.value = String(Boolean(zone.active));
+    if (shapeTypeInput) shapeTypeInput.value = normalizeShapeType(zone.shapeType);
+    if (sideMetersInput) sideMetersInput.value = String(Math.max(1, Math.round(Number(zone.sideMeters || DEFAULT_SQUARE_SIDE))));
+
+    if (normalizeShapeType(zone.shapeType) === "SQUARE") {
+        setSquareCornerInputs(zone.polygonCoords || getSquareCornerCoords(zone));
+    } else {
+        setSquareCornerInputs(buildSquarePolygonFromCenter(Number(zone.lat), Number(zone.lon), DEFAULT_SQUARE_SIDE));
+    }
+
+    updateShapeSections();
 }
 
 function resetZoneFormFields() {
@@ -563,6 +1012,17 @@ function resetZoneFormFields() {
     if (activeInput) {
         activeInput.value = "true";
     }
+
+    if (shapeTypeInput) {
+        shapeTypeInput.value = "CIRCLE";
+    }
+
+    if (sideMetersInput) {
+        sideMetersInput.value = String(DEFAULT_SQUARE_SIDE);
+    }
+
+    setSquareCornerInputs(buildSquarePolygonFromCenter(DEFAULT_MAP_CENTER[0], DEFAULT_MAP_CENTER[1], DEFAULT_SQUARE_SIDE));
+    updateShapeSections();
 }
 
 function resetZoneEditor() {
@@ -581,6 +1041,20 @@ function focusZone(zone) {
         return;
     }
 
+    if (zone.shapeType === "SQUARE" && Array.isArray(zone.polygonCoords) && zone.polygonCoords.length >= 4) {
+        const lats = zone.polygonCoords.map((point) => Number(point[0]));
+        const lons = zone.polygonCoords.map((point) => Number(point[1]));
+        map.setBounds([
+            [Math.min(...lats), Math.min(...lons)],
+            [Math.max(...lats), Math.max(...lons)],
+        ], {
+            checkZoomRange: true,
+            duration: 300,
+            zoomMargin: 40,
+        });
+        return;
+    }
+
     map.setCenter([Number(zone.lat), Number(zone.lon)], 15, {
         checkZoomRange: true,
         duration: 300,
@@ -589,24 +1063,51 @@ function focusZone(zone) {
 
 function readZoneFormValues() {
     const radiusValue = document.getElementById("radius")?.value.trim() || "";
+    const shapeType = getCurrentShapeType();
+    const lat = parseNumberValue(document.getElementById("lat")?.value);
+    const lon = parseNumberValue(document.getElementById("lon")?.value);
+    const sideMeters = parseNumberValue(sideMetersInput?.value) ?? DEFAULT_SQUARE_SIDE;
+    const squareMeta = shapeType === "SQUARE"
+        ? (syncSquareDerivedFieldsFromBounds() || (isValidLat(lat) && isValidLon(lon) ? buildSquareBoundsFromCenter(lat, lon, sideMeters) : null))
+        : null;
 
     return {
         ingredient: document.getElementById("ingredient")?.value.trim() || "",
-        lat: Number(document.getElementById("lat")?.value),
-        lon: Number(document.getElementById("lon")?.value),
+        shapeType,
+        lat: squareMeta?.lat ?? lat,
+        lon: squareMeta?.lon ?? lon,
         radius: radiusValue ? Number(radiusValue) : DEFAULT_ZONE_RADIUS,
+        sideMeters: squareMeta?.sideMeters ?? sideMeters,
+        polygonCoords: squareMeta?.polygonCoords ?? readSquareCornerInputs(),
+        squareMinLat: squareMeta?.squareMinLat ?? null,
+        squareMinLon: squareMeta?.squareMinLon ?? null,
+        squareMaxLat: squareMeta?.squareMaxLat ?? null,
+        squareMaxLon: squareMeta?.squareMaxLon ?? null,
         active: document.getElementById("active")?.value === "true",
     };
 }
 
 function validateZoneForm(zoneData) {
-    return Boolean(
+    if (!(
         zoneData.ingredient &&
-        !Number.isNaN(zoneData.lat) &&
-        !Number.isNaN(zoneData.lon) &&
-        !Number.isNaN(zoneData.radius) &&
-        zoneData.radius > 0
-    );
+        Number.isFinite(zoneData.lat) &&
+        Number.isFinite(zoneData.lon) &&
+        isValidLat(zoneData.lat) &&
+        isValidLon(zoneData.lon)
+    )) {
+        return false;
+    }
+
+    if (zoneData.shapeType === "SQUARE") {
+        return Boolean(
+            Number.isFinite(zoneData.sideMeters) &&
+            zoneData.sideMeters > 0 &&
+            Array.isArray(zoneData.polygonCoords) &&
+            zoneData.polygonCoords.length >= 4
+        );
+    }
+
+    return Boolean(!Number.isNaN(zoneData.radius) && zoneData.radius > 0);
 }
 
 async function onZoneFormSubmit(event) {
@@ -649,9 +1150,16 @@ async function createZone(zoneData) {
             body: JSON.stringify({
                 name: zoneData.ingredient,
                 ingredient: zoneData.ingredient,
+                shapeType: zoneData.shapeType,
                 lat: zoneData.lat,
                 lon: zoneData.lon,
                 radius: zoneData.radius,
+                sideMeters: zoneData.sideMeters,
+                polygonCoords: zoneData.polygonCoords,
+                squareMinLat: zoneData.squareMinLat,
+                squareMinLon: zoneData.squareMinLon,
+                squareMaxLat: zoneData.squareMaxLat,
+                squareMaxLon: zoneData.squareMaxLon,
                 active: zoneData.active,
             }),
         });
@@ -671,7 +1179,7 @@ async function createZone(zoneData) {
         }
     } catch (error) {
         console.error(error);
-        setStatus("Не удалось добавить зону");
+        setStatus(error?.message || "Не удалось добавить зону");
     }
 }
 
@@ -685,9 +1193,16 @@ async function updateZone(zoneData) {
             body: JSON.stringify({
                 name: zoneData.ingredient,
                 ingredient: zoneData.ingredient,
+                shapeType: zoneData.shapeType,
                 lat: zoneData.lat,
                 lon: zoneData.lon,
                 radius: zoneData.radius,
+                sideMeters: zoneData.sideMeters,
+                polygonCoords: zoneData.polygonCoords,
+                squareMinLat: zoneData.squareMinLat,
+                squareMinLon: zoneData.squareMinLon,
+                squareMaxLat: zoneData.squareMaxLat,
+                squareMaxLon: zoneData.squareMaxLon,
                 active: zoneData.active,
             }),
         });
@@ -704,7 +1219,7 @@ async function updateZone(zoneData) {
         console.error(error);
         selectedZoneId = currentZoneId;
         refreshSelectionUI();
-        setStatus("Не удалось сохранить изменения зоны");
+        setStatus(error?.message || "Не удалось сохранить изменения зоны");
     }
 }
 
@@ -1072,6 +1587,10 @@ function goToCurrentPoint() {
     const lon = Number(lastTelemetry.lon);
 
     setFormCoordinates([lat, lon]);
+    if (getCurrentShapeType() === "SQUARE") {
+        syncSquareInputsFromCenterAndSide();
+    }
+    renderZonePreview();
 
     map.setCenter([lat, lon], 16, {
         checkZoomRange: true,
@@ -1084,9 +1603,14 @@ function goToCurrentPoint() {
 function findBestMatchingZone(newZone) {
     return zones.find((zone) =>
         getZoneLabel(zone) === newZone.ingredient &&
+        normalizeShapeType(zone.shapeType) === normalizeShapeType(newZone.shapeType) &&
         Number(zone.lat) === Number(newZone.lat) &&
         Number(zone.lon) === Number(newZone.lon) &&
-        Number(zone.radius) === Number(newZone.radius)
+        (
+            normalizeShapeType(newZone.shapeType) === "SQUARE"
+                ? Number(zone.sideMeters || 0) === Number(newZone.sideMeters || 0)
+                : Number(zone.radius) === Number(newZone.radius)
+        )
     );
 }
 

@@ -29,11 +29,68 @@ export function calculateHaversine(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+function isPointInsidePolygon(lat, lon, polygonCoords = []) {
+    let isInside = false
+
+    for (let i = 0, j = polygonCoords.length - 1; i < polygonCoords.length; j = i++) {
+        const yi = Number(polygonCoords[i]?.[0])
+        const xi = Number(polygonCoords[i]?.[1])
+        const yj = Number(polygonCoords[j]?.[0])
+        const xj = Number(polygonCoords[j]?.[1])
+
+        const intersects = ((yi > lat) !== (yj > lat))
+            && (lon < ((xj - xi) * (lat - yi)) / ((yj - yi) || Number.EPSILON) + xi)
+
+        if (intersects) {
+            isInside = !isInside
+        }
+    }
+
+    return isInside
+}
+
 
 export function detectZoneObject(lat, lon, zonesConfig = []) {
     let distance
     for (const zone of zonesConfig)
     {
+        const shapeType = String(zone?.shapeType || 'CIRCLE').trim().toUpperCase()
+
+        if (shapeType === 'SQUARE' && zone?.polygonCoords) {
+            let polygonCoords = null
+
+            try {
+                polygonCoords = typeof zone.polygonCoords === 'string'
+                    ? JSON.parse(zone.polygonCoords)
+                    : zone.polygonCoords
+            } catch {
+                polygonCoords = null
+            }
+
+            if (Array.isArray(polygonCoords) && polygonCoords.length >= 3 && isPointInsidePolygon(lat, lon, polygonCoords)) {
+                return zone
+            }
+        }
+
+        if (
+            shapeType === 'SQUARE' &&
+            Number.isFinite(Number(zone.squareMinLat)) &&
+            Number.isFinite(Number(zone.squareMinLon)) &&
+            Number.isFinite(Number(zone.squareMaxLat)) &&
+            Number.isFinite(Number(zone.squareMaxLon))
+        ) {
+            const minLat = Math.min(Number(zone.squareMinLat), Number(zone.squareMaxLat))
+            const maxLat = Math.max(Number(zone.squareMinLat), Number(zone.squareMaxLat))
+            const minLon = Math.min(Number(zone.squareMinLon), Number(zone.squareMaxLon))
+            const maxLon = Math.max(Number(zone.squareMinLon), Number(zone.squareMaxLon))
+
+            if (lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon) {
+                return zone
+            }
+
+            continue
+        }
+
         distance = calculateHaversine(lat, lon, Number(zone.lat), Number(zone.lon))
         if (distance <= Number(zone.radius))
         {
