@@ -2,7 +2,7 @@
 <html lang="ru">
 
 <head>
-    <link rel="icon" href="data:,">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='50' font-size='48'%3E%F0%9F%90%84%3C/text%3E%3C/svg%3E">
 
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -51,6 +51,13 @@
                 <a class="nav-link" href="rations.html">
                     <i class="fas fa-fw fa-utensils"></i>
                     <span>Рационы</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="groups.html">
+                    <i class="fas fa-fw fa-tractor"></i>
+                    <span>Группы</span>
                 </a>
             </li>
 
@@ -255,7 +262,7 @@
 
                     <section class="telemetry-panel" data-panel="rtk">
                         <div class="row">
-                            <div class="col-xl-2 col-md-4 mb-4">
+                            <div class="col-xl-3 col-md-4 mb-4">
                                 <div class="card border-left-primary shadow h-100 py-2">
                                     <div class="card-body">
                                         <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Статус</div>
@@ -263,15 +270,23 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-xl-2 col-md-4 mb-4">
+                            <div class="col-xl-3 col-md-4 mb-4">
+                                <div class="card border-left-dark shadow h-100 py-2">
+                                    <div class="card-body">
+                                        <div class="text-xs font-weight-bold text-dark text-uppercase mb-1">Устройство</div>
+                                        <div class="h6 mb-0 font-weight-bold text-gray-800" id="rtkDevice">--</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-xl-3 col-md-4 mb-4">
                                 <div class="card border-left-success shadow h-100 py-2">
                                     <div class="card-body">
-                                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Последняя запись</div>
+                                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Последний пакет</div>
                                         <div class="h6 mb-0 font-weight-bold text-gray-800" id="rtkLastPacket">--</div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-xl-2 col-md-4 mb-4">
+                            <div class="col-xl-3 col-md-4 mb-4">
                                 <div class="card border-left-warning shadow h-100 py-2">
                                     <div class="card-body">
                                         <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">RTK quality</div>
@@ -279,15 +294,15 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-xl-2 col-md-4 mb-4">
-                                <div class="card border-left-primary shadow h-100 py-2">
+                            <div class="col-xl-3 col-md-4 mb-4">
+                                <div class="card border-left-info shadow h-100 py-2">
                                     <div class="card-body">
-                                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Качество</div>
+                                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Возраст решения</div>
                                         <div class="h6 mb-0 font-weight-bold text-gray-800" id="rtkAge">--</div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-xl-2 col-md-4 mb-4">
+                            <div class="col-xl-3 col-md-4 mb-4">
                                 <div class="card border-left-secondary shadow h-100 py-2">
                                     <div class="card-body">
                                         <div class="text-xs font-weight-bold text-secondary text-uppercase mb-1">Валидность</div>
@@ -295,15 +310,15 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-xl-2 col-md-4 mb-4">
-                                <div class="card border-left-info shadow h-100 py-2">
+                            <div class="col-xl-3 col-md-4 mb-4">
+                                <div class="card border-left-primary shadow h-100 py-2">
                                     <div class="card-body">
-                                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Координаты</div>
+                                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Координаты</div>
                                         <div class="h6 mb-0 font-weight-bold text-gray-800" id="rtkCoordinates">--</div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-xl-2 col-md-4 mb-4">
+                            <div class="col-xl-3 col-md-4 mb-4">
                                 <div class="card border-left-dark shadow h-100 py-2">
                                     <div class="card-body">
                                         <div class="text-xs font-weight-bold text-dark text-uppercase mb-1">Зона</div>
@@ -314,40 +329,47 @@
                         </div>
 
                         <div class="card shadow mb-4">
+                            <div class="card-header py-3">
+                                <h6 class="m-0 font-weight-bold text-primary">Диагностика RTK</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-lg-4 col-md-6 mb-3">
+                                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Спутники</div>
+                                        <div class="font-weight-bold text-gray-800" id="rtkSatellites">--</div>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6 mb-3">
+                                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Wi-Fi</div>
+                                        <div class="font-weight-bold text-gray-800" id="rtkWifi">--</div>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6 mb-3">
+                                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">RSSI</div>
+                                        <div class="font-weight-bold text-gray-800" id="rtkRssi">--</div>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6 mb-3 mb-lg-0">
+                                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">SD</div>
+                                        <div class="font-weight-bold text-gray-800" id="rtkSdReady">--</div>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6 mb-3 mb-lg-0">
+                                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Очередь RAM</div>
+                                        <div class="font-weight-bold text-gray-800" id="rtkQueue">--</div>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Free heap</div>
+                                        <div class="font-weight-bold text-gray-800" id="rtkHeap">--</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card shadow mb-4">
                             <div class="card-header py-3 d-sm-flex align-items-center justify-content-between">
                                 <div>
                                     <h6 class="m-0 font-weight-bold text-primary">Поток «RTK»</h6>
-                                    <div class="small text-muted mt-1">Пакеты RTK, статус решения, диагностические признаки и положение в зоне.</div>
                                 </div>
                                 <div class="telemetry-panel-status mt-3 mt-sm-0" id="rtkPanelStatus">Ожидание ответа API...</div>
                             </div>
                             <div class="card-body">
-                                <div class="rtk-meta-grid mb-4">
-                                    <div class="rtk-meta-card">
-                                        <div class="rtk-meta-card__label">Спутники</div>
-                                        <div class="rtk-meta-card__value" id="rtkSatellites">--</div>
-                                    </div>
-                                    <div class="rtk-meta-card">
-                                        <div class="rtk-meta-card__label">Wi-Fi</div>
-                                        <div class="rtk-meta-card__value" id="rtkWifi">--</div>
-                                    </div>
-                                    <div class="rtk-meta-card">
-                                        <div class="rtk-meta-card__label">RSSI</div>
-                                        <div class="rtk-meta-card__value" id="rtkRssi">--</div>
-                                    </div>
-                                    <div class="rtk-meta-card">
-                                        <div class="rtk-meta-card__label">SD</div>
-                                        <div class="rtk-meta-card__value" id="rtkSdReady">--</div>
-                                    </div>
-                                    <div class="rtk-meta-card">
-                                        <div class="rtk-meta-card__label">Очередь RAM</div>
-                                        <div class="rtk-meta-card__value" id="rtkQueue">--</div>
-                                    </div>
-                                    <div class="rtk-meta-card">
-                                        <div class="rtk-meta-card__label">Free heap</div>
-                                        <div class="rtk-meta-card__value" id="rtkHeap">--</div>
-                                    </div>
-                                </div>
                                 <div class="table-responsive telemetry-table-wrap">
                                     <table class="table table-bordered telemetry-table" width="100%" cellspacing="0">
                                         <thead>
@@ -372,7 +394,7 @@
                                         </thead>
                                         <tbody id="rtkTelemetryTable">
                                             <tr>
-                                                <td colspan="15" class="telemetry-empty-state">Загрузка RTK данных...</td>
+                                                <td colspan="16" class="telemetry-empty-state">Загрузка RTK данных...</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -477,7 +499,7 @@
     <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
-    <script src="js/sidebar-enhancements.js?v=20260403a"></script>
+    <script src="js/sidebar-enhancements.js?v=20260428b"></script>
     <script src="js/telemetry.js?v=20260426b"></script>
     <script src="js/admin-users.js?v=20260420a"></script>
 

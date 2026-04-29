@@ -35,7 +35,7 @@ let hasTelemetryAutoFocus = false;
 ymaps.ready(init);
 
 function canWrite() {
-    return window.AppAuth?.hasWriteAccess?.() ?? true;
+    return window.AppAuth?.hasWriteAccess?.() ?? false;
 }
 
 function getHeaders(includeJson = false) {

@@ -427,7 +427,7 @@ function getRtkPlacemarkPreset(data) {
         return "islands#yellowCircleDotIcon";
     }
 
-    return "islands#blueCircleDotIcon";
+    return "islands#redCircleDotIcon";
 }
 
 function updatePlacemarkStatus(isOnline) {
@@ -481,6 +481,10 @@ function isPacketOnline(timestamp) {
 }
 
 function isTelemetryOnline(data) {
+    if (latestFetchState.status === "stale" || latestFetchState.status === "error") {
+        return false;
+    }
+
     return isPacketOnline(data?.timestamp);
 }
 
@@ -786,9 +790,63 @@ function getRtkQualityLabel(data) {
     return data.qualityLabel || data.rtkQuality || (data.quality != null ? `Q${data.quality}` : "--");
 }
 
+function getRtkQualityTone(data) {
+    if (!isPacketOnline(data?.timestamp)) {
+        return "stale";
+    }
+
+    const label = String(data?.qualityLabel || data?.rtkQuality || "").toLowerCase();
+    const quality = Number(data?.quality);
+
+    if (label.includes("fixed") || quality >= 4) {
+        return "fixed";
+    }
+
+    if (label.includes("float") || quality >= 2) {
+        return "float";
+    }
+
+    return "poor";
+}
+
+function updateRtkMapChip(data) {
+    const chip = document.getElementById("dashboardRtkMapChip");
+    const stateElement = document.getElementById("dashboardRtkMapChipState");
+    const qualityElement = document.getElementById("dashboardRtkMapChipQuality");
+
+    if (!chip || !stateElement || !qualityElement) {
+        return;
+    }
+
+    chip.classList.remove(
+        "map-telemetry-chip--fixed",
+        "map-telemetry-chip--float",
+        "map-telemetry-chip--poor",
+        "map-telemetry-chip--stale",
+        "map-telemetry-chip--unknown"
+    );
+
+    if (!hasValidCoordinates(data?.lat, data?.lon)) {
+        chip.classList.add("map-telemetry-chip--unknown");
+        stateElement.textContent = "Нет данных";
+        qualityElement.textContent = "Quality: --";
+        return;
+    }
+
+    const tone = getRtkQualityTone(data);
+    const qualityLabel = getRtkQualityLabel(data);
+    const packetState = isPacketOnline(data?.timestamp) ? "Свежий пакет" : "Нет свежих пакетов";
+    const coordsText = `${Number(data.lat).toFixed(6)}, ${Number(data.lon).toFixed(6)}`;
+
+    chip.classList.add(`map-telemetry-chip--${tone}`);
+    stateElement.textContent = packetState;
+    qualityElement.textContent = `${qualityLabel} • ${coordsText}`;
+}
+
 function updateRtkMapPosition(data) {
     if (!hasValidCoordinates(data?.lat, data?.lon)) {
         hideRtkPlacemark();
+        updateRtkMapChip(null);
         return;
     }
 
@@ -800,7 +858,7 @@ function updateRtkMapPosition(data) {
         <strong>RTK</strong><br>
         Устройство: ${escapeHtml(data?.deviceId || "--")}<br>
         Статус: ${isOnline ? "Свежий пакет" : "Нет свежих пакетов"}<br>
-        Quality: ${escapeHtml(qualityLabel)}<br>
+        Статус качества: ${escapeHtml(qualityLabel)}<br>
         Координаты: ${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}<br>
         Зона: ${escapeHtml(zoneName)}
     `;
@@ -810,7 +868,7 @@ function updateRtkMapPosition(data) {
             coords,
             {
                 balloonContent,
-                hintContent: `RTK • ${qualityLabel}`,
+                hintContent: `RTK - ${qualityLabel}`,
             },
             {
                 preset: getRtkPlacemarkPreset(data),
@@ -820,12 +878,13 @@ function updateRtkMapPosition(data) {
         rtkPlacemark.geometry.setCoordinates(coords);
         rtkPlacemark.properties.set({
             balloonContent,
-            hintContent: `RTK • ${qualityLabel}`,
+            hintContent: `RTK - ${qualityLabel}`,
         });
         rtkPlacemark.options.set("preset", getRtkPlacemarkPreset(data));
     }
 
     ensureRtkPlacemarkVisible();
+    updateRtkMapChip(data);
 
     if (!hasTelemetryAutoFocus) {
         centerMapOnMarker({ force: true, duration: 300 });
@@ -1276,9 +1335,6 @@ async function fetchZones() {
     } finally {
         isFetchingZones = false;
     }
-
-    fetchZones();
-    fetchLatest();
 }
 
 function handleVisibilityChange() {
