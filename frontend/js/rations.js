@@ -85,6 +85,11 @@ $(document).ready(function () {
         return `${escapeHtml(weightFormatter.format(numericValue))} кг`;
     }
 
+    function getWeightValue(value) {
+        const numericValue = Number(value);
+        return Number.isFinite(numericValue) ? numericValue : 0;
+    }
+
     function formatFileMeta(file) {
         if (!file) {
             return "Файл не выбран";
@@ -213,6 +218,48 @@ $(document).ready(function () {
         `;
     }
 
+    function renderIngredientsTable(ingredients) {
+        const items = Array.isArray(ingredients) ? ingredients : [];
+        if (!items.length) {
+            return '<span class="text-muted">-</span>';
+        }
+
+        const plannedTotal = items.reduce((sum, ingredient) => sum + getWeightValue(ingredient?.plannedWeight), 0);
+        const dryMatterTotal = items.reduce((sum, ingredient) => sum + getWeightValue(ingredient?.dryMatterWeight), 0);
+
+        return `
+            <div class="ration-ingredients-table-wrap">
+                <table class="ration-ingredients-table">
+                    <thead>
+                        <tr>
+                            <th class="ration-ingredients-table__index">№</th>
+                            <th>Ингредиент</th>
+                            <th class="ration-ingredients-table__weight">Вес/голову</th>
+                            <th class="ration-ingredients-table__weight">СВ/голову</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${items.map((ingredient, index) => `
+                            <tr>
+                                <td class="ration-ingredients-table__index">${index + 1}</td>
+                                <td class="ration-ingredients-table__name">${escapeHtml(ingredient?.name || "Без названия")}</td>
+                                <td class="ration-ingredients-table__weight">${formatWeight(ingredient?.plannedWeight)}</td>
+                                <td class="ration-ingredients-table__weight">${formatWeight(ingredient?.dryMatterWeight)}</td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="2">Итого</td>
+                            <td class="ration-ingredients-table__weight">${formatWeight(plannedTotal)}</td>
+                            <td class="ration-ingredients-table__weight">${formatWeight(dryMatterTotal)}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        `;
+    }
+
     function getToggleButtonMarkup(ration) {
         const rationId = Number(ration?.id);
         const isBusy = state.isLoading || state.toggleBusy.has(rationId) || state.deleteBusy.has(rationId);
@@ -274,17 +321,17 @@ $(document).ready(function () {
         const groupsByRationId = getGroupsByRationId();
 
         if (state.isLoading && !state.rations.length) {
-            rationsTableBody.innerHTML = '<tr><td colspan="7" class="telemetry-empty-state">Загрузка рационов...</td></tr>';
+            rationsTableBody.innerHTML = '<tr><td colspan="5" class="telemetry-empty-state">Загрузка рационов...</td></tr>';
             return;
         }
 
         if (state.lastLoadError && !state.rations.length) {
-            rationsTableBody.innerHTML = `<tr><td colspan="7" class="telemetry-empty-state">${escapeHtml(state.lastLoadError)}</td></tr>`;
+            rationsTableBody.innerHTML = `<tr><td colspan="5" class="telemetry-empty-state">${escapeHtml(state.lastLoadError)}</td></tr>`;
             return;
         }
 
         if (!state.rations.length) {
-            rationsTableBody.innerHTML = '<tr><td colspan="7" class="telemetry-empty-state">Рационы пока не загружены.</td></tr>';
+            rationsTableBody.innerHTML = '<tr><td colspan="5" class="telemetry-empty-state">Рационы пока не загружены.</td></tr>';
             return;
         }
 
@@ -300,14 +347,8 @@ $(document).ready(function () {
                         <div class="small text-muted">${ingredients.length ? `Ингредиентов: ${ingredients.length}` : "Без ингредиентов"}</div>
                     </td>
                     <td class="align-middle">${renderStatusBadge(ration?.isActive)}</td>
-                    <td class="align-middle">
-                        ${renderListCell(ingredients, (ingredient) => escapeHtml(ingredient?.name || "Без названия"))}
-                    </td>
-                    <td class="align-middle">
-                        ${renderListCell(ingredients, (ingredient) => formatWeight(ingredient?.plannedWeight))}
-                    </td>
-                    <td class="align-middle">
-                        ${renderListCell(ingredients, (ingredient) => formatWeight(ingredient?.dryMatterWeight))}
+                    <td class="align-middle ration-ingredients-cell">
+                        ${renderIngredientsTable(ingredients)}
                     </td>
                     <td class="align-middle">
                         ${renderListCell(linkedGroups, (group) => escapeHtml(group?.name || `Группа #${group?.id || "-"}`))}

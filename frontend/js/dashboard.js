@@ -10,6 +10,8 @@ const ZONES_POLL_INTERVAL_MS = 10000;
 const OFFLINE_THRESHOLD_MS = 15000;
 const DEFAULT_MAP_TYPE = "yandex#map";
 const ZONE_BANNER_DISPLAY_MS = 4500;
+const DEFAULT_ZONE_RADIUS = 20;
+const DEFAULT_SQUARE_SIDE = 40;
 
 let map;
 let placemark;
@@ -37,11 +39,13 @@ let undoAlertTimerId = null;
 let lastTelemetryChangeAt = 0;
 let lastTelemetrySnapshotKey = null;
 let isMarkerTrackingEnabled = false;
+let markerTrackingTarget = "all";
 let mapTrackToggleButton = null;
 let mapCenterOnMarkerButton = null;
 let mapFullscreenButton = null;
 let mapWrapElement = null;
 let hasTelemetryAutoFocus = false;
+let pinnedMapActionMenu = null;
 
 function isAdmin() {
     return Boolean(window.AppAuth?.isAdmin && window.AppAuth.isAdmin());
@@ -499,6 +503,136 @@ function hasValidCoordinates(lat, lon) {
     return parsedLat !== 0 && parsedLon !== 0;
 }
 
+function normalizeShapeType(value) {
+    return String(value || "CIRCLE").trim().toUpperCase() === "SQUARE" ? "SQUARE" : "CIRCLE";
+}
+
+function parseZoneNumber(value) {
+    if (value === "" || value === null || value === undefined) {
+        return null;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function metersPerLonDegree(lat) {
+    return Math.max(Math.cos(lat * Math.PI / 180) * 111320, 1);
+}
+
+function buildSquarePolygonFromBounds(minLat, minLon, maxLat, maxLon) {
+    const normalizedMinLat = Math.min(minLat, maxLat);
+    const normalizedMaxLat = Math.max(minLat, maxLat);
+    const normalizedMinLon = Math.min(minLon, maxLon);
+    const normalizedMaxLon = Math.max(minLon, maxLon);
+
+    return [
+        [normalizedMaxLat, normalizedMinLon],
+        [normalizedMaxLat, normalizedMaxLon],
+        [normalizedMinLat, normalizedMaxLon],
+        [normalizedMinLat, normalizedMinLon],
+    ];
+}
+
+function buildSquarePolygonFromCenter(lat, lon, sideMeters) {
+    const halfSideMeters = sideMeters / 2;
+    const latDelta = halfSideMeters / 111320;
+    const lonDelta = halfSideMeters / metersPerLonDegree(lat);
+
+    return buildSquarePolygonFromBounds(
+        lat - latDelta,
+        lon - lonDelta,
+        lat + latDelta,
+        lon + lonDelta
+    );
+}
+
+function normalizeZone(zone) {
+    let polygonCoords = null;
+
+    if (zone?.polygonCoords) {
+        try {
+            const parsed = typeof zone.polygonCoords === "string" ? JSON.parse(zone.polygonCoords) : zone.polygonCoords;
+            if (Array.isArray(parsed) && parsed.length >= 4) {
+                polygonCoords = parsed
+                    .map((point) => [Number(point[0]), Number(point[1])])
+                    .filter((point) => Number.isFinite(point[0]) && Number.isFinite(point[1]));
+            }
+        } catch {
+            polygonCoords = null;
+        }
+    }
+
+    const normalized = {
+        ...zone,
+        shapeType: normalizeShapeType(zone?.shapeType),
+        lat: Number(zone?.lat),
+        lon: Number(zone?.lon),
+        radius: Number(zone?.radius ?? DEFAULT_ZONE_RADIUS),
+        sideMeters: parseZoneNumber(zone?.sideMeters),
+        squareMinLat: parseZoneNumber(zone?.squareMinLat),
+        squareMinLon: parseZoneNumber(zone?.squareMinLon),
+        squareMaxLat: parseZoneNumber(zone?.squareMaxLat),
+        squareMaxLon: parseZoneNumber(zone?.squareMaxLon),
+        polygonCoords,
+    };
+
+    if (normalized.shapeType === "SQUARE" && (!normalized.polygonCoords || normalized.polygonCoords.length < 4)) {
+        const hasBounds = Number.isFinite(normalized.squareMinLat) &&
+            Number.isFinite(normalized.squareMinLon) &&
+            Number.isFinite(normalized.squareMaxLat) &&
+            Number.isFinite(normalized.squareMaxLon);
+
+        if (hasBounds) {
+            normalized.polygonCoords = buildSquarePolygonFromBounds(
+                normalized.squareMinLat,
+                normalized.squareMinLon,
+                normalized.squareMaxLat,
+                normalized.squareMaxLon
+            );
+        } else if (Number.isFinite(normalized.lat) && Number.isFinite(normalized.lon)) {
+            normalized.polygonCoords = buildSquarePolygonFromCenter(
+                normalized.lat,
+                normalized.lon,
+                normalized.sideMeters || DEFAULT_SQUARE_SIDE
+            );
+        }
+    }
+
+    return normalized;
+}
+
+function getZoneLabel(zone) {
+    const ingredient = String(zone?.ingredient || "").trim();
+    const name = String(zone?.name || "").trim();
+
+    return ingredient || name || "Без названия";
+}
+
+function isPointInPolygon(lat, lon, polygonCoords) {
+    if (!Array.isArray(polygonCoords) || polygonCoords.length < 3) {
+        return false;
+    }
+
+    let isInside = false;
+
+    for (let i = 0, j = polygonCoords.length - 1; i < polygonCoords.length; j = i++) {
+        const yi = Number(polygonCoords[i][0]);
+        const xi = Number(polygonCoords[i][1]);
+        const yj = Number(polygonCoords[j][0]);
+        const xj = Number(polygonCoords[j][1]);
+
+        const intersects = ((yi > lat) !== (yj > lat)) &&
+            (lon < (xj - xi) * (lat - yi) / ((yj - yi) || Number.EPSILON) + xi);
+
+        if (intersects) {
+            isInside = !isInside;
+        }
+    }
+
+    return isInside;
+}
+
 function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
     const earthRadius = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -518,9 +652,17 @@ function getCurrentZoneName(lat, lon) {
             continue;
         }
 
+        if (normalizeShapeType(zone.shapeType) === "SQUARE") {
+            if (isPointInPolygon(lat, lon, zone.polygonCoords)) {
+                return getZoneLabel(zone);
+            }
+
+            continue;
+        }
+
         const zoneLat = Number(zone.lat);
         const zoneLon = Number(zone.lon);
-        const zoneRadius = Number(zone.radius) || 50;
+        const zoneRadius = Number(zone.radius) || DEFAULT_ZONE_RADIUS;
 
         if (!Number.isFinite(zoneLat) || !Number.isFinite(zoneLon)) {
             continue;
@@ -528,7 +670,7 @@ function getCurrentZoneName(lat, lon) {
 
         const distance = getDistanceFromLatLonInMeters(lat, lon, zoneLat, zoneLon);
         if (distance <= zoneRadius) {
-            return zone.name;
+            return getZoneLabel(zone);
         }
     }
 
@@ -558,18 +700,27 @@ function smoothMove(newCoords) {
 }
 
 function getCurrentMarkerCoords() {
-    if (!hasValidCoordinates(latestTelemetry?.lat, latestTelemetry?.lon)) {
-        if (hasValidCoordinates(latestRtkTelemetry?.lat, latestRtkTelemetry?.lon)) {
-            return [Number(latestRtkTelemetry.lat), Number(latestRtkTelemetry.lon)];
-        }
-
-        return null;
-    }
-
-    return [Number(latestTelemetry.lat), Number(latestTelemetry.lon)];
+    return getTelemetryCoordsByTarget("host") || getTelemetryCoordsByTarget("rtk");
 }
 
-function getVisibleTelemetryCoords() {
+function getTelemetryCoordsByTarget(target) {
+    if (target === "host" && hasValidCoordinates(latestTelemetry?.lat, latestTelemetry?.lon)) {
+        return [Number(latestTelemetry.lat), Number(latestTelemetry.lon)];
+    }
+
+    if (target === "rtk" && hasValidCoordinates(latestRtkTelemetry?.lat, latestRtkTelemetry?.lon)) {
+        return [Number(latestRtkTelemetry.lat), Number(latestRtkTelemetry.lon)];
+    }
+
+    return null;
+}
+
+function getVisibleTelemetryCoords(target = "all") {
+    if (target === "host" || target === "rtk") {
+        const coords = getTelemetryCoordsByTarget(target);
+        return coords ? [coords] : [];
+    }
+
     const coords = [];
 
     if (hasValidCoordinates(latestTelemetry?.lat, latestTelemetry?.lon)) {
@@ -621,7 +772,7 @@ function centerMapOnMarker(options = {}) {
         return false;
     }
 
-    const coordsList = getVisibleTelemetryCoords();
+    const coordsList = getVisibleTelemetryCoords(options.target || "all");
     if (!coordsList.length) {
         return false;
     }
@@ -656,6 +807,14 @@ function centerMapOnMarker(options = {}) {
 
 function syncMapActionButtons() {
     const hasMarkerCoords = Boolean(getCurrentMarkerCoords());
+    const hasTrackingCoords = Boolean(markerTrackingTarget === "all"
+        ? getVisibleTelemetryCoords().length
+        : getTelemetryCoordsByTarget(markerTrackingTarget));
+
+    if (isMarkerTrackingEnabled && !hasTrackingCoords) {
+        isMarkerTrackingEnabled = false;
+        markerTrackingTarget = "all";
+    }
 
     if (mapTrackToggleButton) {
         mapTrackToggleButton.disabled = !hasMarkerCoords;
@@ -666,6 +825,18 @@ function syncMapActionButtons() {
     if (mapCenterOnMarkerButton) {
         mapCenterOnMarkerButton.disabled = !hasMarkerCoords;
     }
+
+    document.querySelectorAll(".map-action-dropdown__item[data-marker-target]").forEach((item) => {
+        const target = item.dataset.markerTarget;
+        const hasTargetCoords = Boolean(getTelemetryCoordsByTarget(target));
+        item.disabled = !hasTargetCoords;
+        item.classList.toggle(
+            "is-active",
+            item.dataset.mapAction === "track" &&
+                isMarkerTrackingEnabled &&
+                markerTrackingTarget === target
+        );
+    });
 
     if (mapFullscreenButton) {
         const isFullscreen = document.fullscreenElement === mapWrapElement;
@@ -679,21 +850,100 @@ function syncMapActionButtons() {
     }
 }
 
-function setMarkerTrackingEnabled(isEnabled) {
+function setMarkerTrackingEnabled(isEnabled, target = "all") {
+    markerTrackingTarget = target;
     isMarkerTrackingEnabled = Boolean(isEnabled);
     syncMapActionButtons();
 
     if (isMarkerTrackingEnabled) {
-        centerMapOnMarker({ force: true, duration: 300 });
+        centerMapOnMarker({ force: true, duration: 300, target: markerTrackingTarget });
     }
 }
 
-function toggleMarkerTracking() {
-    if (!getCurrentMarkerCoords()) {
+function stopMarkerTracking() {
+    markerTrackingTarget = "all";
+    isMarkerTrackingEnabled = false;
+    syncMapActionButtons();
+}
+
+function closePinnedMapActionMenu() {
+    if (!pinnedMapActionMenu) {
         return;
     }
 
-    setMarkerTrackingEnabled(!isMarkerTrackingEnabled);
+    pinnedMapActionMenu.classList.remove("is-pinned");
+    const button = pinnedMapActionMenu.querySelector(".map-action-button");
+    button?.setAttribute("aria-expanded", "false");
+    pinnedMapActionMenu = null;
+}
+
+function togglePinnedMapActionMenu(button) {
+    const menu = button?.closest(".map-action-menu");
+    if (!menu || button.disabled) {
+        return;
+    }
+
+    if (button === mapTrackToggleButton && isMarkerTrackingEnabled) {
+        stopMarkerTracking();
+        closePinnedMapActionMenu();
+        menu.classList.add("is-suppressed");
+        button.blur();
+        return;
+    }
+
+    const shouldClose = pinnedMapActionMenu === menu;
+    closePinnedMapActionMenu();
+
+    if (shouldClose) {
+        menu.classList.add("is-suppressed");
+        button.blur();
+        return;
+    }
+
+    menu.classList.remove("is-suppressed");
+    menu.classList.add("is-pinned");
+    button.setAttribute("aria-expanded", "true");
+    pinnedMapActionMenu = menu;
+}
+
+function suppressMapActionMenu(menu) {
+    if (!menu) {
+        return;
+    }
+
+    if (pinnedMapActionMenu === menu) {
+        pinnedMapActionMenu = null;
+    }
+
+    menu.classList.remove("is-pinned");
+    menu.classList.add("is-suppressed");
+    const button = menu.querySelector(".map-action-button");
+    button?.setAttribute("aria-expanded", "false");
+}
+
+function handleMapActionDropdownClick(event) {
+    const item = event.target.closest(".map-action-dropdown__item");
+    if (!item || item.disabled) {
+        return;
+    }
+
+    const target = item.dataset.markerTarget;
+    const action = item.dataset.mapAction;
+
+    if (action === "track") {
+        setMarkerTrackingEnabled(true, target);
+        suppressMapActionMenu(item.closest(".map-action-menu"));
+        return;
+    }
+
+    if (action === "center") {
+        centerMapOnMarker({ force: true, duration: 280, target });
+        suppressMapActionMenu(item.closest(".map-action-menu"));
+    }
+}
+
+function handleMapActionMenuLeave(event) {
+    event.currentTarget.classList.remove("is-suppressed");
 }
 
 async function toggleMapFullscreen() {
@@ -724,7 +974,7 @@ function handleMapActionEnd() {
     applyIdleMapCursor();
 
     if (isMarkerTrackingEnabled) {
-        centerMapOnMarker({ duration: 220 });
+        centerMapOnMarker({ duration: 220, target: markerTrackingTarget });
     }
 }
 
@@ -735,18 +985,34 @@ function initMapActionControls() {
     mapFullscreenButton = document.getElementById("mapFullscreenButton");
 
     if (mapTrackToggleButton) {
-        mapTrackToggleButton.addEventListener("click", toggleMarkerTracking);
+        mapTrackToggleButton.setAttribute("aria-haspopup", "menu");
+        mapTrackToggleButton.setAttribute("aria-expanded", "false");
+        mapTrackToggleButton.addEventListener("click", (event) => {
+            event.preventDefault();
+            togglePinnedMapActionMenu(mapTrackToggleButton);
+        });
     }
 
     if (mapCenterOnMarkerButton) {
-        mapCenterOnMarkerButton.addEventListener("click", () => {
-            centerMapOnMarker({ force: true, duration: 280 });
+        mapCenterOnMarkerButton.setAttribute("aria-haspopup", "menu");
+        mapCenterOnMarkerButton.setAttribute("aria-expanded", "false");
+        mapCenterOnMarkerButton.addEventListener("click", (event) => {
+            event.preventDefault();
+            togglePinnedMapActionMenu(mapCenterOnMarkerButton);
         });
     }
 
     if (mapFullscreenButton) {
         mapFullscreenButton.addEventListener("click", toggleMapFullscreen);
     }
+
+    document.querySelectorAll(".map-action-dropdown").forEach((dropdown) => {
+        dropdown.addEventListener("click", handleMapActionDropdownClick);
+    });
+
+    document.querySelectorAll(".map-action-menu").forEach((menu) => {
+        menu.addEventListener("mouseleave", handleMapActionMenuLeave);
+    });
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     syncMapActionButtons();
@@ -778,7 +1044,7 @@ function updateMapPosition(data, isOnline) {
     smoothMove(newCoords);
 
     if (isMarkerTrackingEnabled) {
-        centerMapOnMarker({ duration: 220 });
+        centerMapOnMarker({ duration: 220, target: markerTrackingTarget });
     }
 }
 
@@ -847,6 +1113,7 @@ function updateRtkMapPosition(data) {
     if (!hasValidCoordinates(data?.lat, data?.lon)) {
         hideRtkPlacemark();
         updateRtkMapChip(null);
+        syncMapActionButtons();
         return;
     }
 
@@ -885,10 +1152,15 @@ function updateRtkMapPosition(data) {
 
     ensureRtkPlacemarkVisible();
     updateRtkMapChip(data);
+    syncMapActionButtons();
 
     if (!hasTelemetryAutoFocus) {
         centerMapOnMarker({ force: true, duration: 300 });
         hasTelemetryAutoFocus = true;
+    }
+
+    if (isMarkerTrackingEnabled) {
+        centerMapOnMarker({ duration: 220, target: markerTrackingTarget });
     }
 }
 
@@ -938,20 +1210,44 @@ function renderZones() {
     clearZoneCircles();
 
     zoneCircles = storageZones.filter((zone) => Boolean(zone.active)).map((zone) => {
-        const circle = new ymaps.Circle([
-            [Number(zone.lat), Number(zone.lon)],
-            Number(zone.radius) || 50,
-        ], {
-            balloonContent: `Зона: ${zone.name}`,
-        }, {
-            fillColor: "rgba(0, 150, 255, 0.3)",
-            strokeColor: "#0066ff",
-            strokeOpacity: 0.8,
-            strokeWidth: 2,
-        });
+        const shapeLabel = normalizeShapeType(zone.shapeType) === "SQUARE" ? "Квадрат" : "Кружок";
+        const sizeLabel = normalizeShapeType(zone.shapeType) === "SQUARE"
+            ? `${Math.max(1, Math.round(Number(zone.sideMeters || DEFAULT_SQUARE_SIDE)))} м`
+            : `${Math.max(1, Math.round(Number(zone.radius || DEFAULT_ZONE_RADIUS)))} м`;
+        const balloonContent = `
+            <strong>${escapeHtml(getZoneLabel(zone))}</strong><br>
+            Форма: ${shapeLabel}<br>
+            Lat: ${Number(zone.lat).toFixed(6)}<br>
+            Lon: ${Number(zone.lon).toFixed(6)}<br>
+            Размер: ${sizeLabel}
+        `;
+        const zoneObject = normalizeShapeType(zone.shapeType) === "SQUARE" &&
+            Array.isArray(zone.polygonCoords) &&
+            zone.polygonCoords.length >= 4
+            ? new ymaps.Polygon(
+                [zone.polygonCoords],
+                { balloonContent },
+                {
+                    fillColor: "#00c85355",
+                    strokeColor: "#1e88e5",
+                    strokeOpacity: 0.9,
+                    strokeWidth: 2,
+                }
+            )
+            : new ymaps.Circle([
+                [Number(zone.lat), Number(zone.lon)],
+                Number(zone.radius) || DEFAULT_ZONE_RADIUS,
+            ], {
+                balloonContent,
+            }, {
+                fillColor: "#00c85355",
+                strokeColor: "#1e88e5",
+                strokeOpacity: 0.9,
+                strokeWidth: 2,
+            });
 
-        map.geoObjects.add(circle);
-        return circle;
+        map.geoObjects.add(zoneObject);
+        return zoneObject;
     });
 }
 
@@ -1327,7 +1623,8 @@ async function fetchZones() {
         });
         if (!response.ok) return;
 
-        storageZones = await response.json();
+        const zonesPayload = await response.json();
+        storageZones = Array.isArray(zonesPayload) ? zonesPayload.map(normalizeZone) : [];
         renderZones();
         renderDashboard(latestTelemetry);
     } catch (error) {

@@ -10,6 +10,8 @@
     const REPORTS_ITEM_ID = "sidebar-reports";
     const REPORTS_PAGE = "reports.html";
     const REPORTS_ROUTE = "/reports";
+    const ADMIN_PAGE = "telemetry-admin.html";
+    const ADMIN_ROUTE = "/telemetry-admin";
     const body = document.body;
     const sidebar = document.getElementById("accordionSidebar");
 
@@ -147,7 +149,7 @@
             id: DIGEST_ITEM_ID,
             page: DIGEST_PAGE,
             route: DIGEST_ROUTE,
-            label: "Email digest",
+            label: "Уведомления",
             icon: "fa-envelope-open-text",
         });
     }
@@ -161,6 +163,29 @@
             icon: "fa-chart-bar",
             insertAfterHref: VIOLATIONS_PAGE,
         });
+    }
+
+    function syncAdminNavigationItem() {
+        const adminLink = sidebar.querySelector(`a[href="${ADMIN_PAGE}"]`);
+        const divider = sidebar.querySelector(".sidebar-divider.d-none.d-md-block");
+        const adminItem = adminLink ? adminLink.closest(".nav-item") : null;
+
+        if (!adminLink || !adminItem || !divider) {
+            return;
+        }
+
+        const isActive = getCurrentPageName() === ADMIN_PAGE || getNormalizedPathname() === ADMIN_ROUTE;
+        const label = "Админ панель";
+        const labelElement = adminLink.querySelector("span");
+
+        if (labelElement) {
+            labelElement.textContent = label;
+        }
+
+        adminLink.setAttribute("aria-label", label);
+        adminLink.classList.toggle("active", isActive);
+        adminItem.classList.toggle("active", isActive);
+        sidebar.insertBefore(adminItem, divider);
     }
 
     function syncFromCurrentMarkup() {
@@ -194,6 +219,7 @@
     ensureViolationsNavigationItem();
     ensureReportsNavigationItem();
     ensureDigestNavigationItem();
+    syncAdminNavigationItem();
     syncNavLabels();
 
     if (isDesktopViewport()) {
