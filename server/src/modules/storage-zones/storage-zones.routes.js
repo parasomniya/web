@@ -3,6 +3,8 @@ import prisma from "../../database.js"
 import { requireReadAccess, requireWriteAccess } from "../../middleware/auth.js"
 
 const router = Router()
+const DEFAULT_RADIUS = 20
+const DEFAULT_SIDE_METERS = 40
 
 function parseId(value) {
   const id = parseInt(value, 10)
@@ -27,9 +29,79 @@ function parseNumberField(value) {
   return Number.isFinite(parsed) ? parsed : NaN
 }
 
+function normalizeShapeType(value) {
+  const normalized = String(value || 'CIRCLE').trim().toUpperCase()
+  return normalized === 'SQUARE' ? 'SQUARE' : 'CIRCLE'
+}
+
+function parsePolygonCoords(value) {
+  if (!value) return null
+
+  let parsed = value
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value)
+    } catch {
+      return null
+    }
+  }
+
+  if (!Array.isArray(parsed) || parsed.length < 4) return null
+
+  const normalized = parsed.map((point) => {
+    if (!Array.isArray(point) || point.length < 2) return null
+    const lat = Number(point[0])
+    const lon = Number(point[1])
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      return null
+    }
+
+    return [lat, lon]
+  })
+
+  return normalized.every(Boolean) ? normalized : null
+}
+
+function buildSquareMetaFromBounds(minLat, minLon, maxLat, maxLon) {
+  const normalizedMinLat = Math.min(minLat, maxLat)
+  const normalizedMaxLat = Math.max(minLat, maxLat)
+  const normalizedMinLon = Math.min(minLon, maxLon)
+  const normalizedMaxLon = Math.max(minLon, maxLon)
+  const lat = (normalizedMinLat + normalizedMaxLat) / 2
+  const lon = (normalizedMinLon + normalizedMaxLon) / 2
+  const latMeters = (normalizedMaxLat - normalizedMinLat) * 111320
+  const lonMeters = (normalizedMaxLon - normalizedMinLon) * Math.max(Math.cos(lat * Math.PI / 180) * 111320, 1)
+
+  return {
+    lat,
+    lon,
+    sideMeters: Math.max(latMeters, lonMeters),
+    squareMinLat: normalizedMinLat,
+    squareMinLon: normalizedMinLon,
+    squareMaxLat: normalizedMaxLat,
+    squareMaxLon: normalizedMaxLon
+  }
+}
+
+function buildSquareMetaFromPolygon(polygonCoords) {
+  const lats = polygonCoords.map((point) => Number(point[0]))
+  const lons = polygonCoords.map((point) => Number(point[1]))
+  const minLat = Math.min(...lats)
+  const maxLat = Math.max(...lats)
+  const minLon = Math.min(...lons)
+  const maxLon = Math.max(...lons)
+  const meta = buildSquareMetaFromBounds(minLat, minLon, maxLat, maxLon)
+
+  return {
+    ...meta,
+    polygonCoords: JSON.stringify(polygonCoords)
+  }
+}
+
 function normalizeZonePayload(body, options = {}) {
   const { partial = false } = options
   const data = {}
+  const shapeType = normalizeShapeType(body.shapeType)
 
   if (!partial || body.name !== undefined) {
     const name = String(body.name || '').trim()
@@ -47,7 +119,7 @@ function normalizeZonePayload(body, options = {}) {
     data.ingredient = ingredient
   }
 
-  if (!partial || body.lat !== undefined) {
+  if (shapeType !== 'SQUARE' && (!partial || body.lat !== undefined)) {
     const lat = parseNumberField(body.lat)
     if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
       return { ok: false, error: 'Неверный формат широты (lat)' }
@@ -55,7 +127,7 @@ function normalizeZonePayload(body, options = {}) {
     data.lat = lat
   }
 
-  if (!partial || body.lon !== undefined) {
+  if (shapeType !== 'SQUARE' && (!partial || body.lon !== undefined)) {
     const lon = parseNumberField(body.lon)
     if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
       return { ok: false, error: 'Неверный формат долготы (lon)' }
@@ -63,12 +135,96 @@ function normalizeZonePayload(body, options = {}) {
     data.lon = lon
   }
 
-  if (!partial || body.radius !== undefined) {
-    const radius = body.radius === undefined ? 20.0 : parseNumberField(body.radius)
-    if (!Number.isFinite(radius) || radius <= 0) {
-      return { ok: false, error: 'Неверный радиус зоны' }
+  data.shapeType = shapeType
+
+  if (shapeType === 'SQUARE') {
+    const lat = parseNumberField(body.lat)
+    const lon = parseNumberField(body.lon)
+    const sideMeters = body.sideMeters === undefined ? DEFAULT_SIDE_METERS : parseNumberField(body.sideMeters)
+    const squareMinLat = parseNumberField(body.squareMinLat)
+    const squareMinLon = parseNumberField(body.squareMinLon)
+    const squareMaxLat = parseNumberField(body.squareMaxLat)
+    const squareMaxLon = parseNumberField(body.squareMaxLon)
+    const polygonCoords = parsePolygonCoords(body.polygonCoords)
+
+    let meta = null
+
+    if (polygonCoords) {
+      meta = buildSquareMetaFromPolygon(polygonCoords)
+    } else if (
+      Number.isFinite(squareMinLat) &&
+      Number.isFinite(squareMinLon) &&
+      Number.isFinite(squareMaxLat) &&
+      Number.isFinite(squareMaxLon)
+    ) {
+      if (
+        squareMinLat < -90 || squareMinLat > 90 ||
+        squareMaxLat < -90 || squareMaxLat > 90 ||
+        squareMinLon < -180 || squareMinLon > 180 ||
+        squareMaxLon < -180 || squareMaxLon > 180
+      ) {
+        return { ok: false, error: 'Неверные координаты углов квадрата' }
+      }
+
+      meta = buildSquareMetaFromBounds(squareMinLat, squareMinLon, squareMaxLat, squareMaxLon)
+    } else {
+      if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+        return { ok: false, error: 'Неверный формат широты (lat)' }
+      }
+
+      if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
+        return { ok: false, error: 'Неверный формат долготы (lon)' }
+      }
+
+      if (!Number.isFinite(sideMeters) || sideMeters <= 0) {
+        return { ok: false, error: 'Неверная длина стороны квадрата' }
+      }
+
+      const halfSideMeters = sideMeters / 2
+      const latDelta = halfSideMeters / 111320
+      const lonDelta = halfSideMeters / Math.max(Math.cos(lat * Math.PI / 180) * 111320, 1)
+
+      meta = {
+        lat,
+        lon,
+        sideMeters,
+        squareMinLat: lat - latDelta,
+        squareMinLon: lon - lonDelta,
+        squareMaxLat: lat + latDelta,
+        squareMaxLon: lon + lonDelta,
+        polygonCoords: JSON.stringify([
+          [lat + latDelta, lon - lonDelta],
+          [lat + latDelta, lon + lonDelta],
+          [lat - latDelta, lon + lonDelta],
+          [lat - latDelta, lon - lonDelta]
+        ])
+      }
     }
-    data.radius = radius
+
+    data.lat = meta.lat
+    data.lon = meta.lon
+    data.sideMeters = meta.sideMeters
+    data.polygonCoords = meta.polygonCoords
+    data.squareMinLat = meta.squareMinLat
+    data.squareMinLon = meta.squareMinLon
+    data.squareMaxLat = meta.squareMaxLat
+    data.squareMaxLon = meta.squareMaxLon
+    data.radius = DEFAULT_RADIUS
+  } else {
+    if (!partial || body.radius !== undefined) {
+      const radius = body.radius === undefined ? DEFAULT_RADIUS : parseNumberField(body.radius)
+      if (!Number.isFinite(radius) || radius <= 0) {
+        return { ok: false, error: 'Неверный радиус зоны' }
+      }
+      data.radius = radius
+    }
+
+    data.sideMeters = null
+    data.polygonCoords = null
+    data.squareMinLat = null
+    data.squareMinLon = null
+    data.squareMaxLat = null
+    data.squareMaxLon = null
   }
 
   if (!partial || body.active !== undefined) {

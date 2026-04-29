@@ -48,6 +48,13 @@ model StorageZone {
   lat        Float
   lon        Float
   radius     Float    @default(15.0)
+  shapeType  String   @default("CIRCLE")
+  sideMeters Float?
+  polygonCoords String?
+  squareMinLat Float?
+  squareMinLon Float?
+  squareMaxLat Float?
+  squareMaxLon Float?
   ingredient String
   active     Boolean  @default(true)
   createdAt  DateTime @default(now())
