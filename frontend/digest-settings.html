@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='50' font-size='48'%3E%F0%9F%90%84%3C/text%3E%3C/svg%3E">
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <title>Email digest</title>
+
+    <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
+
+    <link href="css/sb-admin-2.min.css" rel="stylesheet">
+    <link href="css/custom.css?v=20260428b" rel="stylesheet">
+    <script src="js/app-auth.js?v=20260428b"></script>
+</head>
+
+<body id="page-top">
+
+    <div id="wrapper">
+
+        <ul class="navbar-nav bg-gradient-primary sidebar sidebar-dark accordion" id="accordionSidebar">
+
+            <a class="sidebar-brand d-flex align-items-center justify-content-center" href="index.html">
+                <div class="sidebar-brand-icon">
+                    <i class="fas fa-tractor"></i>
+                </div>
+                <div class="sidebar-brand-text mx-3">Кормление КРС</div>
+            </a>
+
+            <hr class="sidebar-divider my-0">
+
+            <li class="nav-item nav-item-home">
+                <a class="nav-link" href="index.html">
+                    <i class="fas fa-fw fa-home"></i>
+                    <span>Главная</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="tables.html">
+                    <i class="fas fa-fw fa-table"></i>
+                    <span>Замесы</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="rations.html">
+                    <i class="fas fa-fw fa-utensils"></i>
+                    <span>Рационы</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="groups.html">
+                    <i class="fas fa-fw fa-tractor"></i>
+                    <span>Группы</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="map-zones.html">
+                    <i class="fas fa-fw fa-map"></i>
+                    <span>Зоны хранения</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="telemetry-admin.html">
+                    <i class="fas fa-fw fa-broadcast-tower"></i>
+                    <span>Телеметрия</span>
+                </a>
+            </li>
+
+            <hr class="sidebar-divider d-none d-md-block">
+
+            <div class="text-center d-none d-md-inline">
+                <button class="rounded-circle border-0" id="sidebarToggle"></button>
+            </div>
+
+        </ul>
+
+        <div id="content-wrapper" class="d-flex flex-column">
+
+            <div id="content">
+
+                <nav class="navbar navbar-expand navbar-light bg-white topbar mb-4 static-top shadow">
+
+                    <button id="sidebarToggleTop" class="btn btn-link d-md-none rounded-circle mr-3">
+                        <i class="fa fa-bars"></i>
+                    </button>
+
+                    <span class="ml-3 font-weight-bold">Настройки email-дайджеста</span>
+
+                </nav>
+
+                <div class="container-fluid">
+                    <div data-page-alerts></div>
+
+                    <h1 class="h3 mb-4 text-gray-800">Настройки email-дайджеста</h1>
+
+                    <div class="card shadow mb-4 digest-hero-card">
+                        <div class="card-body p-4">
+                            <div class="d-flex align-items-center justify-content-between flex-wrap mb-3">
+                                <h6 class="m-0 font-weight-bold text-primary">Сводка</h6>
+                                <div class="small text-gray-600" id="digestUpdatedAt">Изменения еще не сохранены</div>
+                            </div>
+                            <div class="digest-hero-stats">
+                                <div class="digest-hero-stat">
+                                    <div class="digest-hero-stat__label">Статус</div>
+                                    <div id="digestSummaryStatus" class="digest-hero-stat__value">Выключен</div>
+                                </div>
+                                <div class="digest-hero-stat">
+                                    <div class="digest-hero-stat__label">Расписание</div>
+                                    <div id="digestSummarySchedule" class="digest-hero-stat__value">Не задано</div>
+                                </div>
+                                <div class="digest-hero-stat">
+                                    <div class="digest-hero-stat__label">Получатели</div>
+                                    <div id="digestSummaryRecipients" class="digest-hero-stat__value">0 адресов</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-xl-8">
+                            <form id="digestSettingsForm">
+                                <div class="card shadow mb-4">
+                                    <div class="card-header py-3 digest-toolbar">
+                                        <h6 class="m-0 font-weight-bold text-primary">Параметры рассылки</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="digestFormState" class="digest-state mb-4" role="status" aria-live="polite">
+                                            Готово
+                                        </div>
+
+                                        <div class="digest-toggle-card p-3 p-md-4 mb-4">
+                                            <div class="digest-toggle-card__row">
+                                                <div class="digest-toggle-card__title">Ежедневный digest</div>
+
+                                                <label class="digest-switch mb-0">
+                                                    <input id="digestEnabled" class="digest-switch__input" type="checkbox" data-digest-input>
+                                                    <span class="digest-switch__control" aria-hidden="true"></span>
+                                                    <span id="digestEnabledLabel" class="digest-switch__label">Выключен</span>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div class="row">
+                                            <div class="col-md-6 mb-4">
+                                                <label class="digest-section-label" for="digestSenderEmail">Email отправителя</label>
+                                                <input id="digestSenderEmail" type="email" class="form-control" placeholder="digest@company.ru" data-digest-input>
+                                            </div>
+
+                                            <div class="col-md-3 mb-4">
+                                                <label class="digest-section-label" for="digestSendTime">Время отправки</label>
+                                                <input id="digestSendTime" type="time" class="form-control" data-digest-input>
+                                            </div>
+
+                                            <div class="col-md-3 mb-4">
+                                                <label class="digest-section-label" for="digestTimezone">Часовой пояс</label>
+                                                <select id="digestTimezone" class="form-control" data-digest-input>
+                                                    <option value="Asia/Novosibirsk">Asia/Novosibirsk</option>
+                                                    <option value="Asia/Omsk">Asia/Omsk</option>
+                                                    <option value="Asia/Krasnoyarsk">Asia/Krasnoyarsk</option>
+                                                    <option value="Europe/Moscow">Europe/Moscow</option>
+                                                    <option value="UTC">UTC</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="mb-3">
+                                            <label class="digest-section-label" for="digestRecipientInput">Получатели</label>
+                                            <div class="digest-recipient-entry">
+                                                <input id="digestRecipientInput" type="email" class="form-control" placeholder="director@company.ru" data-digest-input>
+                                                <button id="digestAddRecipientButton" type="button" class="btn btn-outline-primary" data-digest-input>
+                                                    <i class="fas fa-plus mr-1"></i>
+                                                    Добавить
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div id="digestRecipientsEmpty" class="digest-recipient-empty">
+                                            Получатели еще не добавлены.
+                                        </div>
+                                        <div id="digestRecipientsList" class="digest-recipient-list mt-3"></div>
+
+                                        <div data-readonly-banner class="digest-readonly-banner d-none">
+                                            У вас только просмотр. Сохранять изменения настроек дайджеста могут пользователи с правом записи.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="card shadow mb-4">
+                                    <div class="card-header py-3">
+                                        <h6 class="m-0 font-weight-bold text-primary">Действия</h6>
+                                    </div>
+                                    <div class="card-body d-flex flex-column flex-sm-row justify-content-sm-end">
+                                        <div class="d-flex flex-column flex-sm-row">
+                                            <button id="digestResetButton" type="button" class="btn btn-outline-secondary mb-2 mb-sm-0 mr-sm-2" data-requires-write hidden>
+                                                Сбросить
+                                            </button>
+                                            <button id="digestTestButton" type="button" class="btn btn-outline-primary mb-2 mb-sm-0 mr-sm-2" data-requires-write hidden>
+                                                Тест
+                                            </button>
+                                            <button id="digestSaveButton" type="submit" class="btn btn-primary" data-requires-write hidden>
+                                                Сохранить настройки
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="col-xl-4">
+                            <div class="card shadow mb-4 digest-preview-card">
+                                <div class="card-header py-3">
+                                    <h6 class="m-0 font-weight-bold text-primary">Превью</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="digest-preview-stack">
+                                        <div class="digest-preview-block">
+                                            <div class="digest-preview-block__label">Статус</div>
+                                            <div id="digestPreviewStatus" class="digest-preview-block__value">Выключен</div>
+                                        </div>
+
+                                        <div class="digest-preview-block">
+                                            <div class="digest-preview-block__label">Отправитель</div>
+                                            <div id="digestPreviewSender" class="digest-preview-block__value">Не задан</div>
+                                        </div>
+
+                                        <div class="digest-preview-block">
+                                            <div class="digest-preview-block__label">Расписание</div>
+                                            <div id="digestPreviewSchedule" class="digest-preview-block__value">Не задано</div>
+                                        </div>
+
+                                        <div class="digest-preview-block">
+                                            <div class="digest-preview-block__label">Получатели</div>
+                                            <div id="digestPreviewRecipientsCount" class="digest-preview-block__value">0 адресов</div>
+                                            <div id="digestPreviewRecipientsList" class="digest-recipient-preview"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <footer class="sticky-footer bg-white">
+
+                <div class="container my-auto">
+                    <div class="copyright text-center my-auto">
+                        <span>© Система контроля рациона</span>
+                    </div>
+                </div>
+
+            </footer>
+
+        </div>
+
+    </div>
+
+    <a class="scroll-to-top rounded" href="#page-top">
+        <i class="fas fa-angle-up"></i>
+    </a>
+
+    <script src="vendor/jquery/jquery.min.js"></script>
+    <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
+    <script src="js/sb-admin-2.min.js"></script>
+    <script src="js/sidebar-enhancements.js?v=20260428b"></script>
+    <script src="js/digest-settings.js?v=20260428b"></script>
+
+</body>
+
+</html>

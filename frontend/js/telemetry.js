@@ -78,6 +78,28 @@ function formatShortNumber(value, digits = 1) {
     return Number.isNaN(number) ? "--" : number.toFixed(digits);
 }
 
+function formatBytes(value) {
+    if (value === null || value === undefined || value === "") return "--";
+
+    const number = Number(value);
+    if (Number.isNaN(number)) return "--";
+
+    if (Math.abs(number) < 1024) {
+        return `${number} B`;
+    }
+
+    const units = ["KB", "MB", "GB"];
+    let size = number / 1024;
+    let unitIndex = 0;
+
+    while (Math.abs(size) >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex += 1;
+    }
+
+    return `${formatShortNumber(size, size >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
 function boolBadge(value) {
     const enabled = value === true || value === 1 || value === "true";
     return `<span class="telemetry-badge ${enabled ? "ok" : "warn"}">${enabled ? "Да" : "Нет"}</span>`;
@@ -241,7 +263,7 @@ function renderRtkSummary(latest, missing) {
     setText("rtkDevice", latest?.deviceId || "--");
     setText("rtkLastPacket", formatDateTime(latest?.timestamp));
     setText("rtkQuality", latest?.qualityLabel || latest?.rtkQuality || (latest?.quality != null ? `Q${latest.quality}` : "--"));
-    setText("rtkAge", latest?.quality != null ? `Q${latest.quality}` : (latest?.rtkAge != null ? `${formatShortNumber(latest.rtkAge, 1)} c` : "--"));
+    setText("rtkAge", latest?.rtkAge != null ? `${formatShortNumber(latest.rtkAge, 1)} c` : "--");
     setText("rtkValid", latest?.valid == null ? "--" : (latest.valid ? "Да" : "Нет"));
     setText("rtkCoordinates", latest ? `${formatNumber(latest.lat)}, ${formatNumber(latest.lon)}` : "--");
     setText("rtkZone", latest?.zone?.name || "--");
@@ -250,7 +272,7 @@ function renderRtkSummary(latest, missing) {
     setText("rtkRssi", latest?.rssiDbm != null ? `${latest.rssiDbm} dBm` : "--");
     setText("rtkSdReady", latest?.sdReady == null ? "--" : (latest.sdReady ? "Готова" : "Нет"));
     setText("rtkQueue", latest?.ramQueueLen != null ? String(latest.ramQueueLen) : "--");
-    setText("rtkHeap", latest?.freeHeapBytes != null ? `${latest.freeHeapBytes} B` : "--");
+    setText("rtkHeap", formatBytes(latest?.freeHeapBytes));
 }
 
 function renderRtkTable(rows, missing) {
@@ -258,12 +280,12 @@ function renderRtkTable(rows, missing) {
     if (!tbody) return;
 
     if (missing) {
-        tbody.innerHTML = '<tr><td colspan="15" class="telemetry-empty-state">RTK API недоступен.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="16" class="telemetry-empty-state">RTK API недоступен.</td></tr>';
         return;
     }
 
     if (!Array.isArray(rows) || rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="15" class="telemetry-empty-state">По RTK пока нет записей.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="16" class="telemetry-empty-state">По RTK пока нет записей.</td></tr>';
         return;
     }
 
@@ -282,7 +304,7 @@ function renderRtkTable(rows, missing) {
             <td>${row.wifiConnected == null ? "--" : `${row.wifiConnected ? "Да" : "Нет"}${row.wifiSsid ? ` · ${row.wifiSsid}` : ""}`}</td>
             <td>${row.rssiDbm != null ? `${row.rssiDbm} dBm` : "--"}</td>
             <td>${row.sdReady == null ? "--" : (row.sdReady ? "Да" : "Нет")}</td>
-            <td>${row.freeHeapBytes != null ? row.freeHeapBytes : "--"}</td>
+            <td>${formatBytes(row.freeHeapBytes)}</td>
             <td>${row.zone?.name || "--"}</td>
             <td class="telemetry-extra">${formatExtra(row)}</td>
         </tr>

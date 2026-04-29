@@ -2,7 +2,7 @@
 <html lang="ru">
 
 <head>
-    <link rel="icon" href="data:,">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='50' font-size='48'%3E%F0%9F%90%84%3C/text%3E%3C/svg%3E">
 
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -14,9 +14,9 @@
     <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
 
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
-    <link href="css/custom.css?v=20260426b" rel="stylesheet">
-    <script src="js/auth-route-alias.js?v=20260419a"></script>
-    <script src="js/app-auth.js?v=20260419a"></script>
+    <link href="css/custom.css?v=20260429a" rel="stylesheet">
+    <script src="js/auth-route-alias.js?v=20260428b"></script>
+    <script src="js/app-auth.js?v=20260428b"></script>
 
 </head>
 
@@ -53,6 +53,13 @@
                 <a class="nav-link" href="rations.html">
                     <i class="fas fa-fw fa-utensils"></i>
                     <span>Рационы</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="groups.html">
+                    <i class="fas fa-fw fa-tractor"></i>
+                    <span>Группы</span>
                 </a>
             </li>
 
@@ -134,6 +141,13 @@
                                         <span class="map-action-button__label">Экран</span>
                                     </button>
                                 </div>
+                                <div class="map-telemetry-stack" aria-label="RTK статус на карте">
+                                    <div class="map-telemetry-chip map-telemetry-chip--unknown" id="dashboardRtkMapChip">
+                                        <div class="map-telemetry-chip__label">RTK</div>
+                                        <div class="map-telemetry-chip__value" id="dashboardRtkMapChipState">Нет данных</div>
+                                        <div class="map-telemetry-chip__meta" id="dashboardRtkMapChipQuality">Quality: --</div>
+                                    </div>
+                                </div>
                                 <div class="map-marker-legend" aria-label="Обозначения меток">
                                     <div class="map-marker-legend__item">
                                         <span class="map-marker-legend__dot map-marker-legend__dot--host"></span>
@@ -162,6 +176,13 @@
 
                         <div class="card-body dashboard-status-card dashboard-current-state">
                             <div id="dashboardCurrentStateNotice" class="dashboard-inline-state d-none" role="status" aria-live="polite"></div>
+                            <div id="dashboardWarningsSection" class="dashboard-section" aria-live="polite" data-requires-admin hidden>
+                                <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-3">
+                                    <div id="dashboardWarningsHeading" class="text-xs font-weight-bold text-primary text-uppercase mb-2 mb-md-0"></div>
+                                    <div id="dashboardWarningsMeta" class="dashboard-section-meta">--</div>
+                                </div>
+                                <div id="dashboardWarningsList" class="dashboard-warning-list"></div>
+                            </div>
 
                             <div class="row">
                                 <div class="col-lg-3 col-md-6 mb-4 mb-lg-0">
@@ -261,12 +282,12 @@
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
 
     <script src="js/sb-admin-2.min.js"></script>
-    <script src="js/sidebar-enhancements.js?v=20260403a"></script>
+    <script src="js/sidebar-enhancements.js?v=20260428b"></script>
 
     <script src="https://api-maps.yandex.ru/2.1/?apikey=3c050799-23a3-4bd9-a14a-b7eaf2e05511&lang=ru_RU"></script>
 
-    <script src="js/dashboard.js?v=20260426d"></script>
-    <script src="js/dashboard-current-state.js?v=20260426c"></script>
+    <script src="js/dashboard.js?v=20260428a"></script>
+    <script src="js/dashboard-current-state.js?v=20260429a"></script>
 
 </body>
 

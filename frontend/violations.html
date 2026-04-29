@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='50' font-size='48'%3E%F0%9F%90%84%3C/text%3E%3C/svg%3E">
+
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <title>Нарушения</title>
+
+    <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
+
+    <link href="css/sb-admin-2.min.css" rel="stylesheet">
+    <link href="css/custom.css?v=20260429b" rel="stylesheet">
+    <script src="js/app-auth.js?v=20260429a"></script>
+</head>
+
+<body id="page-top">
+
+    <div id="wrapper">
+
+        <ul class="navbar-nav bg-gradient-primary sidebar sidebar-dark accordion" id="accordionSidebar">
+
+            <a class="sidebar-brand d-flex align-items-center justify-content-center" href="index.html">
+                <div class="sidebar-brand-icon">
+                    <i class="fas fa-tractor"></i>
+                </div>
+                <div class="sidebar-brand-text mx-3">Кормление КРС</div>
+            </a>
+
+            <hr class="sidebar-divider my-0">
+
+            <li class="nav-item nav-item-home">
+                <a class="nav-link" href="index.html">
+                    <i class="fas fa-fw fa-home"></i>
+                    <span>Главная</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="tables.html">
+                    <i class="fas fa-fw fa-table"></i>
+                    <span>Замесы</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="rations.html">
+                    <i class="fas fa-fw fa-utensils"></i>
+                    <span>Рационы</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="groups.html">
+                    <i class="fas fa-fw fa-tractor"></i>
+                    <span>Группы</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="map-zones.html">
+                    <i class="fas fa-fw fa-map"></i>
+                    <span>Зоны хранения</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="telemetry-admin.html">
+                    <i class="fas fa-fw fa-broadcast-tower"></i>
+                    <span>Телеметрия</span>
+                </a>
+            </li>
+
+            <hr class="sidebar-divider d-none d-md-block">
+
+            <div class="text-center d-none d-md-inline">
+                <button class="rounded-circle border-0" id="sidebarToggle"></button>
+            </div>
+
+        </ul>
+
+        <div id="content-wrapper" class="d-flex flex-column">
+
+            <div id="content">
+
+                <nav class="navbar navbar-expand navbar-light bg-white topbar mb-4 static-top shadow">
+
+                    <button id="sidebarToggleTop" class="btn btn-link d-md-none rounded-circle mr-3">
+                        <i class="fa fa-bars"></i>
+                    </button>
+
+                    <span class="ml-3 font-weight-bold">Нарушения</span>
+
+                </nav>
+
+                <div class="container-fluid">
+                    <div data-page-alerts></div>
+
+                    <div class="d-sm-flex align-items-center justify-content-between mb-4">
+                        <div>
+                            <h1 class="h3 mb-1 text-gray-800">Нарушения</h1>
+                            <p class="mb-0 text-muted">Таблица подготовлена под будущий источник данных <code>/api/violations</code>.</p>
+                        </div>
+                        <button id="violationsReloadButton" type="button" class="btn btn-outline-primary btn-sm mt-3 mt-sm-0">
+                            <i class="fas fa-sync-alt mr-1"></i>
+                            Обновить
+                        </button>
+                    </div>
+
+                    <div id="violationsSourceBanner" class="alert alert-light border-left-info shadow-sm mb-4" role="status">
+                        Загружаем журнал нарушений...
+                    </div>
+
+                    <div class="violations-summary-grid mb-4">
+                        <div class="violations-summary-card violations-summary-card--critical">
+                            <div class="violations-summary-card__label">Критичные</div>
+                            <div id="violationsCriticalCount" class="violations-summary-card__value">0</div>
+                        </div>
+                        <div class="violations-summary-card violations-summary-card--attention">
+                            <div class="violations-summary-card__label">Открытые</div>
+                            <div id="violationsOpenCount" class="violations-summary-card__value">0</div>
+                        </div>
+                        <div class="violations-summary-card violations-summary-card--progress">
+                            <div class="violations-summary-card__label">В работе</div>
+                            <div id="violationsProgressCount" class="violations-summary-card__value">0</div>
+                        </div>
+                        <div class="violations-summary-card violations-summary-card--closed">
+                            <div class="violations-summary-card__label">Закрытые</div>
+                            <div id="violationsClosedCount" class="violations-summary-card__value">0</div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow mb-4">
+                        <div class="card-header py-3 d-sm-flex align-items-center justify-content-between">
+                            <div>
+                                <h6 class="m-0 font-weight-bold text-primary">Журнал нарушений</h6>
+                            </div>
+                            <div class="d-flex align-items-center mt-3 mt-sm-0">
+                                <span id="violationsSourceBadge" class="violations-source-badge mr-2">Источник: API</span>
+                                <span id="violationsPanelMeta" class="small text-muted">Загрузка...</span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="violations-toolbar mb-3">
+                                <div class="violations-filters">
+                                    <div>
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="violationsDateFilter">Дата</label>
+                                        <input id="violationsDateFilter" type="date" class="form-control">
+                                    </div>
+                                    <div>
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="violationsTypeFilter">Тип</label>
+                                        <select id="violationsTypeFilter" class="custom-select">
+                                            <option value="">Все типы</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="violationsGroupFilter">Группа</label>
+                                        <select id="violationsGroupFilter" class="custom-select">
+                                            <option value="">Все группы</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="violationsComponentFilter">Компонент</label>
+                                        <select id="violationsComponentFilter" class="custom-select">
+                                            <option value="">Все компоненты</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="violationsScopeFilter">Показывать</label>
+                                        <select id="violationsScopeFilter" class="custom-select">
+                                            <option value="all">Все</option>
+                                            <option value="open">Только открытые</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-bordered mb-0 violations-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Дата</th>
+                                            <th>Замес</th>
+                                            <th>Группа</th>
+                                            <th>Компонент</th>
+                                            <th>Тип нарушения</th>
+                                            <th>План</th>
+                                            <th>Факт</th>
+                                            <th>Отклонение</th>
+                                            <th>Статус</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="violationsTableBody">
+                                        <tr>
+                                            <td colspan="9" class="violations-empty-state">Загрузка нарушений...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <footer class="sticky-footer bg-white">
+                <div class="container my-auto">
+                    <div class="copyright text-center my-auto">
+                        <span>© Система контроля рациона</span>
+                    </div>
+                </div>
+            </footer>
+
+        </div>
+
+    </div>
+
+    <a class="scroll-to-top rounded" href="#page-top">
+        <i class="fas fa-angle-up"></i>
+    </a>
+
+    <script src="vendor/jquery/jquery.min.js"></script>
+    <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
+
+    <script src="js/sb-admin-2.min.js"></script>
+    <script src="js/sidebar-enhancements.js?v=20260429b"></script>
+    <script src="js/violations.js?v=20260429a"></script>
+
+</body>
+
+</html>

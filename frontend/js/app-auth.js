@@ -8,6 +8,10 @@
     const LOGIN_ROUTE = "/login";
     const RESET_PASSWORD_PAGE = "reset-password.html";
     const RESET_PASSWORD_ROUTE = "/reset-password";
+    const DIGEST_SETTINGS_PAGE = "digest-settings.html";
+    const DIGEST_SETTINGS_ROUTE = "/digest/settings";
+    const VIOLATIONS_PAGE = "violations.html";
+    const REPORTS_PAGE = "reports.html";
     const ADMIN_TELEMETRY_PAGE = "telemetry-admin.html";
     const BATCH_DETAILS_PAGE = "batch-details.html";
 
@@ -18,12 +22,17 @@
     const APP_PAGES = new Set([
         "index.html",
         "tables.html",
+        VIOLATIONS_PAGE,
+        REPORTS_PAGE,
         "rations.html",
+        "groups.html",
         BATCH_DETAILS_PAGE,
+        DIGEST_SETTINGS_PAGE,
         "map-zones.html",
         ADMIN_TELEMETRY_PAGE,
     ]);
     const ADMIN_ONLY_PAGES = new Set([ADMIN_TELEMETRY_PAGE]);
+    const GUEST_RESTRICTED_PAGES = new Set([DIGEST_SETTINGS_PAGE]);
 
     const WRITE_ROLES = new Set([ROLE_ADMIN, ROLE_DIRECTOR]);
 
@@ -176,6 +185,10 @@
         return getRole() === ROLE_ADMIN;
     }
 
+    function isGuest() {
+        return getRole() === ROLE_GUEST;
+    }
+
     function hasWriteAccess() {
         return WRITE_ROLES.has(getRole());
     }
@@ -201,6 +214,10 @@
 
     function isResetPasswordPage() {
         return getCurrentPageName() === RESET_PASSWORD_PAGE || getNormalizedPathname() === RESET_PASSWORD_ROUTE;
+    }
+
+    function isDigestSettingsPage() {
+        return getCurrentPageName() === DIGEST_SETTINGS_PAGE || getNormalizedPathname() === DIGEST_SETTINGS_ROUTE;
     }
 
     function buildUrl(pageName, params) {
@@ -407,7 +424,6 @@
                 credentials: "same-origin",
             });
         } catch (error) {
-            // local session cleanup below is enough for frontend logout
         } finally {
             clearSession();
             window.location.replace(buildUrl(LOGIN_ROUTE));
@@ -490,6 +506,21 @@
         });
     }
 
+    function hideDigestNavigation() {
+        if (!isGuest()) {
+            return;
+        }
+
+        document.querySelectorAll('a[href="digest-settings.html"], a[href="/digest/settings"]').forEach((link) => {
+            const navItem = link.closest(".nav-item");
+            if (navItem) {
+                navItem.style.display = "none";
+            } else {
+                link.style.display = "none";
+            }
+        });
+    }
+
     function applyReadOnlyState() {
         const canWrite = hasWriteAccess();
         const admin = isAdmin();
@@ -513,6 +544,7 @@
 
     function guardCurrentPage() {
         const pageName = getCurrentPageName();
+        const isDigestPage = isDigestSettingsPage();
 
         if (isLoginPage()) {
             if (isAuthenticated()) {
@@ -527,9 +559,11 @@
             return true;
         }
 
-        if (!APP_PAGES.has(pageName)) {
+        if (!APP_PAGES.has(pageName) && !isDigestPage) {
             return true;
         }
+
+        const effectivePageName = isDigestPage ? DIGEST_SETTINGS_PAGE : pageName;
 
         const token = getToken();
 
@@ -548,7 +582,12 @@
             return false;
         }
 
-        if (ADMIN_ONLY_PAGES.has(pageName) && !isAdmin()) {
+        if (ADMIN_ONLY_PAGES.has(effectivePageName) && !isAdmin()) {
+            redirectToHome("no-access");
+            return false;
+        }
+
+        if (GUEST_RESTRICTED_PAGES.has(effectivePageName) && isGuest()) {
             redirectToHome("no-access");
             return false;
         }
@@ -559,6 +598,7 @@
     function initPageChrome() {
         consumeErrorMessage();
         hideTelemetryNavigation();
+        hideDigestNavigation();
         applyReadOnlyState();
         renderAccountPanel();
     }
@@ -577,6 +617,7 @@
         getUsername,
         hasWriteAccess,
         isAdmin,
+        isGuest,
         isAuthenticated,
         dismissAlerts,
         logout,
