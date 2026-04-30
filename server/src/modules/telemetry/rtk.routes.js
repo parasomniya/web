@@ -2,7 +2,6 @@ import { Router } from 'express'
 import prisma from '../../database.js'
 import { authenticate, requireAdmin, requireReadAccess } from '../../middleware/auth.js'
 import { calculateHaversine, detectZoneObject } from '../../../../module-1/geo.js'
-import { TELEMETRY_FRESHNESS_MS, isFreshTimestamp } from './telemetry-helpers.js'
 
 const router = Router()
 const DEFAULT_RECENT_LIMIT = 5
@@ -51,27 +50,76 @@ function getRequestedDeviceId(req) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
+function mapQualityLabel(quality) {
+  switch (quality) {
+    case 0:
+      return 'invalid_fix'
+    case 1:
+      return 'gps_fix'
+    case 2:
+      return 'dgps'
+    case 4:
+      return 'rtk_fixed'
+    case 5:
+      return 'rtk_float'
+    default:
+      return quality == null ? null : `quality_${quality}`
+  }
+}
+
+function resolveQualityLabel(rawLabel, quality) {
+  if (rawLabel !== undefined && rawLabel !== null && String(rawLabel).trim() !== '') {
+    return String(rawLabel).trim()
+  }
+
+  return mapQualityLabel(quality)
+}
+
+function resolveWifiConnected(raw, wifiProfile, rssiDbm) {
+  const explicit = parseBoolean(raw.wifi_connected ?? raw.wifiConnected)
+  if (explicit !== null) {
+    return explicit
+  }
+
+  const normalizedProfile = typeof wifiProfile === 'string'
+    ? wifiProfile.trim().toLowerCase()
+    : ''
+
+  if (normalizedProfile === 'primary' || normalizedProfile === 'fallback') {
+    return true
+  }
+
+  if (normalizedProfile === 'disconnected' || normalizedProfile === 'unknown') {
+    return false
+  }
+
+  if (rssiDbm !== null) {
+    return true
+  }
+
+  return null
+}
+
 function normalizeRtkPacket(raw) {
   const timestamp = parseTimestamp(raw.timestamp)
   const lat = parseNumber(raw.lat)
   const lon = parseNumber(raw.lon)
-  const qualityLabelRaw = raw.quality_label ?? raw.rtkQuality ?? raw.rtk_quality ?? raw.solution_label
   const qualityNumberRaw = raw.quality ?? raw.fixQuality ?? raw.fix_quality ?? raw.solution
-  const rtkQualityRaw = qualityLabelRaw ?? qualityNumberRaw
-  const fixTypeRaw = raw.fixType ?? raw.fix_type ?? raw.mode ?? raw.solutionType ?? raw.solution_type ?? qualityLabelRaw ?? qualityNumberRaw
+  const quality = parseInteger(qualityNumberRaw)
+  const qualityLabelRaw = raw.quality_label ?? raw.rtkQuality ?? raw.rtk_quality ?? raw.solution_label
+  const resolvedQualityLabel = resolveQualityLabel(qualityLabelRaw, quality)
+  const fixTypeRaw = raw.fixType ?? raw.fix_type ?? raw.mode ?? raw.solutionType ?? raw.solution_type ?? resolvedQualityLabel ?? qualityNumberRaw
 
   return {
     deviceId: String(raw.deviceId || raw.device_id || 'host_01').trim() || 'host_01',
     timestamp,
     lat,
     lon,
-    rtkQuality: rtkQualityRaw !== undefined && rtkQualityRaw !== null && String(rtkQualityRaw).trim() !== ''
-      ? String(rtkQualityRaw).trim()
-      : null,
-    rtkAge: parseNumber(raw.rtkAge ?? raw.rtk_age ?? raw.age ?? raw.ageSeconds ?? raw.age_seconds),
+    rtkQuality: resolvedQualityLabel,
+    rtkAge: parseNumber(raw.corr_age_s ?? raw.corrAgeS ?? raw.rtkAge ?? raw.rtk_age ?? raw.age ?? raw.ageSeconds ?? raw.age_seconds),
     speed: parseNumber(raw.speed ?? raw.speedKmh ?? raw.speed_kmh),
     course: parseNumber(raw.course ?? raw.heading ?? raw.azimuth),
-    supplyVoltage: parseNumber(raw.supplyVoltage ?? raw.supply_voltage ?? raw.voltage ?? raw.vcc),
+    supplyVoltage: parseNumber(raw.supplyVoltage ?? raw.supply_voltage ?? raw.voltage),
     satellites: parseInteger(raw.satellites ?? raw.gpsSatellites ?? raw.gps_satellites ?? raw.sats ?? raw.sat_count),
     fixType: fixTypeRaw !== undefined && fixTypeRaw !== null && String(fixTypeRaw).trim() !== ''
       ? String(fixTypeRaw).trim()
@@ -113,6 +161,10 @@ function buildEmptyRtkResponse(deviceId = null) {
     valid: null,
     quality: null,
     qualityLabel: null,
+    qualityFlag: null,
+    hacc: null,
+    vacc: null,
+    corrAgeS: null,
     rawGga: null,
     eventsReaderOk: null,
     wifiConnected: null,
@@ -166,18 +218,29 @@ function serializeRtkTelemetry(row, zones = []) {
 
   const raw = parseRawPayload(row.rawPayload) || {}
   const zone = detectZoneObject(row.lat, row.lon, zones)
+  const quality = parseInteger(raw.quality ?? raw.fixQuality ?? raw.fix_quality ?? raw.solution)
+  const qualityLabel = resolveQualityLabel(
+    raw.quality_label ?? raw.rtkQuality ?? raw.rtk_quality ?? row.rtkQuality,
+    quality
+  )
+  const rssiDbm = parseInteger(raw.rssi_dbm ?? raw.rssiDbm)
+  const wifiProfile = raw.wifi_profile ?? raw.wifiProfile ?? null
 
   return {
     ...row,
-    valid: parseBoolean(raw.valid),
-    quality: parseInteger(raw.quality),
-    qualityLabel: raw.quality_label ?? raw.rtkQuality ?? raw.rtk_quality ?? row.rtkQuality ?? null,
+    valid: parseBoolean(raw.valid) ?? (quality != null ? quality > 0 : null),
+    quality,
+    qualityLabel,
+    qualityFlag: qualityLabel,
+    hacc: parseNumber(raw.hacc),
+    vacc: parseNumber(raw.vacc),
+    corrAgeS: parseNumber(raw.corr_age_s ?? raw.corrAgeS ?? raw.rtkAge ?? raw.rtk_age ?? row.rtkAge),
     rawGga: raw.raw_gga ?? raw.rawGga ?? null,
     eventsReaderOk: parseBoolean(raw.events_reader_ok ?? raw.eventsReaderOk),
-    wifiConnected: parseBoolean(raw.wifi_connected ?? raw.wifiConnected),
+    wifiConnected: resolveWifiConnected(raw, wifiProfile, rssiDbm),
     wifiSsid: raw.wifi_ssid ?? raw.wifiSsid ?? null,
-    wifiProfile: raw.wifi_profile ?? raw.wifiProfile ?? null,
-    rssiDbm: parseInteger(raw.rssi_dbm ?? raw.rssiDbm),
+    wifiProfile,
+    rssiDbm,
     sdReady: parseBoolean(raw.sd_ready ?? raw.sdReady),
     ramQueueLen: parseInteger(raw.ram_queue_len ?? raw.ramQueueLen),
     freeHeapBytes: parseInteger(raw.free_heap_bytes ?? raw.freeHeapBytes),
