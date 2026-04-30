@@ -100,6 +100,29 @@ function resolveWifiConnected(raw, wifiProfile, rssiDbm) {
   return null
 }
 
+function sanitizeAccuracyMeters(value, hasValidFix) {
+  const parsed = parseNumber(value)
+
+  if (parsed === null || !hasValidFix) {
+    return null
+  }
+
+  if (parsed < 0 || parsed > 10000) {
+    return null
+  }
+
+  return parsed
+}
+
+function sanitizeRawGga(value, hasValidFix) {
+  if (!hasValidFix || typeof value !== 'string') {
+    return null
+  }
+
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
 function normalizeRtkPacket(raw) {
   const timestamp = parseTimestamp(raw.timestamp)
   const lat = parseNumber(raw.lat)
@@ -225,17 +248,19 @@ function serializeRtkTelemetry(row, zones = []) {
   )
   const rssiDbm = parseInteger(raw.rssi_dbm ?? raw.rssiDbm)
   const wifiProfile = raw.wifi_profile ?? raw.wifiProfile ?? null
+  const valid = parseBoolean(raw.valid) ?? (quality != null ? quality > 0 : null)
+  const hasValidFix = valid === true
 
   return {
     ...row,
-    valid: parseBoolean(raw.valid) ?? (quality != null ? quality > 0 : null),
+    valid,
     quality,
     qualityLabel,
     qualityFlag: qualityLabel,
-    hacc: parseNumber(raw.hacc),
-    vacc: parseNumber(raw.vacc),
+    hacc: sanitizeAccuracyMeters(raw.hacc, hasValidFix),
+    vacc: sanitizeAccuracyMeters(raw.vacc, hasValidFix),
     corrAgeS: parseNumber(raw.corr_age_s ?? raw.corrAgeS ?? raw.rtkAge ?? raw.rtk_age ?? row.rtkAge),
-    rawGga: raw.raw_gga ?? raw.rawGga ?? null,
+    rawGga: sanitizeRawGga(raw.raw_gga ?? raw.rawGga ?? null, hasValidFix),
     eventsReaderOk: parseBoolean(raw.events_reader_ok ?? raw.eventsReaderOk),
     wifiConnected: resolveWifiConnected(raw, wifiProfile, rssiDbm),
     wifiSsid: raw.wifi_ssid ?? raw.wifiSsid ?? null,
