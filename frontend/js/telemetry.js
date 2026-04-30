@@ -154,7 +154,8 @@ function formatExtra(row) {
     if (row.supplyVoltage != null) parts.push(`voltage:${formatShortNumber(row.supplyVoltage, 1)}`);
     if (row.wifiProfile) parts.push(`wifi:${row.wifiProfile}`);
     if (row.rawGga) parts.push(`gga:${String(row.rawGga).slice(0, 28)}...`);
-    return parts.length ? parts.join(", ") : "--";
+    if (parts.length === 0) return "--";
+    return parts.join(", ");
 }
 
 async function fetchJson(url) {
