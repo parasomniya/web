@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
 
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
-    <link href="css/custom.css?v=20260429d" rel="stylesheet">
+    <link href="css/custom.css?v=20260501a" rel="stylesheet">
     <script src="js/app-auth.js?v=20260419a"></script>
 </head>
 
@@ -420,6 +420,50 @@
                         </div>
                     </section>
 
+                    <div class="card shadow mb-4">
+                        <div class="card-header py-3 d-sm-flex align-items-center justify-content-between">
+                            <div>
+                                <h6 class="m-0 font-weight-bold text-primary">Настройки телеметрии</h6>
+                                <div class="small text-muted mt-1" id="telemetrySettingsMeta">Загрузка настроек...</div>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <form id="telemetrySettingsForm">
+                                <div class="row telemetry-settings-grid">
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryBatchStartThresholdKg">Старт замеса, кг</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryBatchStartThresholdKg" name="batchStartThresholdKg" required>
+                                        <small class="form-text text-muted">Минимальный прирост веса, после которого начинается замес.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryLeftoverThresholdKg">Остаток, кг</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryLeftoverThresholdKg" name="leftoverThresholdKg" required>
+                                        <small class="form-text text-muted">Порог для фиксации нарушения по остатку после выгрузки.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryUnloadDropThresholdKg">Падение веса, кг</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryUnloadDropThresholdKg" name="unloadDropThresholdKg" required>
+                                        <small class="form-text text-muted">Разница между пиком и текущим весом для старта выгрузки.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryUnloadMinPeakKg">Пик выгрузки, кг</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryUnloadMinPeakKg" name="unloadMinPeakKg" required>
+                                        <small class="form-text text-muted">Минимальный пик веса, после которого вообще можно считать выгрузку.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryUnloadUpdateDeltaKg">Шаг обновления, кг</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryUnloadUpdateDeltaKg" name="unloadUpdateDeltaKg" required>
+                                        <small class="form-text text-muted">Минимальное изменение веса для обновления прогресса выгрузки.</small>
+                                    </div>
+                                </div>
+                                <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                                    <div class="small text-muted" id="telemetrySettingsState">Настройки влияют на старт замеса, выгрузку и остаток.</div>
+                                    <button type="submit" class="btn btn-primary" id="telemetrySettingsSubmitButton">Сохранить настройки</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
                         </div>
 
                         <div class="tab-pane fade" id="adminUsersPanel" role="tabpanel" aria-labelledby="adminUsersTab">
@@ -444,7 +488,7 @@
                                             <th>Email</th>
                                             <th>Роль</th>
                                             <th>Дата регистрации</th>
-                                            <th class="text-center">Удалить</th>
+                                            <th class="text-center">Действия</th>
                                         </tr>
                                     </thead>
                                     <tbody id="usersTableBody">
@@ -517,13 +561,43 @@
         </div>
     </div>
 
+    <div class="modal fade" id="editUserModal" tabindex="-1" role="dialog" aria-labelledby="editUserModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <form id="editUserForm">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="editUserModalLabel">Редактировать пользователя</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Закрыть">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="editUserId" name="id">
+                        <div class="form-group">
+                            <label for="editUserName">Логин</label>
+                            <input type="text" class="form-control" id="editUserName" name="username" autocomplete="off" required>
+                        </div>
+                        <div class="form-group mb-0">
+                            <label for="editUserEmail">Email</label>
+                            <input type="email" class="form-control" id="editUserEmail" name="email" autocomplete="off" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light border" data-dismiss="modal">Отмена</button>
+                        <button type="submit" class="btn btn-primary" id="editUserSubmitButton">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="vendor/jquery/jquery.min.js"></script>
     <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260429d"></script>
-    <script src="js/telemetry.js?v=20260430c"></script>
-    <script src="js/admin-users.js?v=20260420a"></script>
+    <script src="js/telemetry.js?v=20260501a"></script>
+    <script src="js/admin-users.js?v=20260501a"></script>
 
 </body>
 

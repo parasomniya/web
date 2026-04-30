@@ -3,7 +3,9 @@ import prisma from "../../database.js"
 import { authenticate, requireAdmin, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js"
 import telemetryProcessor from '../../../../module-3/telemetryProcessor.js'
 import { buildIngredientSummary, buildUnloadProgress, recalculateBatchViolations } from '../batches/batch-violations.js'
-import { getZoneByCoordinates, resolveEffectiveCoordinates } from './telemetry-helpers.js'
+import { getZoneByCoordinates, resolveEffectiveCoordinates, resolveGroupByCoordinates } from './telemetry-helpers.js'
+import { getTelemetrySettings } from './telemetry-settings.js'
+import { recordLeftoverViolation } from '../violations/violation-service.js'
 
 const router = Router()
 
@@ -138,7 +140,10 @@ router.post('/', async (req, res) => {
     const deviceId = packet.deviceId;
 
     // 1. Достаем геозоны из базы
-    const activeZones = await prisma.storageZone.findMany({ where: { active: true } });
+    const [activeZones, telemetrySettings] = await Promise.all([
+      prisma.storageZone.findMany({ where: { active: true } }),
+      getTelemetrySettings(prisma)
+    ]);
     const effectivePosition = await resolveEffectiveCoordinates(prisma, packet, {
       deviceId,
       referenceTime: packet.timestamp
@@ -148,169 +153,233 @@ router.post('/', async (req, res) => {
       lat: effectivePosition.lat,
       lon: effectivePosition.lon
     };
+    const resolvedGroup = await resolveGroupByCoordinates(prisma, effectivePosition.lat, effectivePosition.lon);
 
     // Вся валидация координат, смена зон и расчет дельт
-    const result = telemetryProcessor.processPacket(processorPacket, activeZones);
+    const result = telemetryProcessor.processPacket(processorPacket, activeZones, telemetrySettings);
 
     if (!result.isValid) {
       console.warn(`[Фильтр] Отброшен невалидный пакет от ${deviceId}:`, result.error);
       return res.status(400).json({ error: result.error || 'Invalid coordinates' });
     }
 
-    // 3. Сохраняем сырую телеметрию в БД
-    const telemetry = await prisma.telemetry.create({
-      data: {
-        deviceId: deviceId,
-        timestamp: packet.timestamp,
-        lat: packet.lat,
-        lon: packet.lon,
-        gpsValid: packet.gpsValid,
-        gpsSatellites: packet.gpsSatellites,
-        weight: packet.weight,
-        weightValid: packet.weightValid,
-        gpsQuality: packet.gpsQuality,
-        wifiClients: Array.isArray(packet.wifiClients) ? JSON.stringify(packet.wifiClients) : String(packet.wifiClients || '[]'),
-        cpuTempC: packet.cpuTempC,
-        lteRssiDbm: packet.lteRssiDbm,
-        lteAccessTech: packet.lteAccessTech,
-        eventsReaderOk: packet.eventsReaderOk
-      }
-    });
+    let telemetry = null
+    await prisma.$transaction(async (tx) => {
+      telemetry = await tx.telemetry.create({
+        data: {
+          deviceId: deviceId,
+          timestamp: packet.timestamp,
+          lat: packet.lat,
+          lon: packet.lon,
+          gpsValid: packet.gpsValid,
+          gpsSatellites: packet.gpsSatellites,
+          weight: packet.weight,
+          weightValid: packet.weightValid,
+          gpsQuality: packet.gpsQuality,
+          wifiClients: Array.isArray(packet.wifiClients) ? JSON.stringify(packet.wifiClients) : String(packet.wifiClients || '[]'),
+          cpuTempC: packet.cpuTempC,
+          lteRssiDbm: packet.lteRssiDbm,
+          lteAccessTech: packet.lteAccessTech,
+          eventsReaderOk: packet.eventsReaderOk
+        }
+      })
 
-    // 4. ИСПОЛНЯЕМ КОМАНДЫ (dbActions)
-    if (result.dbActions && result.dbActions.length > 0) {
-      // Ищем текущий открытый замес
-      let activeBatch = await prisma.batch.findFirst({
+      if (!result.dbActions || result.dbActions.length === 0) {
+        return
+      }
+
+      let activeBatch = await tx.batch.findFirst({
         where: { deviceId, endTime: null },
         orderBy: { startTime: 'desc' }
-      });
-      const batchIdsToRecalculate = new Set();
-      const stickyViolationBatchIds = new Set();
+      })
+      const batchIdsToRecalculate = new Set()
+      const stickyViolationBatchIds = new Set()
+
+      async function bindBatchToResolvedGroup() {
+        if (!activeBatch || !resolvedGroup) {
+          return
+        }
+
+        const patch = {}
+
+        if (activeBatch.groupId !== resolvedGroup.id) {
+          patch.groupId = resolvedGroup.id
+        }
+
+        if (resolvedGroup.rationId && activeBatch.rationId !== resolvedGroup.rationId) {
+          patch.rationId = resolvedGroup.rationId
+        }
+
+        if (!Object.keys(patch).length) {
+          return
+        }
+
+        activeBatch = await tx.batch.update({
+          where: { id: activeBatch.id },
+          data: patch
+        })
+        batchIdsToRecalculate.add(activeBatch.id)
+      }
 
       for (const action of result.dbActions) {
         switch (action.type) {
           case 'START_BATCH':
             if (!activeBatch) {
-              activeBatch = await prisma.batch.create({
-                data: {
-                  deviceId,
-                  startTime: telemetry.timestamp,
-                  startWeight: Number(action.startWeight ?? telemetry.weight),
-                  hasViolations: false
+              const initialBatchData = {
+                deviceId,
+                startTime: telemetry.timestamp,
+                startWeight: Number(action.startWeight ?? telemetry.weight),
+                hasViolations: false
+              }
+
+              if (resolvedGroup) {
+                initialBatchData.groupId = resolvedGroup.id
+                if (resolvedGroup.rationId) {
+                  initialBatchData.rationId = resolvedGroup.rationId
                 }
-              });
-              console.log(`Открыт новый замес ${activeBatch.id} (${activeBatch.startWeight} кг)`);
+              }
+
+              activeBatch = await tx.batch.create({
+                data: initialBatchData
+              })
+              console.log(`Открыт новый замес ${activeBatch.id} (${activeBatch.startWeight} кг)`)
             }
-            break;
-          
+            break
+
           case 'ADD_INGREDIENT':
-            // Если добавить ингредиент, а замеса нет — создаем его
             if (!activeBatch) {
-              activeBatch = await prisma.batch.create({
-                data: {
-                  deviceId,
-                  startTime: telemetry.timestamp,
-                  startWeight: telemetry.weight, // Или можно брать action.startWeight
-                  hasViolations: false
+              const initialBatchData = {
+                deviceId,
+                startTime: telemetry.timestamp,
+                startWeight: telemetry.weight,
+                hasViolations: false
+              }
+
+              if (resolvedGroup) {
+                initialBatchData.groupId = resolvedGroup.id
+                if (resolvedGroup.rationId) {
+                  initialBatchData.rationId = resolvedGroup.rationId
                 }
-              });
+              }
+
+              activeBatch = await tx.batch.create({
+                data: initialBatchData
+              })
             }
-            // Пишем ингредиент
-            await prisma.batchIngredient.create({
+
+            await tx.batchIngredient.create({
               data: {
                 batchId: activeBatch.id,
                 ingredientName: action.ingredientName,
                 actualWeight: action.actualWeight
               }
-            });
-            batchIdsToRecalculate.add(activeBatch.id);
-            console.log(`Добавлен ингредиент: ${action.ingredientName} (${action.actualWeight} кг)`);
-            break;
+            })
+            batchIdsToRecalculate.add(activeBatch.id)
+            console.log(`Добавлен ингредиент: ${action.ingredientName} (${action.actualWeight} кг)`)
+            break
 
           case 'START_UNLOAD':
             if (activeBatch) {
-              await prisma.batch.update({
+              await bindBatchToResolvedGroup()
+              await tx.batch.update({
                 where: { id: activeBatch.id },
                 data: { endWeight: Number(action.startUnloadWeight ?? telemetry.weight) }
-              });
-              console.log(`Замес ${activeBatch.id}: началась выгрузка`);
+              })
+              console.log(`Замес ${activeBatch.id}: началась выгрузка`)
             }
-            break;
+            break
 
           case 'UPDATE_UNLOAD':
             if (activeBatch) {
-              await prisma.batch.update({
+              await bindBatchToResolvedGroup()
+              await tx.batch.update({
                 where: { id: activeBatch.id },
-                data: { endWeight: action.endWeight } // Просто обновляем остаток
-              });
+                data: { endWeight: action.endWeight }
+              })
             }
-            break;
+            break
 
           case 'LEFTOVER_VIOLATION':
             if (activeBatch) {
-              stickyViolationBatchIds.add(activeBatch.id);
-              await prisma.batch.update({
+              await bindBatchToResolvedGroup()
+              stickyViolationBatchIds.add(activeBatch.id)
+              await tx.batch.update({
                 where: { id: activeBatch.id },
                 data: {
                   hasViolations: true,
                   endWeight: Number(action.leftoverWeight ?? activeBatch.endWeight ?? telemetry.weight)
                 }
-              });
-              console.log(`Замес ${activeBatch.id}: зафиксирован остаток ${action.leftoverWeight} кг`);
+              })
+              await recordLeftoverViolation(tx, {
+                batchId: activeBatch.id,
+                deviceId,
+                leftoverWeight: Number(action.leftoverWeight ?? telemetry.weight),
+                detectedAt: telemetry.timestamp
+              })
+              console.log(`Замес ${activeBatch.id}: зафиксирован остаток ${action.leftoverWeight} кг`)
             }
-            break;
+            break
 
           case 'COMPLETE_BATCH':
             if (activeBatch) {
-              const completedBatchId = activeBatch.id;
-              await prisma.batch.update({
+              await bindBatchToResolvedGroup()
+              const completedBatchId = activeBatch.id
+              await tx.batch.update({
                 where: { id: activeBatch.id },
-                data: { endTime: telemetry.timestamp, endWeight: Number(action.endWeight ?? telemetry.weight) } // Закрываем замес
-              });
-              batchIdsToRecalculate.add(completedBatchId);
-              console.log(`Замес ${activeBatch.id} закрыт!`);
-              activeBatch = null;
+                data: {
+                  endTime: telemetry.timestamp,
+                  endWeight: Number(action.endWeight ?? telemetry.weight)
+                }
+              })
+              batchIdsToRecalculate.add(completedBatchId)
+              console.log(`Замес ${activeBatch.id} закрыт!`)
+              activeBatch = null
             }
-            break;
+            break
 
           case 'FORCE_CLOSE_BATCH':
             if (activeBatch) {
-              const closedBatchId = activeBatch.id;
-              stickyViolationBatchIds.add(closedBatchId);
-              await prisma.batch.update({
+              await bindBatchToResolvedGroup()
+              const closedBatchId = activeBatch.id
+              stickyViolationBatchIds.add(closedBatchId)
+              await tx.batch.update({
                 where: { id: activeBatch.id },
                 data: {
                   endTime: telemetry.timestamp,
                   endWeight: Number(action.closeWeight ?? telemetry.weight),
                   hasViolations: true
                 }
-              });
-              batchIdsToRecalculate.add(closedBatchId);
-              console.log(`Замес ${activeBatch.id} принудительно закрыт (недовыгрузка)!`);
+              })
+              batchIdsToRecalculate.add(closedBatchId)
+              console.log(`Замес ${activeBatch.id} принудительно закрыт (недовыгрузка)!`)
             }
-            // Сразу открываем новый с текущим остатком в кузове
-            activeBatch = await prisma.batch.create({
+
+            activeBatch = await tx.batch.create({
               data: {
                 deviceId,
                 startTime: telemetry.timestamp,
                 startWeight: Number(action.nextStartWeight ?? telemetry.weight),
-                hasViolations: false
+                hasViolations: false,
+                ...(resolvedGroup ? {
+                  groupId: resolvedGroup.id,
+                  ...(resolvedGroup.rationId ? { rationId: resolvedGroup.rationId } : {})
+                } : {})
               }
-            });
-            break;
+            })
+            break
         }
       }
 
       for (const batchId of batchIdsToRecalculate) {
-        await recalculateBatchViolations(prisma, batchId);
+        await recalculateBatchViolations(tx, batchId)
         if (stickyViolationBatchIds.has(batchId)) {
-          await prisma.batch.update({
+          await tx.batch.update({
             where: { id: batchId },
             data: { hasViolations: true }
-          });
+          })
         }
       }
-    }
+    })
 
     // Возвращаем ответ контроллеру трактора
     res.status(201).json({ status: 'ok', id: telemetry.id, banner: result.banner });

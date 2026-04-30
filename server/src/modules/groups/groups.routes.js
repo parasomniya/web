@@ -89,7 +89,7 @@ async function buildGroupData(payload, options = {}) {
         data.headcount = headcount;
     }
 
-    if (payload.rationId !== undefined || !allowPartial) {
+    if (payload.rationId !== undefined) {
         if (payload.rationId === null || payload.rationId === '') {
             data.rationId = null;
         } else {

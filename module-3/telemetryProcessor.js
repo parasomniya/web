@@ -29,7 +29,50 @@ export class TelemetryProcessor {
     return 'idle';
   }
 
-  processPacket(packet, zonesConfig) {
+  _resolveThresholds(settings = {}) {
+    return {
+      batchStartThresholdKg: Number(settings.batchStartThresholdKg) > 0 ? Number(settings.batchStartThresholdKg) : 30,
+      leftoverThresholdKg: Number(settings.leftoverThresholdKg) > 0 ? Number(settings.leftoverThresholdKg) : 50,
+      unloadDropThresholdKg: Number(settings.unloadDropThresholdKg) > 0 ? Number(settings.unloadDropThresholdKg) : 200,
+      unloadMinPeakKg: Number(settings.unloadMinPeakKg) > 0 ? Number(settings.unloadMinPeakKg) : 400,
+      unloadUpdateDeltaKg: Number(settings.unloadUpdateDeltaKg) > 0 ? Number(settings.unloadUpdateDeltaKg) : 1
+    };
+  }
+
+  _resolveSegmentIngredient(state) {
+    return state?.currentZone?.ingredient || state?.currentZone?.name || 'Unknown';
+  }
+
+  _flushCurrentSegment(state, currentWeight, thresholds, result, options = {}) {
+    const segmentEndWeight = Number(options.segmentEndWeight ?? currentWeight);
+    const delta = segmentEndWeight - Number(state.zoneStartWeight || 0);
+
+    if (!(delta > thresholds.batchStartThresholdKg)) {
+      return false;
+    }
+
+    if (!state.isBatchStarted) {
+      state.isBatchStarted = true;
+      result.dbActions.push({
+        type: 'START_BATCH',
+        startWeight: Math.round(state.zoneStartWeight)
+      });
+    }
+
+    const ingredientName = this._resolveSegmentIngredient(state);
+    state.isMixing = true;
+    state.lastIngredientName = ingredientName;
+
+    result.dbActions.push({
+      type: 'ADD_INGREDIENT',
+      ingredientName,
+      actualWeight: Math.round(delta)
+    });
+
+    return true;
+  }
+
+  processPacket(packet, zonesConfig, settings = {}) {
     const result = {
       isValid: true,
       error: null,
@@ -41,6 +84,7 @@ export class TelemetryProcessor {
     const lat = Number(packet.lat);
     const lon = Number(packet.lon);
     const currentWeight = Number(packet.weight || 0);
+    const thresholds = this._resolveThresholds(settings);
 
     if (!isValidLocation(lat, lon)) {
       result.isValid = false;
@@ -76,29 +120,7 @@ export class TelemetryProcessor {
 
     // ===== ШАГ 4: Детекция загрузки =====
     if ((state.currentZone?.name || null) !== activeZoneName) {
-      if (state.currentZone) {
-        const delta = currentWeight - state.zoneStartWeight;
-        
-        if (delta > 30) {
-          if (!state.isBatchStarted) {
-            state.isBatchStarted = true;
-            result.dbActions.push({
-              type: 'START_BATCH',
-              startWeight: Math.round(state.zoneStartWeight)
-            });
-          }
-
-          state.isMixing = true;
-          const ingredientName = state.currentZone.ingredient || state.currentZone.name || 'Unknown';
-          state.lastIngredientName = ingredientName;
-          
-          result.dbActions.push({
-            type: 'ADD_INGREDIENT',
-            ingredientName,
-            actualWeight: Math.round(delta)
-          });
-        }
-      }
+      this._flushCurrentSegment(state, currentWeight, thresholds, result);
 
       state.currentZone = activeZone ? { ...activeZone, ingredient: activeIngredientName } : null;
       state.zoneStartWeight = currentWeight;
@@ -108,11 +130,28 @@ export class TelemetryProcessor {
       state.peakWeight = currentWeight;
     }
 
+    // ===== ЯВНАЯ ДЕТЕКЦИЯ UNKNOWN ВНЕ ЗОН =====
+    if (
+      !activeZone &&
+      !state.isUnloading &&
+      !state.isBatchStarted &&
+      (currentWeight - Number(state.zoneStartWeight || 0)) > thresholds.batchStartThresholdKg
+    ) {
+      state.isBatchStarted = true;
+      state.isMixing = true;
+      state.lastIngredientName = 'Unknown';
+
+      result.dbActions.push({
+        type: 'START_BATCH',
+        startWeight: Math.round(state.zoneStartWeight)
+      });
+    }
+
     // ===== ШАГ 6: Защита от недовыгрузки =====
     if (state.isUnloading && Number.isFinite(state.lastUnloadWeight) && currentWeight > state.lastUnloadWeight + 50) {
       const leftoverWeight = state.lastUnloadWeight;
   
-      if (leftoverWeight > 50) {
+      if (leftoverWeight > thresholds.leftoverThresholdKg) {
         result.dbActions.push({
           type: 'LEFTOVER_VIOLATION',
           leftoverWeight: Math.round(leftoverWeight),
@@ -134,7 +173,15 @@ export class TelemetryProcessor {
     }
 
     // ===== ШАГ 7: Детекция выгрузки =====
-    if (!state.isUnloading && state.isMixing && state.peakWeight > 400 && currentWeight < state.peakWeight - 200) {
+    if (
+      !state.isUnloading &&
+      (state.isMixing || (currentWeight - Number(state.zoneStartWeight || 0)) > thresholds.batchStartThresholdKg) &&
+      state.peakWeight > thresholds.unloadMinPeakKg &&
+      currentWeight < state.peakWeight - thresholds.unloadDropThresholdKg
+    ) {
+      this._flushCurrentSegment(state, currentWeight, thresholds, result, {
+        segmentEndWeight: state.peakWeight
+      });
       state.isUnloading = true;
       state.lastUnloadWeight = currentWeight;
 
@@ -148,7 +195,11 @@ export class TelemetryProcessor {
         type: 'UPDATE_UNLOAD',
         endWeight: Math.round(currentWeight)
       });
-    } else if (state.isUnloading && Number.isFinite(state.lastUnloadWeight) && Math.abs(currentWeight - state.lastUnloadWeight) >= 1) {
+    } else if (
+      state.isUnloading &&
+      Number.isFinite(state.lastUnloadWeight) &&
+      Math.abs(currentWeight - state.lastUnloadWeight) >= thresholds.unloadUpdateDeltaKg
+    ) {
       state.lastUnloadWeight = currentWeight;
       result.dbActions.push({
         type: 'UPDATE_UNLOAD',
@@ -169,7 +220,7 @@ export class TelemetryProcessor {
     // 🆕 Добавляем явный режим в output state
     result.state = {
       currentZone: activeZoneName,
-      currentIngredient: activeIngredientName,
+      currentIngredient: activeIngredientName || (state.isMixing ? state.lastIngredientName : null),
       isMixing: state.isMixing,
       isUnloading: state.isUnloading,
       peakWeight: state.peakWeight,

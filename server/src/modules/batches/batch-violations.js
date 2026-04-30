@@ -1,4 +1,5 @@
 import { calculatePlan, checkViolations, normalizeIngredientName } from '../../../../module-2/rationManager.js';
+import { syncBatchViolationLog } from '../violations/violation-service.js';
 
 function round1(value) {
     return Math.round(Number(value || 0) * 10) / 10;
@@ -88,16 +89,14 @@ export async function recalculateBatchViolations(prisma, batchId, threshold = 10
     }
 
     if (!batch.ration || !batch.group || !batch.group.headcount) {
-        await prisma.$transaction([
-            prisma.batchIngredient.updateMany({
-                where: { batchId: batch.id },
-                data: { plannedWeight: null, isViolation: false }
-            }),
-            prisma.batch.update({
-                where: { id: batch.id },
-                data: { hasViolations: false }
-            })
-        ]);
+        await prisma.batchIngredient.updateMany({
+            where: { batchId: batch.id },
+            data: { plannedWeight: null, isViolation: false }
+        });
+        await prisma.batch.update({
+            where: { id: batch.id },
+            data: { hasViolations: false }
+        });
 
         return { status: 'skipped', reason: 'Batch has no ration/group assignment', hasViolations: false };
     }
@@ -108,19 +107,22 @@ export async function recalculateBatchViolations(prisma, batchId, threshold = 10
     const violationNames = new Set(check.violations.map((item) => normalizeIngredientName(item.ingredient)));
     const planByName = new Map(plan.ingredients.map((item) => [normalizeIngredientName(item.name), item.targetWeight]));
 
-    await prisma.$transaction([
-        ...batch.actualIngredients.map((ingredient) => prisma.batchIngredient.update({
+    for (const ingredient of batch.actualIngredients) {
+        await prisma.batchIngredient.update({
             where: { id: ingredient.id },
             data: {
                 plannedWeight: planByName.get(normalizeIngredientName(ingredient.ingredientName)) ?? 0,
                 isViolation: violationNames.has(normalizeIngredientName(ingredient.ingredientName))
             }
-        })),
-        prisma.batch.update({
-            where: { id: batch.id },
-            data: { hasViolations: check.violations.length > 0 }
-        })
-    ]);
+        });
+    }
+
+    await prisma.batch.update({
+        where: { id: batch.id },
+        data: { hasViolations: check.violations.length > 0 }
+    });
+
+    await syncBatchViolationLog(prisma, batch, check);
 
     return {
         status: 'ok',

@@ -7,6 +7,7 @@
   import telemetryRouter from './modules/telemetry/telemetry.routes.js'
   import rtkTelemetryRouter from './modules/telemetry/rtk.routes.js'
   import telemetryWarningsRouter from './modules/telemetry/warnings.routes.js'
+  import telemetrySettingsRouter from './modules/telemetry/telemetry-settings.routes.js'
   import storageZonesRouter from './modules/storage-zones/storage-zones.routes.js'
   import eventsRouter from './modules/events/events.routes.js'
   import { authenticate, extractTokenFromRequest, requireAdmin, requireReadAccess, verifyAccessToken } from './middleware/auth.js'
@@ -64,6 +65,7 @@
   app.use('/api/telemetry/host', telemetryRouter)
   app.use('/api/telemetry/rtk', rtkTelemetryRouter)
   app.use('/api/telemetry/warnings', telemetryWarningsRouter)
+  app.use('/api/telemetry/settings', telemetrySettingsRouter)
 
   // Зоны: разделяем доступ по ролям
   app.use('/api/telemetry/zones', authenticate, storageZonesRouter)

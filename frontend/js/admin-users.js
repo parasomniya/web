@@ -5,8 +5,14 @@
     const createUserModal = document.getElementById("createUserModal");
     const createUserSubmitButton = document.getElementById("createUserSubmitButton");
     const createUserRole = document.getElementById("createUserRole");
+    const editUserForm = document.getElementById("editUserForm");
+    const editUserModal = document.getElementById("editUserModal");
+    const editUserIdInput = document.getElementById("editUserId");
+    const editUserNameInput = document.getElementById("editUserName");
+    const editUserEmailInput = document.getElementById("editUserEmail");
+    const editUserSubmitButton = document.getElementById("editUserSubmitButton");
 
-    if (!usersTableBody || !createUserForm) {
+    if (!usersTableBody || !createUserForm || !editUserForm) {
         return;
     }
 
@@ -30,6 +36,8 @@
         pendingRoles: new Map(),
         roleUpdates: new Set(),
         deletions: new Set(),
+        editUserId: null,
+        isEditing: false,
     };
 
     function escapeHtml(value) {
@@ -139,6 +147,27 @@
         `;
     }
 
+    function getEditButtonMarkup(user) {
+        const userId = Number(user?.id);
+        const isBusy = state.isLoading || state.roleUpdates.has(userId) || state.deletions.has(userId) || (state.isEditing && state.editUserId === userId);
+        const iconMarkup = (state.isEditing && state.editUserId === userId)
+            ? '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>'
+            : '<i class="fas fa-pen" aria-hidden="true"></i>';
+
+        return `
+            <button
+                type="button"
+                class="btn btn-link text-primary p-0 admin-users-edit-button"
+                data-user-id="${userId}"
+                ${isBusy ? "disabled" : ""}
+                aria-label="Редактировать пользователя ${escapeHtml(user?.username || userId)}"
+                title="Редактировать пользователя"
+            >
+                ${iconMarkup}
+            </button>
+        `;
+    }
+
     function renderTableBody() {
         if (state.isLoading && !state.users.length) {
             usersTableBody.innerHTML = '<tr><td colspan="6" class="telemetry-empty-state">Загрузка пользователей...</td></tr>';
@@ -162,7 +191,12 @@
                 <td>${escapeHtml(user?.email || "-")}</td>
                 <td>${getRoleSelectMarkup(user)}</td>
                 <td>${formatCreatedAt(user?.createdAt)}</td>
-                <td class="text-center">${getDeleteButtonMarkup(user)}</td>
+                <td class="text-center">
+                    <div class="admin-users-actions">
+                        ${getEditButtonMarkup(user)}
+                        ${getDeleteButtonMarkup(user)}
+                    </div>
+                </td>
             </tr>
         `).join("");
     }
@@ -178,9 +212,21 @@
             : 'Создать';
     }
 
+    function updateEditButtonState() {
+        if (!editUserSubmitButton) {
+            return;
+        }
+
+        editUserSubmitButton.disabled = state.isEditing || state.isLoading;
+        editUserSubmitButton.innerHTML = state.isEditing
+            ? '<span class="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>Сохранение...'
+            : 'Сохранить';
+    }
+
     function syncUiState() {
         renderTableBody();
         updateCreateButtonState();
+        updateEditButtonState();
     }
 
     async function loadUsers(options) {
@@ -320,6 +366,34 @@
         }
     }
 
+    function openEditModal(user) {
+        if (!user || !editUserIdInput || !editUserNameInput || !editUserEmailInput) {
+            return;
+        }
+
+        state.editUserId = Number(user.id);
+        editUserIdInput.value = String(user.id);
+        editUserNameInput.value = user.username || "";
+        editUserEmailInput.value = user.email || "";
+        updateEditButtonState();
+
+        if (window.jQuery && editUserModal) {
+            window.jQuery(editUserModal).modal("show");
+        }
+    }
+
+    function closeEditModal() {
+        if (window.jQuery && editUserModal) {
+            window.jQuery(editUserModal).modal("hide");
+        }
+    }
+
+    function resetEditForm() {
+        editUserForm.reset();
+        state.editUserId = null;
+        updateEditButtonState();
+    }
+
     async function createUser(event) {
         event.preventDefault();
 
@@ -376,6 +450,71 @@
         }
     }
 
+    async function updateUser(event) {
+        event.preventDefault();
+
+        const formData = new FormData(editUserForm);
+        const userId = Number(formData.get("id"));
+        const username = String(formData.get("username") || "").trim();
+        const email = String(formData.get("email") || "").trim();
+        const existingUser = getUserById(userId);
+
+        if (!existingUser) {
+            showAlert("Пользователь не найден", "danger");
+            return;
+        }
+
+        if (!username) {
+            showAlert("Логин обязателен", "warning");
+            return;
+        }
+
+        if (!email) {
+            showAlert("Email обязателен", "warning");
+            return;
+        }
+
+        state.isEditing = true;
+        state.editUserId = userId;
+        syncUiState();
+
+        try {
+            const response = await fetch(`${USERS_API_URL}/${userId}`, {
+                method: "PATCH",
+                headers: getHeaders(true),
+                body: JSON.stringify({ username, email }),
+            });
+
+            if (!response.ok) {
+                const message = await readErrorMessage(response);
+                throw new Error(message || "Не удалось обновить пользователя");
+            }
+
+            const payload = await response.json();
+            const updatedUser = payload?.user || payload;
+
+            state.users = state.users.map((item) => (
+                Number(item?.id) === userId
+                    ? { ...item, ...updatedUser }
+                    : item
+            ));
+
+            if ((window.AppAuth?.getUsername?.() || "") === (existingUser.username || "") && window.AppAuth?.setSession && window.AppAuth?.getToken) {
+                window.AppAuth.setSession(window.AppAuth.getToken(), window.AppAuth.getRole?.(), updatedUser.username || username);
+            }
+
+            closeEditModal();
+            resetEditForm();
+            showAlert("Пользователь обновлен", "success");
+        } catch (error) {
+            showAlert(error.message || "Не удалось обновить пользователя", "danger");
+        } finally {
+            state.isEditing = false;
+            state.editUserId = null;
+            syncUiState();
+        }
+    }
+
     usersTableBody.addEventListener("change", (event) => {
         const select = event.target.closest(".admin-users-role-select");
         if (!select) {
@@ -388,6 +527,13 @@
     });
 
     usersTableBody.addEventListener("click", (event) => {
+        const editButton = event.target.closest(".admin-users-edit-button");
+        if (editButton) {
+            const userId = Number(editButton.dataset.userId);
+            openEditModal(getUserById(userId));
+            return;
+        }
+
         const button = event.target.closest(".admin-users-delete-button");
         if (!button) {
             return;
@@ -398,5 +544,11 @@
     });
 
     createUserForm.addEventListener("submit", createUser);
+    editUserForm.addEventListener("submit", updateUser);
+
+    if (window.jQuery && editUserModal) {
+        window.jQuery(editUserModal).on("hidden.bs.modal", resetEditForm);
+    }
+
     loadUsers({ silentError: false });
 })();

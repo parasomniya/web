@@ -91,7 +91,88 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
 });
 
 // ============================================================================
-// 3. PATCH /:id/role - Изменить роль пользователя
+// 3. PATCH /:id - Изменить логин и email пользователя
+// ============================================================================
+router.patch('/:id', authenticate, requireWriteAccess, async (req, res) => {
+    try {
+        const userId = parseUserId(req.params.id);
+        if (!userId) {
+            return res.status(400).json({ error: 'Некорректный ID пользователя' });
+        }
+
+        const existingUser = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                username: true,
+                email: true,
+                role: true,
+                createdAt: true,
+            }
+        });
+
+        if (!existingUser) {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+
+        const hasUsername = Object.prototype.hasOwnProperty.call(req.body || {}, 'username');
+        const hasEmail = Object.prototype.hasOwnProperty.call(req.body || {}, 'email');
+
+        if (!hasUsername && !hasEmail) {
+            return res.status(400).json({ error: 'Нет полей для обновления' });
+        }
+
+        const data = {};
+
+        if (hasUsername) {
+            const normalizedUsername = String(req.body.username || '').trim();
+            if (!normalizedUsername) {
+                return res.status(400).json({ error: 'Логин обязателен' });
+            }
+            data.username = normalizedUsername;
+        }
+
+        if (hasEmail) {
+            const rawEmail = req.body.email;
+            const normalizedEmail = rawEmail == null ? null : String(rawEmail).trim();
+
+            if (!isValidEmail(normalizedEmail)) {
+                return res.status(400).json({ error: 'Некорректный email' });
+            }
+
+            data.email = normalizedEmail || null;
+        }
+
+        const updatedUser = await prisma.user.update({
+            where: { id: userId },
+            data,
+            select: {
+                id: true,
+                username: true,
+                email: true,
+                role: true,
+                createdAt: true,
+            }
+        });
+
+        res.json({
+            status: 'ok',
+            message: 'Пользователь обновлен',
+            user: updatedUser,
+        });
+    } catch (error) {
+        console.error('[Ошибка PATCH /users/:id]:', error);
+
+        if (error.code === 'P2002') {
+            return res.status(409).json({ error: 'Пользователь с таким логином или email уже существует' });
+        }
+
+        res.status(500).json({ error: 'Ошибка сервера при обновлении пользователя' });
+    }
+});
+
+// ============================================================================
+// 4. PATCH /:id/role - Изменить роль пользователя
 // ============================================================================
 router.patch('/:id/role', authenticate, requireWriteAccess, async (req, res) => {
     try {
@@ -140,7 +221,7 @@ router.patch('/:id/role', authenticate, requireWriteAccess, async (req, res) => 
 });
 
 // ============================================================================
-// 4. DELETE /:id - Удаление пользователя
+// 5. DELETE /:id - Удаление пользователя
 // ============================================================================
 router.delete('/:id', authenticate, requireWriteAccess, async (req, res) => {
     try {
