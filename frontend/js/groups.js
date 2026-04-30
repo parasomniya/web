@@ -192,6 +192,11 @@ $(document).ready(function () {
     }
 
     function getStorageZoneForGroup(group) {
+        const storageZoneId = Number(group?.storageZoneId);
+        if (Number.isInteger(storageZoneId) && storageZoneId > 0) {
+            return getStorageZoneById(storageZoneId) || group?.storageZone || null;
+        }
+
         return state.storageZones.find((zone) => zonesMatchGroup(zone, group)) || null;
     }
 
@@ -520,6 +525,7 @@ $(document).ready(function () {
         return {
             headcount,
             rationId,
+            storageZoneId,
             lat,
             lon,
             radius,
@@ -761,8 +767,9 @@ $(document).ready(function () {
             return;
         }
 
+        let payload;
         try {
-            buildEditPayload();
+            payload = buildEditPayload();
         } catch (error) {
             showAlert(error.message, "warning");
             return;
@@ -775,9 +782,23 @@ $(document).ready(function () {
         renderTable();
 
         try {
-            showAlert(`Редактирование группы "${group?.name || state.editingGroupId}" пока работает как заглушка. Бэкенд не изменяем.`, "info");
+            const response = await fetch(`${GROUPS_API_URL}/${state.editingGroupId}`, {
+                method: "PUT",
+                headers: getHeaders(true),
+                credentials: "same-origin",
+                body: JSON.stringify(payload),
+            });
+
+            if (!response.ok) {
+                const message = await readErrorMessage(response);
+                throw new Error(message || "Не удалось обновить группу.");
+            }
+
+            showAlert(`Группа "${group?.name || state.editingGroupId}" обновлена.`, "success");
+            closeEditModal();
+            await loadPageData();
         } catch (error) {
-            showAlert(error?.message || "Не удалось открыть заглушку редактирования.", "danger");
+            showAlert(error?.message || "Не удалось обновить группу.", "danger");
         } finally {
             state.isEditing = false;
             updateEditFormState();
@@ -805,9 +826,23 @@ $(document).ready(function () {
         renderTable();
 
         try {
-            showAlert(`Удаление группы "${groupName}" пока оставлено заглушкой на фронте.`, "info");
+            const response = await fetch(`${GROUPS_API_URL}/${targetId}`, {
+                method: "DELETE",
+                headers: getHeaders(false),
+                credentials: "same-origin",
+            });
+
+            if (!response.ok) {
+                const message = await readErrorMessage(response);
+                throw new Error(message || "Не удалось удалить группу.");
+            }
+
+            const payload = await response.json().catch(() => null);
+            showAlert(payload?.message || `Группа "${groupName}" удалена.`, "success");
+            closeEditModal();
+            await loadPageData();
         } catch (error) {
-            showAlert(error?.message || "Не удалось открыть заглушку удаления.", "danger");
+            showAlert(error?.message || "Не удалось удалить группу.", "danger");
         } finally {
             state.isDeleting = false;
             updateEditFormState();

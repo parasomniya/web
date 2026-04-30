@@ -3,7 +3,6 @@ const RTK_API_BASE = window.AppAuth?.getApiUrl?.("/api/telemetry/rtk") || "/api/
 const ZONES_API = window.AppAuth?.getApiUrl?.("/api/telemetry/zones") || "/api/telemetry/zones";
 const CLEAR_HISTORY_API = `${API_BASE}/admin/truncate`;
 const HISTORY_LIMIT = 100000;
-const TEST_SECRET = "kill_all_telemetry_123";
 const DEFAULT_COORDS = [54.84, 83.09];
 const LATEST_POLL_INTERVAL_MS = 1000;
 const ZONES_POLL_INTERVAL_MS = 10000;
@@ -1571,10 +1570,7 @@ async function clearTelemetryHistory() {
         const snapshotRows = await fetchTelemetrySnapshot();
         const response = await fetch(CLEAR_HISTORY_API, {
             method: "DELETE",
-            headers: {
-                ...getHeaders(),
-                "x-test-secret": TEST_SECRET,
-            },
+            headers: getHeaders(),
         });
 
         if (!response.ok) {

@@ -148,7 +148,11 @@ function formatExtra(row) {
     const parts = [];
     if (row.speed != null) parts.push(`speed:${formatShortNumber(row.speed, 1)}`);
     if (row.course != null) parts.push(`course:${formatShortNumber(row.course, 0)}`);
+    if (row.hacc != null) parts.push(`hacc:${formatShortNumber(row.hacc, 3)}m`);
+    if (row.vacc != null) parts.push(`vacc:${formatShortNumber(row.vacc, 3)}m`);
+    if (row.corrAgeS != null) parts.push(`corr_age:${formatShortNumber(row.corrAgeS, 1)}s`);
     if (row.supplyVoltage != null) parts.push(`voltage:${formatShortNumber(row.supplyVoltage, 1)}`);
+    if (row.wifiProfile) parts.push(`wifi:${row.wifiProfile}`);
     if (row.rawGga) parts.push(`gga:${String(row.rawGga).slice(0, 28)}...`);
     return parts.length ? parts.join(", ") : "--";
 }
@@ -258,17 +262,24 @@ async function loadEvents() {
 
 function renderRtkSummary(latest, missing) {
     const rtkState = getTelemetryState(latest, "rtk");
+    const qualityValue = latest?.quality != null
+        ? `${latest.quality}${latest?.qualityLabel ? ` · ${latest.qualityLabel}` : ""}`
+        : (latest?.qualityLabel || latest?.rtkQuality || "--");
+    const corrAgeValue = latest?.corrAgeS ?? latest?.rtkAge;
+    const wifiLabel = latest?.wifiConnected == null
+        ? "--"
+        : `${latest.wifiConnected ? "Подключен" : "Отключен"}${latest?.wifiProfile ? ` · ${latest.wifiProfile}` : ""}${latest?.wifiSsid ? ` · ${latest.wifiSsid}` : ""}`;
 
     setText("rtkStatus", missing ? "API не подключён" : rtkState.label);
     setText("rtkDevice", latest?.deviceId || "--");
     setText("rtkLastPacket", formatDateTime(latest?.timestamp));
-    setText("rtkQuality", latest?.qualityLabel || latest?.rtkQuality || (latest?.quality != null ? `Q${latest.quality}` : "--"));
-    setText("rtkAge", latest?.rtkAge != null ? `${formatShortNumber(latest.rtkAge, 1)} c` : "--");
+    setText("rtkQuality", qualityValue);
+    setText("rtkAge", corrAgeValue != null ? `${formatShortNumber(corrAgeValue, 1)} c` : "--");
     setText("rtkValid", latest?.valid == null ? "--" : (latest.valid ? "Да" : "Нет"));
     setText("rtkCoordinates", latest ? `${formatNumber(latest.lat)}, ${formatNumber(latest.lon)}` : "--");
     setText("rtkZone", latest?.zone?.name || "--");
     setText("rtkSatellites", latest?.satellites != null ? String(latest.satellites) : "--");
-    setText("rtkWifi", latest?.wifiConnected == null ? "--" : `${latest.wifiConnected ? "Подключен" : "Отключен"}${latest?.wifiSsid ? ` (${latest.wifiSsid})` : ""}`);
+    setText("rtkWifi", wifiLabel);
     setText("rtkRssi", latest?.rssiDbm != null ? `${latest.rssiDbm} dBm` : "--");
     setText("rtkSdReady", latest?.sdReady == null ? "--" : (latest.sdReady ? "Готова" : "Нет"));
     setText("rtkQueue", latest?.ramQueueLen != null ? String(latest.ramQueueLen) : "--");

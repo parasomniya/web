@@ -3,6 +3,7 @@ import prisma from "../../database.js"
 import { authenticate, requireAdmin, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js"
 import telemetryProcessor from '../../../../module-3/telemetryProcessor.js'
 import { buildIngredientSummary, buildUnloadProgress, recalculateBatchViolations } from '../batches/batch-violations.js'
+import { getZoneByCoordinates, resolveEffectiveCoordinates } from './telemetry-helpers.js'
 
 const router = Router()
 
@@ -56,14 +57,16 @@ function getRequestedDeviceId(req) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-async function inferMachineStateFromDatabase(deviceId, latestTelemetry, activeBatch, memoryState = {}) {
+async function inferMachineStateFromDatabase(deviceId, latestTelemetry, activeBatch, memoryState = {}, options = {}) {
+  const currentZone = memoryState?.currentZone || options.currentZone || null
+
   if (!latestTelemetry) {
     return {
       mode: 'Ожидание',
       isMixing: false,
       isUnloading: false,
       peakWeight: 0,
-      currentZone: memoryState?.currentZone || null
+      currentZone
     }
   }
 
@@ -73,7 +76,7 @@ async function inferMachineStateFromDatabase(deviceId, latestTelemetry, activeBa
       isMixing: false,
       isUnloading: false,
       peakWeight: Number(latestTelemetry.weight || 0),
-      currentZone: memoryState?.currentZone || null
+      currentZone
     }
   }
 
@@ -122,7 +125,7 @@ async function inferMachineStateFromDatabase(deviceId, latestTelemetry, activeBa
     isMixing: mode === 'Загрузка',
     isUnloading: mode === 'Выгрузка',
     peakWeight,
-    currentZone: memoryState?.currentZone || null
+    currentZone
   }
 }
 
@@ -136,9 +139,18 @@ router.post('/', async (req, res) => {
 
     // 1. Достаем геозоны из базы
     const activeZones = await prisma.storageZone.findMany({ where: { active: true } });
+    const effectivePosition = await resolveEffectiveCoordinates(prisma, packet, {
+      deviceId,
+      referenceTime: packet.timestamp
+    });
+    const processorPacket = {
+      ...packet,
+      lat: effectivePosition.lat,
+      lon: effectivePosition.lon
+    };
 
     // Вся валидация координат, смена зон и расчет дельт
-    const result = telemetryProcessor.processPacket(packet, activeZones);
+    const result = telemetryProcessor.processPacket(processorPacket, activeZones);
 
     if (!result.isValid) {
       console.warn(`[Фильтр] Отброшен невалидный пакет от ${deviceId}:`, result.error);
@@ -172,9 +184,24 @@ router.post('/', async (req, res) => {
         where: { deviceId, endTime: null },
         orderBy: { startTime: 'desc' }
       });
+      const batchIdsToRecalculate = new Set();
+      const stickyViolationBatchIds = new Set();
 
       for (const action of result.dbActions) {
         switch (action.type) {
+          case 'START_BATCH':
+            if (!activeBatch) {
+              activeBatch = await prisma.batch.create({
+                data: {
+                  deviceId,
+                  startTime: telemetry.timestamp,
+                  startWeight: Number(action.startWeight ?? telemetry.weight),
+                  hasViolations: false
+                }
+              });
+              console.log(`Открыт новый замес ${activeBatch.id} (${activeBatch.startWeight} кг)`);
+            }
+            break;
           
           case 'ADD_INGREDIENT':
             // Если добавить ингредиент, а замеса нет — создаем его
@@ -196,8 +223,18 @@ router.post('/', async (req, res) => {
                 actualWeight: action.actualWeight
               }
             });
-            await recalculateBatchViolations(prisma, activeBatch.id);
+            batchIdsToRecalculate.add(activeBatch.id);
             console.log(`Добавлен ингредиент: ${action.ingredientName} (${action.actualWeight} кг)`);
+            break;
+
+          case 'START_UNLOAD':
+            if (activeBatch) {
+              await prisma.batch.update({
+                where: { id: activeBatch.id },
+                data: { endWeight: Number(action.startUnloadWeight ?? telemetry.weight) }
+              });
+              console.log(`Замес ${activeBatch.id}: началась выгрузка`);
+            }
             break;
 
           case 'UPDATE_UNLOAD':
@@ -206,7 +243,20 @@ router.post('/', async (req, res) => {
                 where: { id: activeBatch.id },
                 data: { endWeight: action.endWeight } // Просто обновляем остаток
               });
-              await recalculateBatchViolations(prisma, activeBatch.id);
+            }
+            break;
+
+          case 'LEFTOVER_VIOLATION':
+            if (activeBatch) {
+              stickyViolationBatchIds.add(activeBatch.id);
+              await prisma.batch.update({
+                where: { id: activeBatch.id },
+                data: {
+                  hasViolations: true,
+                  endWeight: Number(action.leftoverWeight ?? activeBatch.endWeight ?? telemetry.weight)
+                }
+              });
+              console.log(`Замес ${activeBatch.id}: зафиксирован остаток ${action.leftoverWeight} кг`);
             }
             break;
 
@@ -215,9 +265,9 @@ router.post('/', async (req, res) => {
               const completedBatchId = activeBatch.id;
               await prisma.batch.update({
                 where: { id: activeBatch.id },
-                data: { endTime: telemetry.timestamp, endWeight: telemetry.weight } // Закрываем замес
+                data: { endTime: telemetry.timestamp, endWeight: Number(action.endWeight ?? telemetry.weight) } // Закрываем замес
               });
-              await recalculateBatchViolations(prisma, completedBatchId);
+              batchIdsToRecalculate.add(completedBatchId);
               console.log(`Замес ${activeBatch.id} закрыт!`);
               activeBatch = null;
             }
@@ -226,11 +276,16 @@ router.post('/', async (req, res) => {
           case 'FORCE_CLOSE_BATCH':
             if (activeBatch) {
               const closedBatchId = activeBatch.id;
+              stickyViolationBatchIds.add(closedBatchId);
               await prisma.batch.update({
                 where: { id: activeBatch.id },
-                data: { endTime: telemetry.timestamp, endWeight: telemetry.weight, hasViolations: true }
+                data: {
+                  endTime: telemetry.timestamp,
+                  endWeight: Number(action.closeWeight ?? telemetry.weight),
+                  hasViolations: true
+                }
               });
-              await recalculateBatchViolations(prisma, closedBatchId);
+              batchIdsToRecalculate.add(closedBatchId);
               console.log(`Замес ${activeBatch.id} принудительно закрыт (недовыгрузка)!`);
             }
             // Сразу открываем новый с текущим остатком в кузове
@@ -238,11 +293,21 @@ router.post('/', async (req, res) => {
               data: {
                 deviceId,
                 startTime: telemetry.timestamp,
-                startWeight: telemetry.weight,
+                startWeight: Number(action.nextStartWeight ?? telemetry.weight),
                 hasViolations: false
               }
             });
             break;
+        }
+      }
+
+      for (const batchId of batchIdsToRecalculate) {
+        await recalculateBatchViolations(prisma, batchId);
+        if (stickyViolationBatchIds.has(batchId)) {
+          await prisma.batch.update({
+            where: { id: batchId },
+            data: { hasViolations: true }
+          });
         }
       }
     }
@@ -271,8 +336,8 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
     if (!data) return res.json(buildEmptyLatestResponse(requestedDeviceId));
 
     const memoryState = telemetryProcessor.getState(data.deviceId);
-
-    const activeBatch = await prisma.batch.findFirst({
+    const [activeBatch, activeZones, effectivePosition] = await Promise.all([
+      prisma.batch.findFirst({
       where: { deviceId: data.deviceId, endTime: null },
       include: {
         group: true,
@@ -280,9 +345,18 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
         actualIngredients: true
       },
       orderBy: { startTime: 'desc' }
-    });
+      }),
+      prisma.storageZone.findMany({ where: { active: true } }),
+      resolveEffectiveCoordinates(prisma, data, {
+        deviceId: data.deviceId,
+        referenceTime: data.timestamp
+      })
+    ]);
+    const detectedZone = getZoneByCoordinates(effectivePosition.lat, effectivePosition.lon, activeZones);
 
-    const machineState = await inferMachineStateFromDatabase(data.deviceId, data, activeBatch, memoryState);
+    const machineState = await inferMachineStateFromDatabase(data.deviceId, data, activeBatch, memoryState, {
+      currentZone: detectedZone?.name || null
+    });
 
     let mode = 'Ожидание';
     let unload_progress = null;
@@ -386,8 +460,6 @@ router.get('/admin/history', authenticate, requireAdmin, async (req, res) => {
 
 router.post('/admin/seed', authenticate, requireAdmin, async (req, res) => {
   try {
-    if (req.headers['x-test-secret'] !== 'kill_all_telemetry_123') return res.status(403).json({ error: 'Доступ запрещен' });
-    
     const points = [];
     let startLat = 52.52, startLon = 85.12;
     for (let i = 0; i < 20; i++) {
@@ -406,7 +478,6 @@ router.post('/admin/seed', authenticate, requireAdmin, async (req, res) => {
 
 router.delete('/admin/truncate', authenticate, requireWriteAccess, async (req, res) => {
   try {
-    if (req.headers['x-test-secret'] !== 'kill_all_telemetry_123') return res.status(403).json({ error: 'Доступ запрещен' });
     const deleted = await prisma.telemetry.deleteMany({});
     res.json({ status: 'ok', message: 'Таблица чиста', count: deleted.count });
   } catch (error) {

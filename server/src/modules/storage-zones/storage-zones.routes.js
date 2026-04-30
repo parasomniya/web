@@ -8,7 +8,7 @@ const DEFAULT_SIDE_METERS = 40
 
 function parseId(value) {
   const id = parseInt(value, 10)
-  return Number.isInteger(id) ? id : null
+  return Number.isInteger(id) && id > 0 ? id : null
 }
 
 function parseBooleanField(value) {
@@ -32,6 +32,10 @@ function parseNumberField(value) {
 function normalizeShapeType(value) {
   const normalized = String(value || 'CIRCLE').trim().toUpperCase()
   return normalized === 'SQUARE' ? 'SQUARE' : 'CIRCLE'
+}
+
+function normalizeZoneName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ')
 }
 
 function parsePolygonCoords(value) {
@@ -99,12 +103,14 @@ function buildSquareMetaFromPolygon(polygonCoords) {
 }
 
 function normalizeZonePayload(body, options = {}) {
-  const { partial = false } = options
+  const { partial = false, currentZone = null } = options
   const data = {}
-  const shapeType = normalizeShapeType(body.shapeType)
+  const shapeType = body.shapeType !== undefined
+    ? normalizeShapeType(body.shapeType)
+    : normalizeShapeType(currentZone?.shapeType)
 
   if (!partial || body.name !== undefined) {
-    const name = String(body.name || '').trim()
+    const name = normalizeZoneName(body.name)
     if (!name) {
       return { ok: false, error: 'Название зоны не может быть пустым' }
     }
@@ -112,7 +118,7 @@ function normalizeZonePayload(body, options = {}) {
   }
 
   if (!partial || body.ingredient !== undefined) {
-    const ingredient = String(body.ingredient || '').trim()
+    const ingredient = normalizeZoneName(body.ingredient)
     if (!ingredient) {
       return { ok: false, error: 'Ингредиент не может быть пустым' }
     }
@@ -120,7 +126,7 @@ function normalizeZonePayload(body, options = {}) {
   }
 
   if (shapeType !== 'SQUARE' && (!partial || body.lat !== undefined)) {
-    const lat = parseNumberField(body.lat)
+    const lat = body.lat !== undefined ? parseNumberField(body.lat) : Number(currentZone?.lat)
     if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
       return { ok: false, error: 'Неверный формат широты (lat)' }
     }
@@ -128,7 +134,7 @@ function normalizeZonePayload(body, options = {}) {
   }
 
   if (shapeType !== 'SQUARE' && (!partial || body.lon !== undefined)) {
-    const lon = parseNumberField(body.lon)
+    const lon = body.lon !== undefined ? parseNumberField(body.lon) : Number(currentZone?.lon)
     if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
       return { ok: false, error: 'Неверный формат долготы (lon)' }
     }
@@ -138,14 +144,18 @@ function normalizeZonePayload(body, options = {}) {
   data.shapeType = shapeType
 
   if (shapeType === 'SQUARE') {
-    const lat = parseNumberField(body.lat)
-    const lon = parseNumberField(body.lon)
-    const sideMeters = body.sideMeters === undefined ? DEFAULT_SIDE_METERS : parseNumberField(body.sideMeters)
-    const squareMinLat = parseNumberField(body.squareMinLat)
-    const squareMinLon = parseNumberField(body.squareMinLon)
-    const squareMaxLat = parseNumberField(body.squareMaxLat)
-    const squareMaxLon = parseNumberField(body.squareMaxLon)
-    const polygonCoords = parsePolygonCoords(body.polygonCoords)
+    const lat = body.lat !== undefined ? parseNumberField(body.lat) : Number(currentZone?.lat)
+    const lon = body.lon !== undefined ? parseNumberField(body.lon) : Number(currentZone?.lon)
+    const sideMeters = body.sideMeters !== undefined
+      ? parseNumberField(body.sideMeters)
+      : Number(currentZone?.sideMeters || DEFAULT_SIDE_METERS)
+    const squareMinLat = body.squareMinLat !== undefined ? parseNumberField(body.squareMinLat) : parseNumberField(currentZone?.squareMinLat)
+    const squareMinLon = body.squareMinLon !== undefined ? parseNumberField(body.squareMinLon) : parseNumberField(currentZone?.squareMinLon)
+    const squareMaxLat = body.squareMaxLat !== undefined ? parseNumberField(body.squareMaxLat) : parseNumberField(currentZone?.squareMaxLat)
+    const squareMaxLon = body.squareMaxLon !== undefined ? parseNumberField(body.squareMaxLon) : parseNumberField(currentZone?.squareMaxLon)
+    const polygonCoords = body.polygonCoords !== undefined
+      ? parsePolygonCoords(body.polygonCoords)
+      : parsePolygonCoords(currentZone?.polygonCoords)
 
     let meta = null
 
@@ -270,13 +280,34 @@ router.put('/:id', requireWriteAccess, async (req, res) => {
       return res.status(400).json({ error: 'Некорректный ID зоны' })
     }
 
-    const payload = normalizeZonePayload(req.body, { partial: true })
+    const existingZone = await prisma.storageZone.findUnique({
+      where: { id }
+    })
+
+    if (!existingZone) {
+      return res.status(404).json({ error: 'Зона с таким ID не найдена' })
+    }
+
+    const payload = normalizeZonePayload(req.body, { partial: true, currentZone: existingZone })
     if (!payload.ok) {
       return res.status(400).json({ error: payload.error })
     }
 
     if (Object.keys(payload.data).length === 0) {
       return res.status(400).json({ error: 'Не передано ни одного поля для обновления' })
+    }
+
+    const nextName = payload.data.name || existingZone.name
+    const duplicateZone = await prisma.storageZone.findFirst({
+      where: {
+        name: nextName,
+        NOT: { id }
+      },
+      select: { id: true }
+    })
+
+    if (duplicateZone) {
+      return res.status(409).json({ error: 'Зона с таким названием уже существует' })
     }
 
     const updatedZone = await prisma.storageZone.update({
@@ -301,6 +332,15 @@ router.post('/', requireWriteAccess, async (req, res) => {
     const payload = normalizeZonePayload(req.body)
     if (!payload.ok) {
       return res.status(400).json({ error: payload.error })
+    }
+
+    const duplicateZone = await prisma.storageZone.findFirst({
+      where: { name: payload.data.name },
+      select: { id: true }
+    })
+
+    if (duplicateZone) {
+      return res.status(409).json({ error: 'Зона с таким названием уже существует' })
     }
 
     const zone = await prisma.storageZone.create({

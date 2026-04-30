@@ -6,6 +6,7 @@
   import { fileURLToPath } from 'url'
   import telemetryRouter from './modules/telemetry/telemetry.routes.js'
   import rtkTelemetryRouter from './modules/telemetry/rtk.routes.js'
+  import telemetryWarningsRouter from './modules/telemetry/warnings.routes.js'
   import storageZonesRouter from './modules/storage-zones/storage-zones.routes.js'
   import eventsRouter from './modules/events/events.routes.js'
   import { authenticate, extractTokenFromRequest, requireAdmin, requireReadAccess, verifyAccessToken } from './middleware/auth.js'
@@ -15,6 +16,10 @@
   import batchesRoutes from './modules/batches/batches.routes.js'
   import groupsRoutes from './modules/groups/groups.routes.js'
   import usersRoutes from './modules/users/users.routes.js';
+  import reportsRoutes from './modules/reports/reports.routes.js';
+  import violationsRoutes from './modules/violations/violations.routes.js';
+  import digestRoutes from './modules/digest/digest.routes.js';
+  import { startDigestScheduler } from './modules/digest/digest-scheduler.js';
 
   const __filename = fileURLToPath(import.meta.url)
   const __dirname = path.dirname(__filename)
@@ -58,6 +63,7 @@
   // Телеметрия: POST открыт для всех, GET защищен
   app.use('/api/telemetry/host', telemetryRouter)
   app.use('/api/telemetry/rtk', rtkTelemetryRouter)
+  app.use('/api/telemetry/warnings', telemetryWarningsRouter)
 
   // Зоны: разделяем доступ по ролям
   app.use('/api/telemetry/zones', authenticate, storageZonesRouter)
@@ -74,13 +80,18 @@
   // Группы/коровники для селектов и справочников
   app.use('/api/groups', authenticate, requireReadAccess, groupsRoutes)
 
+  app.use('/api/reports', authenticate, requireReadAccess, reportsRoutes)
+  app.use('/api/violations', authenticate, requireReadAccess, violationsRoutes)
+  app.use('/api/digest-settings', authenticate, digestRoutes)
+
   app.use('/api/users', authenticate, requireAdmin, usersRoutes);
 
   // Static Frontend
   const frontendPath = path.resolve(__dirname, '../../frontend')
 
-  // Middleware для защиты telemetry.html (должен быть ДО express.static)
-  app.use('/telemetry.html', (req, res, next) => {
+  // Middleware для защиты админской страницы телеметрии (должен быть ДО express.static)
+  const protectedTelemetryPages = ['/telemetry.html', '/telemetry-admin.html']
+  app.use(protectedTelemetryPages, (req, res, next) => {
     const token = extractTokenFromRequest(req);
     if (!token) {
       return res.status(401).send('Доступ запрещен: требуется авторизация');
@@ -116,6 +127,8 @@
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server & Website running on http://127.0.0.1:${PORT}`)
   })
+
+  startDigestScheduler(prisma)
 
   // Запуск
   //app.listen(PORT, () => {

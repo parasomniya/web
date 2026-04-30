@@ -1,5 +1,5 @@
 (function () {
-    const STORAGE_KEY = "digest-settings-v1";
+    const API_URL = window.AppAuth?.getApiUrl?.("/api/digest-settings") || "/api/digest-settings";
     const DEFAULT_SETTINGS = {
         enabled: false,
         senderEmail: "",
@@ -41,6 +41,8 @@
 
     let recipients = [];
     const writeAccess = window.AppAuth?.hasWriteAccess?.() ?? false;
+    let isSaving = false;
+    let isTesting = false;
 
     function normalizeEmail(value) {
         return String(value || "").trim().toLowerCase();
@@ -50,28 +52,89 @@
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(value));
     }
 
-    function loadSettings() {
-        try {
-            const rawValue = window.localStorage.getItem(STORAGE_KEY);
-            if (!rawValue) {
-                return { ...DEFAULT_SETTINGS };
-            }
+    function getHeaders(includeJson) {
+        return window.AppAuth?.getAuthHeaders?.({ includeJson: Boolean(includeJson) }) || (
+            includeJson ? { "Content-Type": "application/json" } : {}
+        );
+    }
 
-            const parsed = JSON.parse(rawValue);
-            return {
-                ...DEFAULT_SETTINGS,
-                ...parsed,
-                recipients: Array.isArray(parsed?.recipients)
-                    ? parsed.recipients.map(normalizeEmail).filter(Boolean)
-                    : [],
-            };
+    async function readErrorMessage(response) {
+        const contentType = response.headers.get("content-type") || "";
+
+        if (contentType.includes("application/json")) {
+            try {
+                const payload = await response.json();
+                return payload?.error || payload?.message || "";
+            } catch (error) {
+                return "";
+            }
+        }
+
+        try {
+            return (await response.text()).trim();
         } catch (error) {
-            return { ...DEFAULT_SETTINGS };
+            return "";
         }
     }
 
-    function saveSettings(settings) {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    async function fetchSettings() {
+        const response = await fetch(API_URL, {
+            headers: getHeaders(false),
+            credentials: "same-origin",
+        });
+
+        if (!response.ok) {
+            const message = await readErrorMessage(response);
+            throw new Error(message || `Ошибка ${response.status}`);
+        }
+
+        const payload = await response.json();
+        return {
+            ...DEFAULT_SETTINGS,
+            ...payload,
+            recipients: Array.isArray(payload?.recipients)
+                ? payload.recipients.map(normalizeEmail).filter(Boolean)
+                : [],
+        };
+    }
+
+    async function saveSettings(settings) {
+        const response = await fetch(API_URL, {
+            method: "PUT",
+            headers: getHeaders(true),
+            credentials: "same-origin",
+            body: JSON.stringify(settings),
+        });
+
+        if (!response.ok) {
+            const message = await readErrorMessage(response);
+            throw new Error(message || "Не удалось сохранить настройки");
+        }
+
+        const payload = await response.json();
+        return {
+            ...DEFAULT_SETTINGS,
+            ...(payload?.settings || payload || {}),
+            recipients: Array.isArray(payload?.settings?.recipients || payload?.recipients)
+                ? (payload?.settings?.recipients || payload?.recipients).map(normalizeEmail).filter(Boolean)
+                : [],
+        };
+    }
+
+    async function sendTest(settings) {
+        const response = await fetch(`${API_URL}/test`, {
+            method: "POST",
+            headers: getHeaders(true),
+            credentials: "same-origin",
+            body: JSON.stringify(settings),
+        });
+
+        if (!response.ok) {
+            const message = await readErrorMessage(response);
+            throw new Error(message || "Не удалось отправить тестовое письмо");
+        }
+
+        return response.json();
     }
 
     function formatUpdatedAt(value) {
@@ -157,6 +220,24 @@
     function setState(message) {
         if (elements.formState) {
             elements.formState.textContent = message;
+        }
+    }
+
+    function updateActionButtons() {
+        if (elements.saveButton) {
+            elements.saveButton.disabled = !writeAccess || isSaving || isTesting;
+        }
+
+        if (elements.testButton) {
+            elements.testButton.disabled = !writeAccess || isSaving || isTesting;
+        }
+
+        if (elements.resetButton) {
+            elements.resetButton.disabled = !writeAccess || isSaving || isTesting;
+        }
+
+        if (elements.addRecipientButton) {
+            elements.addRecipientButton.disabled = !writeAccess || isSaving || isTesting;
         }
     }
 
@@ -324,11 +405,24 @@
             return;
         }
 
-        saveSettings(settings);
-        updateSavedAt(settings.updatedAt);
-        updatePreview();
-        setState("Настройки уведомлений сохранены.");
-        window.AppAuth?.showAlert("Настройки уведомлений сохранены.", "success");
+        isSaving = true;
+        updateActionButtons();
+        setState("Сохраняем настройки...");
+
+        saveSettings(settings)
+            .then((savedSettings) => {
+                fillForm(savedSettings);
+                setState("Настройки уведомлений сохранены.");
+                window.AppAuth?.showAlert("Настройки уведомлений сохранены.", "success");
+            })
+            .catch((error) => {
+                setState(error?.message || "Не удалось сохранить настройки.");
+                window.AppAuth?.showAlert(error?.message || "Не удалось сохранить настройки.", "danger");
+            })
+            .finally(() => {
+                isSaving = false;
+                updateActionButtons();
+            });
     }
 
     function handleReset() {
@@ -353,9 +447,23 @@
             return;
         }
 
-        const recipientsText = settings.recipients.join(", ");
-        window.AppAuth?.showAlert(`Тестовый прогон UI: письмо ушло бы на ${recipientsText}.`, "info");
-        setState("Тест выполнен.");
+        isTesting = true;
+        updateActionButtons();
+        setState("Отправляем тестовое письмо...");
+
+        sendTest(settings)
+            .then((payload) => {
+                window.AppAuth?.showAlert(payload?.message || "Тестовое письмо отправлено.", "success");
+                setState("Тест выполнен.");
+            })
+            .catch((error) => {
+                setState(error?.message || "Не удалось отправить тестовое письмо.");
+                window.AppAuth?.showAlert(error?.message || "Не удалось отправить тестовое письмо.", "danger");
+            })
+            .finally(() => {
+                isTesting = false;
+                updateActionButtons();
+            });
     }
 
     function escapeHtml(value) {
@@ -365,6 +473,24 @@
             .replaceAll(">", "&gt;")
             .replaceAll('"', "&quot;")
             .replaceAll("'", "&#039;");
+    }
+
+    async function init() {
+        applyReadOnlyState();
+        updateActionButtons();
+        fillForm({ ...DEFAULT_SETTINGS });
+        setState("Загружаем настройки...");
+
+        try {
+            const settings = await fetchSettings();
+            fillForm(settings);
+        } catch (error) {
+            fillForm({ ...DEFAULT_SETTINGS });
+            setState(error?.message || "Не удалось загрузить настройки.");
+            window.AppAuth?.showAlert(error?.message || "Не удалось загрузить настройки дайджеста.", "danger");
+        } finally {
+            updateActionButtons();
+        }
     }
 
     form.addEventListener("submit", handleSubmit);
@@ -385,6 +511,5 @@
         element?.addEventListener("change", updatePreview);
     });
 
-    applyReadOnlyState();
-    fillForm(loadSettings());
+    init();
 })();

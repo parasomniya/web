@@ -84,7 +84,7 @@ export class TelemetryProcessor {
             state.isBatchStarted = true;
             result.dbActions.push({
               type: 'START_BATCH',
-              startWeight: currentWeight
+              startWeight: Math.round(state.zoneStartWeight)
             });
           }
 
@@ -109,7 +109,7 @@ export class TelemetryProcessor {
     }
 
     // ===== ШАГ 6: Защита от недовыгрузки =====
-    if (state.isUnloading && currentWeight > state.lastUnloadWeight + 50) {
+    if (state.isUnloading && Number.isFinite(state.lastUnloadWeight) && currentWeight > state.lastUnloadWeight + 50) {
       const leftoverWeight = state.lastUnloadWeight;
   
       if (leftoverWeight > 50) {
@@ -120,7 +120,9 @@ export class TelemetryProcessor {
       }
 
       result.dbActions.push({
-        type: 'FORCE_CLOSE_BATCH'
+        type: 'FORCE_CLOSE_BATCH',
+        closeWeight: Math.round(leftoverWeight),
+        nextStartWeight: Math.round(currentWeight)
       });
 
       state.zoneStartWeight = state.lastUnloadWeight;
@@ -132,7 +134,7 @@ export class TelemetryProcessor {
     }
 
     // ===== ШАГ 7: Детекция выгрузки =====
-    if (state.isMixing && state.peakWeight > 400 && currentWeight < state.peakWeight - 200) {
+    if (!state.isUnloading && state.isMixing && state.peakWeight > 400 && currentWeight < state.peakWeight - 200) {
       state.isUnloading = true;
       state.lastUnloadWeight = currentWeight;
 
@@ -141,12 +143,24 @@ export class TelemetryProcessor {
         startUnloadWeight: Math.round(currentWeight),
         peakWeight: state.peakWeight
       });
+
+      result.dbActions.push({
+        type: 'UPDATE_UNLOAD',
+        endWeight: Math.round(currentWeight)
+      });
+    } else if (state.isUnloading && Number.isFinite(state.lastUnloadWeight) && Math.abs(currentWeight - state.lastUnloadWeight) >= 1) {
+      state.lastUnloadWeight = currentWeight;
+      result.dbActions.push({
+        type: 'UPDATE_UNLOAD',
+        endWeight: Math.round(currentWeight)
+      });
     }
 
     // Окончание: если кузов пуст (< 50 кг)
     if (state.isUnloading && currentWeight < 50) {
       result.dbActions.push({
-        type: 'COMPLETE_BATCH'
+        type: 'COMPLETE_BATCH',
+        endWeight: Math.round(currentWeight)
       });
 
       this.deviceStates.delete(deviceId);

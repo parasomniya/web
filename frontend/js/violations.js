@@ -352,6 +352,14 @@
             return;
         }
 
+        if (state.lastError) {
+            elements.sourceBanner.className = "alert alert-light border-left-danger shadow-sm mb-4";
+            elements.sourceBanner.textContent = `Не удалось загрузить данные из /api/violations: ${state.lastError}`;
+            elements.sourceBadge.textContent = "Источник: API error";
+            elements.sourceBadge.className = "violations-source-badge violations-source-badge--mock mr-2";
+            return;
+        }
+
         if (state.usingMock) {
             elements.sourceBanner.className = "alert alert-light border-left-warning shadow-sm mb-4";
             elements.sourceBanner.textContent = "API /api/violations пока не ответил, поэтому показан макет с тестовыми данными.";
@@ -373,7 +381,7 @@
 
         const shownCount = state.filteredItems.length;
         const totalCount = state.items.length;
-        const sourceLabel = state.usingMock ? "mock" : "API";
+        const sourceLabel = state.lastError ? "API error" : (state.usingMock ? "mock" : "API");
 
         elements.panelMeta.textContent = `Показано ${shownCount} из ${totalCount} · источник: ${sourceLabel}`;
     }
@@ -457,8 +465,8 @@
             state.usingMock = false;
             state.lastError = "";
         } catch (error) {
-            state.items = MOCK_VIOLATIONS.map((item) => ({ ...item }));
-            state.usingMock = true;
+            state.items = [];
+            state.usingMock = false;
             state.lastError = error?.message || "Не удалось загрузить API";
         }
 
