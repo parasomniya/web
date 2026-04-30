@@ -312,7 +312,7 @@
         event.preventDefault();
 
         if (!writeAccess) {
-            window.AppAuth?.showAlert("Недостаточно прав для изменения настроек дайджеста.", "warning");
+            window.AppAuth?.showAlert("Недостаточно прав для изменения настроек уведомлений.", "warning");
             return;
         }
 
@@ -327,8 +327,8 @@
         saveSettings(settings);
         updateSavedAt(settings.updatedAt);
         updatePreview();
-        setState("Настройки дайджеста сохранены.");
-        window.AppAuth?.showAlert("Настройки дайджеста сохранены.", "success");
+        setState("Настройки уведомлений сохранены.");
+        window.AppAuth?.showAlert("Настройки уведомлений сохранены.", "success");
     }
 
     function handleReset() {

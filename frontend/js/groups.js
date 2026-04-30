@@ -7,9 +7,7 @@ $(document).ready(function () {
     const nameInput = document.getElementById("groupNameInput");
     const headcountInput = document.getElementById("groupHeadcountInput");
     const rationSelect = document.getElementById("groupRationSelect");
-    const radiusInput = document.getElementById("groupRadiusInput");
-    const latInput = document.getElementById("groupLatInput");
-    const lonInput = document.getElementById("groupLonInput");
+    const storageZoneSelect = document.getElementById("groupStorageZoneSelect");
     const createButton = document.getElementById("groupCreateSubmitButton");
     const formMeta = document.getElementById("groupsFormMeta");
 
@@ -18,9 +16,7 @@ $(document).ready(function () {
     const editNameInput = document.getElementById("groupEditName");
     const editHeadcountInput = document.getElementById("groupEditHeadcountInput");
     const editRationSelect = document.getElementById("groupEditRationSelect");
-    const editRadiusInput = document.getElementById("groupEditRadiusInput");
-    const editLatInput = document.getElementById("groupEditLatInput");
-    const editLonInput = document.getElementById("groupEditLonInput");
+    const editStorageZoneSelect = document.getElementById("groupEditStorageZoneSelect");
     const editMeta = document.getElementById("groupEditMeta");
     const editSaveButton = document.getElementById("groupEditSaveButton");
     const deleteButton = document.getElementById("groupDeleteButton");
@@ -31,6 +27,7 @@ $(document).ready(function () {
 
     const GROUPS_API_URL = window.AppAuth?.getApiUrl?.("/api/groups") || "/api/groups";
     const RATIONS_API_URL = window.AppAuth?.getApiUrl?.("/api/rations") || "/api/rations";
+    const STORAGE_ZONES_API_URL = window.AppAuth?.getApiUrl?.("/api/telemetry/zones") || "/api/telemetry/zones";
     const canWrite = Boolean(window.AppAuth?.hasWriteAccess?.());
     const numberFormatter = new Intl.NumberFormat("ru-RU", {
         minimumFractionDigits: 0,
@@ -40,6 +37,7 @@ $(document).ready(function () {
     const state = {
         groups: [],
         rations: [],
+        storageZones: [],
         isLoading: false,
         isCreating: false,
         isEditing: false,
@@ -47,6 +45,8 @@ $(document).ready(function () {
         editingGroupId: null,
         rationLookupLoaded: !canWrite,
         rationLookupError: "",
+        storageZoneLookupLoaded: false,
+        storageZoneLookupError: "",
         activeLoadId: 0,
     };
 
@@ -107,20 +107,11 @@ $(document).ready(function () {
     }
 
     function getTableColumnCount() {
-        return canWrite ? 6 : 5;
+        return canWrite ? 5 : 4;
     }
 
     function getTrimmedValue(input) {
         return typeof input?.value === "string" ? input.value.trim() : "";
-    }
-
-    function parseOptionalNumber(rawValue) {
-        if (rawValue === "") {
-            return null;
-        }
-
-        const parsedValue = Number(rawValue);
-        return Number.isFinite(parsedValue) ? parsedValue : Number.NaN;
     }
 
     function formatFixedNumber(value, digits) {
@@ -150,41 +141,84 @@ $(document).ready(function () {
         return `<span class="groups-ration-badge ${badgeClass}">${escapeHtml(group.rationName)}</span>`;
     }
 
-    function renderCoordinates(group) {
-        const lat = formatFixedNumber(group?.lat, 6);
-        const lon = formatFixedNumber(group?.lon, 6);
+    function getGroupById(groupId) {
+        return state.groups.find((group) => Number(group?.id) === Number(groupId)) || null;
+    }
 
-        if (!lat && !lon) {
-            return '<span class="text-muted">-</span>';
+    function getStorageZoneById(zoneId) {
+        const normalizedZoneId = Number(zoneId);
+        if (!Number.isInteger(normalizedZoneId) || normalizedZoneId <= 0) {
+            return null;
         }
 
-        if (!lat || !lon) {
+        return state.storageZones.find((zone) => Number(zone?.id) === normalizedZoneId) || null;
+    }
+
+    function normalizeZoneShape(zone) {
+        return String(zone?.shapeType || "CIRCLE").trim().toUpperCase() === "SQUARE" ? "SQUARE" : "CIRCLE";
+    }
+
+    function getZoneSizeLabel(zone) {
+        if (normalizeZoneShape(zone) === "SQUARE") {
+            const sideMeters = Number(zone?.sideMeters);
+            return Number.isFinite(sideMeters) && sideMeters > 0
+                ? `квадрат ${numberFormatter.format(sideMeters)} м`
+                : "квадрат";
+        }
+
+        const radius = Number(zone?.radius);
+        return Number.isFinite(radius) && radius > 0
+            ? `радиус ${numberFormatter.format(radius)} м`
+            : "круг";
+    }
+
+    function zonesMatchGroup(zone, group) {
+        const zoneLat = Number(zone?.lat);
+        const zoneLon = Number(zone?.lon);
+        const zoneRadius = Number(zone?.radius);
+        const groupLat = Number(group?.lat);
+        const groupLon = Number(group?.lon);
+        const groupRadius = Number(group?.radius);
+
+        return Number.isFinite(zoneLat)
+            && Number.isFinite(zoneLon)
+            && Number.isFinite(zoneRadius)
+            && Number.isFinite(groupLat)
+            && Number.isFinite(groupLon)
+            && Number.isFinite(groupRadius)
+            && Math.abs(zoneLat - groupLat) < 0.000001
+            && Math.abs(zoneLon - groupLon) < 0.000001
+            && Math.abs(zoneRadius - groupRadius) < 0.001;
+    }
+
+    function getStorageZoneForGroup(group) {
+        return state.storageZones.find((zone) => zonesMatchGroup(zone, group)) || null;
+    }
+
+    function renderStorageZone(group) {
+        const zone = getStorageZoneForGroup(group);
+        if (zone) {
+            const zoneName = zone?.name || `Зона #${zone?.id || "-"}`;
             return `
-                <div class="groups-coordinate-cell">
-                    ${escapeHtml(lat || lon)}
-                    <div class="groups-coordinate-cell__meta">Координаты заполнены частично</div>
+                <div class="groups-zone-cell">
+                    <span class="groups-zone-name">${escapeHtml(zoneName)}</span>
+                    <div class="groups-zone-cell__meta">${escapeHtml(getZoneSizeLabel(zone))}</div>
                 </div>
             `;
         }
 
-        return `
-            <div class="groups-coordinate-cell">
-                ${escapeHtml(lat)}, ${escapeHtml(lon)}
-            </div>
-        `;
-    }
-
-    function renderRadius(value) {
-        const numericValue = Number(value);
-        if (!Number.isFinite(numericValue)) {
+        const lat = formatFixedNumber(group?.lat, 6);
+        const lon = formatFixedNumber(group?.lon, 6);
+        if (!lat || !lon) {
             return '<span class="text-muted">-</span>';
         }
 
-        return `<span class="groups-radius">${escapeHtml(numberFormatter.format(numericValue))} м</span>`;
-    }
-
-    function getGroupById(groupId) {
-        return state.groups.find((group) => Number(group?.id) === Number(groupId)) || null;
+        return `
+            <div class="groups-zone-cell">
+                <span class="groups-zone-name text-muted">Зона не найдена</span>
+                <div class="groups-zone-cell__meta">${escapeHtml(lat)}, ${escapeHtml(lon)}</div>
+            </div>
+        `;
     }
 
     function isEditModalOpen() {
@@ -248,8 +282,7 @@ $(document).ready(function () {
                 <td>${escapeHtml(group?.name || `Группа #${group?.id || "-"}`)}</td>
                 <td>${formatHeadcount(group?.headcount)}</td>
                 <td>${renderRationBadge(group)}</td>
-                <td>${renderCoordinates(group)}</td>
-                <td>${renderRadius(group?.radius)}</td>
+                <td>${renderStorageZone(group)}</td>
                 ${canWrite ? renderActionsCell(group) : ""}
             </tr>
         `).join("");
@@ -300,20 +333,61 @@ $(document).ready(function () {
         }
     }
 
+    function buildStorageZoneOptionsMarkup(selectedZoneId) {
+        const options = ['<option value="">Выберите зону</option>'];
+        const normalizedSelectedId = Number.isInteger(Number(selectedZoneId)) && Number(selectedZoneId) > 0
+            ? Number(selectedZoneId)
+            : null;
+
+        state.storageZones.forEach((zone) => {
+            const zoneId = Number(zone?.id);
+            if (!Number.isInteger(zoneId) || zoneId <= 0) {
+                return;
+            }
+
+            const label = `${zone?.name || `Зона #${zoneId}`} (${getZoneSizeLabel(zone)})`;
+            const isSelected = normalizedSelectedId === zoneId;
+            options.push(
+                `<option value="${zoneId}" ${isSelected ? "selected" : ""}>${escapeHtml(label)}</option>`
+            );
+        });
+
+        return options.join("");
+    }
+
+    function renderStorageZoneOptions() {
+        if (storageZoneSelect) {
+            storageZoneSelect.innerHTML = buildStorageZoneOptionsMarkup("");
+            storageZoneSelect.classList.toggle("is-unavailable", Boolean(state.storageZoneLookupError));
+        }
+
+        if (editStorageZoneSelect) {
+            const currentGroup = getGroupById(state.editingGroupId);
+            const selectedZone = currentGroup ? getStorageZoneForGroup(currentGroup) : null;
+            editStorageZoneSelect.innerHTML = buildStorageZoneOptionsMarkup(selectedZone?.id || "");
+            editStorageZoneSelect.classList.toggle("is-unavailable", Boolean(state.storageZoneLookupError));
+        }
+    }
+
     function updateCreateFormState() {
         if (!createForm) {
             return;
         }
 
         const formDisabled = !canWrite || state.isCreating;
-        [nameInput, headcountInput, rationSelect, radiusInput, latInput, lonInput].forEach((element) => {
+        const lookupsBusy = (!state.rationLookupLoaded && !state.rationLookupError)
+            || (!state.storageZoneLookupLoaded && !state.storageZoneLookupError);
+        const zoneSelectUnavailable = Boolean(state.storageZoneLookupError) || lookupsBusy || state.storageZones.length === 0;
+        [nameInput, headcountInput, rationSelect, storageZoneSelect].forEach((element) => {
             if (element) {
-                element.disabled = formDisabled || (element === rationSelect && Boolean(state.rationLookupError));
+                element.disabled = formDisabled
+                    || (element === rationSelect && Boolean(state.rationLookupError))
+                    || (element === storageZoneSelect && zoneSelectUnavailable);
             }
         });
 
         if (createButton) {
-            createButton.disabled = formDisabled;
+            createButton.disabled = formDisabled || lookupsBusy || Boolean(state.storageZoneLookupError) || state.storageZones.length === 0;
             createButton.innerHTML = state.isCreating
                 ? '<span class="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>Создание...'
                 : '<i class="fas fa-plus mr-1"></i>Создать группу';
@@ -326,12 +400,19 @@ $(document).ready(function () {
         if (formMeta) {
             if (!canWrite) {
                 formMeta.textContent = "Создание недоступно в режиме просмотра.";
-            } else if (!state.rationLookupLoaded && !state.rationLookupError) {
-                formMeta.textContent = "Подтягиваем список рационов...";
+            } else if (
+                (!state.rationLookupLoaded && !state.rationLookupError)
+                || (!state.storageZoneLookupLoaded && !state.storageZoneLookupError)
+            ) {
+                formMeta.textContent = "Подтягиваем списки рационов и зон хранения...";
             } else if (state.rationLookupError) {
                 formMeta.textContent = "Список рационов недоступен. Группу можно создать без привязки.";
+            } else if (state.storageZoneLookupError) {
+                formMeta.textContent = "Список зон хранения недоступен. Создание группы временно отключено.";
+            } else if (state.storageZones.length === 0) {
+                formMeta.textContent = "Сначала добавьте хотя бы одну зону хранения.";
             } else {
-                formMeta.textContent = `Доступно рационов: ${state.rations.length}`;
+                formMeta.textContent = `Доступно рационов: ${state.rations.length}, зон хранения: ${state.storageZones.length}`;
             }
         }
     }
@@ -344,9 +425,11 @@ $(document).ready(function () {
         const currentGroup = getGroupById(state.editingGroupId);
         const disabled = !canWrite || state.isEditing || state.isDeleting || !currentGroup;
 
-        [editHeadcountInput, editRationSelect, editRadiusInput, editLatInput, editLonInput].forEach((element) => {
+        [editHeadcountInput, editRationSelect, editStorageZoneSelect].forEach((element) => {
             if (element) {
-                element.disabled = disabled || (element === editRationSelect && Boolean(state.rationLookupError));
+                element.disabled = disabled
+                    || (element === editRationSelect && Boolean(state.rationLookupError))
+                    || (element === editStorageZoneSelect && Boolean(state.storageZoneLookupError));
             }
         });
 
@@ -367,10 +450,10 @@ $(document).ready(function () {
         if (editMeta) {
             if (!currentGroup) {
                 editMeta.textContent = "Выберите группу для редактирования.";
-            } else if (state.rationLookupError) {
-                editMeta.textContent = "Список рационов недоступен. Можно менять поголовье и координаты, но выбор рациона временно отключен.";
+            } else if (state.rationLookupError || state.storageZoneLookupError) {
+                editMeta.textContent = "Один из справочников недоступен. Обновите страницу или попробуйте позже.";
             } else {
-                editMeta.textContent = "Можно изменить поголовье, рацион и геозону. Чтобы сбросить точку, очистите оба поля координат.";
+                editMeta.textContent = "Можно изменить поголовье, рацион и зону хранения.";
             }
         }
     }
@@ -385,11 +468,11 @@ $(document).ready(function () {
         }
 
         createForm.reset();
-        if (radiusInput) {
-            radiusInput.value = "30";
-        }
         if (rationSelect) {
             rationSelect.value = "";
+        }
+        if (storageZoneSelect) {
+            storageZoneSelect.value = "";
         }
     }
 
@@ -405,34 +488,33 @@ $(document).ready(function () {
 
     function buildSharedPayload(elements) {
         const headcount = Number.parseInt(getTrimmedValue(elements.headcountInput), 10);
-        const radius = parseOptionalNumber(getTrimmedValue(elements.radiusInput));
-        const lat = parseOptionalNumber(getTrimmedValue(elements.latInput));
-        const lon = parseOptionalNumber(getTrimmedValue(elements.lonInput));
         const rationIdRaw = getTrimmedValue(elements.rationSelect);
         const rationId = rationIdRaw ? Number.parseInt(rationIdRaw, 10) : null;
+        const storageZoneId = Number.parseInt(getTrimmedValue(elements.storageZoneSelect), 10);
+        const storageZone = getStorageZoneById(storageZoneId);
 
         if (!Number.isInteger(headcount) || headcount <= 0) {
             throw new Error("Поголовье должно быть положительным целым числом.");
         }
 
-        if (!Number.isFinite(radius) || radius <= 0) {
-            throw new Error("Радиус должен быть положительным числом.");
-        }
-
-        if ((lat === null) !== (lon === null)) {
-            throw new Error("Укажите и широту, и долготу, либо оставьте оба поля пустыми.");
-        }
-
-        if (lat !== null && (!Number.isFinite(lat) || lat < -90 || lat > 90)) {
-            throw new Error("Широта должна быть в диапазоне от -90 до 90.");
-        }
-
-        if (lon !== null && (!Number.isFinite(lon) || lon < -180 || lon > 180)) {
-            throw new Error("Долгота должна быть в диапазоне от -180 до 180.");
-        }
-
         if (rationId !== null && (!Number.isInteger(rationId) || rationId <= 0)) {
             throw new Error("Выберите корректный рацион.");
+        }
+
+        if (!storageZone) {
+            throw new Error("Выберите зону хранения.");
+        }
+
+        const lat = Number(storageZone.lat);
+        const lon = Number(storageZone.lon);
+        const radius = Number(storageZone.radius);
+
+        if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
+            throw new Error("У выбранной зоны хранения некорректные координаты.");
+        }
+
+        if (!Number.isFinite(radius) || radius <= 0) {
+            throw new Error("У выбранной зоны хранения некорректный радиус.");
         }
 
         return {
@@ -455,9 +537,7 @@ $(document).ready(function () {
             ...buildSharedPayload({
                 headcountInput,
                 rationSelect,
-                radiusInput,
-                latInput,
-                lonInput,
+                storageZoneSelect,
             }),
         };
     }
@@ -466,9 +546,7 @@ $(document).ready(function () {
         return buildSharedPayload({
             headcountInput: editHeadcountInput,
             rationSelect: editRationSelect,
-            radiusInput: editRadiusInput,
-            latInput: editLatInput,
-            lonInput: editLonInput,
+            storageZoneSelect: editStorageZoneSelect,
         });
     }
 
@@ -485,19 +563,13 @@ $(document).ready(function () {
         if (editHeadcountInput) {
             editHeadcountInput.value = group?.headcount ?? "";
         }
-        if (editRadiusInput) {
-            editRadiusInput.value = group?.radius ?? 30;
-        }
-        if (editLatInput) {
-            editLatInput.value = group?.lat ?? "";
-        }
-        if (editLonInput) {
-            editLonInput.value = group?.lon ?? "";
-        }
-
         renderRationOptions();
+        renderStorageZoneOptions();
         if (editRationSelect) {
             editRationSelect.value = group?.rationId ?? "";
+        }
+        if (editStorageZoneSelect) {
+            editStorageZoneSelect.value = getStorageZoneForGroup(group)?.id ?? "";
         }
 
         updateEditFormState();
@@ -522,9 +594,10 @@ $(document).ready(function () {
 
         try {
             if (canWrite) {
-                const [groupsResult, rationsResult] = await Promise.allSettled([
+                const [groupsResult, rationsResult, storageZonesResult] = await Promise.allSettled([
                     fetchJson(GROUPS_API_URL),
                     fetchJson(RATIONS_API_URL),
+                    fetchJson(STORAGE_ZONES_API_URL),
                 ]);
 
                 if (loadId !== state.activeLoadId) {
@@ -542,18 +615,47 @@ $(document).ready(function () {
                     showAlert(state.rationLookupError, "warning");
                 }
 
+                if (storageZonesResult.status === "fulfilled") {
+                    state.storageZones = Array.isArray(storageZonesResult.value) ? storageZonesResult.value : [];
+                    state.storageZoneLookupLoaded = true;
+                    state.storageZoneLookupError = "";
+                } else {
+                    state.storageZones = [];
+                    state.storageZoneLookupLoaded = false;
+                    state.storageZoneLookupError = storageZonesResult.reason?.message || "Не удалось загрузить зоны хранения.";
+                    showAlert(state.storageZoneLookupError, "warning");
+                }
+
                 if (groupsResult.status === "fulfilled") {
                     state.groups = Array.isArray(groupsResult.value) ? groupsResult.value : [];
                 } else {
                     throw groupsResult.reason;
                 }
             } else {
-                const groupsPayload = await fetchJson(GROUPS_API_URL);
+                const [groupsResult, storageZonesResult] = await Promise.allSettled([
+                    fetchJson(GROUPS_API_URL),
+                    fetchJson(STORAGE_ZONES_API_URL),
+                ]);
                 if (loadId !== state.activeLoadId) {
                     return;
                 }
 
-                state.groups = Array.isArray(groupsPayload) ? groupsPayload : [];
+                if (groupsResult.status === "fulfilled") {
+                    state.groups = Array.isArray(groupsResult.value) ? groupsResult.value : [];
+                } else {
+                    throw groupsResult.reason;
+                }
+
+                if (storageZonesResult.status === "fulfilled") {
+                    state.storageZones = Array.isArray(storageZonesResult.value) ? storageZonesResult.value : [];
+                    state.storageZoneLookupLoaded = true;
+                    state.storageZoneLookupError = "";
+                } else {
+                    state.storageZones = [];
+                    state.storageZoneLookupLoaded = false;
+                    state.storageZoneLookupError = storageZonesResult.reason?.message || "Не удалось загрузить зоны хранения.";
+                    showAlert(state.storageZoneLookupError, "warning");
+                }
             }
         } catch (error) {
             if (loadId !== state.activeLoadId) {
@@ -575,6 +677,7 @@ $(document).ready(function () {
 
             state.isLoading = false;
             renderRationOptions();
+            renderStorageZoneOptions();
             updateCreateFormState();
             updateEditFormState();
             updateMeta();
@@ -761,12 +864,14 @@ $(document).ready(function () {
 
             resetEditForm();
             renderRationOptions();
+            renderStorageZoneOptions();
             updateEditFormState();
             renderTable();
         });
     }
 
     renderRationOptions();
+    renderStorageZoneOptions();
     updateCreateFormState();
     updateEditFormState();
     loadPageData();

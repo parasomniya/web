@@ -8,13 +8,13 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 
-    <title>Телеметрия</title>
+    <title>Админ панель</title>
 
     <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
 
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
-    <link href="css/custom.css?v=20260426b" rel="stylesheet">
+    <link href="css/custom.css?v=20260429d" rel="stylesheet">
     <script src="js/app-auth.js?v=20260419a"></script>
 </head>
 
@@ -71,7 +71,7 @@
             <li class="nav-item active">
                 <a class="nav-link" href="telemetry-admin.html">
                     <i class="fas fa-fw fa-broadcast-tower"></i>
-                    <span>Телеметрия</span>
+                    <span>Админ панель</span>
                 </a>
             </li>
 
@@ -93,7 +93,7 @@
                         <i class="fa fa-bars"></i>
                     </button>
 
-                    <span class="ml-3 font-weight-bold">Технический раздел</span>
+                    <span class="ml-3 font-weight-bold">Админ панель</span>
 
                 </nav>
 
@@ -101,10 +101,27 @@
                     <div data-page-alerts></div>
                     <div class="d-sm-flex align-items-center justify-content-between mb-4">
                         <div>
-                            <h1 class="h3 mb-1 text-gray-800">Телеметрия</h1>
+                            <h1 class="h3 mb-1 text-gray-800">Админ панель</h1>
                         </div>
                     </div>
 
+                    <ul class="nav nav-tabs admin-panel-tabs mb-4" id="adminPanelTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link active" id="adminTelemetryTab" data-toggle="tab" href="#adminTelemetryPanel" role="tab" aria-controls="adminTelemetryPanel" aria-selected="true">
+                                <i class="fas fa-broadcast-tower mr-1"></i>
+                                Телеметрия
+                            </a>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link" id="adminUsersTab" data-toggle="tab" href="#adminUsersPanel" role="tab" aria-controls="adminUsersPanel" aria-selected="false">
+                                <i class="fas fa-users mr-1"></i>
+                                Пользователи
+                            </a>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content admin-panel-tab-content" id="adminPanelTabContent">
+                        <div class="tab-pane fade show active" id="adminTelemetryPanel" role="tabpanel" aria-labelledby="adminTelemetryTab">
                     <div class="card shadow mb-4">
                         <div class="card-header py-3 d-sm-flex align-items-center justify-content-between">
                             <h6 class="m-0 font-weight-bold text-primary">Потоки телеметрии</h6>
@@ -403,6 +420,9 @@
                         </div>
                     </section>
 
+                        </div>
+
+                        <div class="tab-pane fade" id="adminUsersPanel" role="tabpanel" aria-labelledby="adminUsersTab">
                     <div class="card shadow mb-4">
                         <div class="card-header py-3 d-sm-flex align-items-center justify-content-between">
                             <div>
@@ -434,6 +454,8 @@
                                     </tbody>
                                 </table>
                             </div>
+                        </div>
+                    </div>
                         </div>
                     </div>
                 </div>
@@ -499,7 +521,7 @@
     <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
-    <script src="js/sidebar-enhancements.js?v=20260428b"></script>
+    <script src="js/sidebar-enhancements.js?v=20260429d"></script>
     <script src="js/telemetry.js?v=20260426b"></script>
     <script src="js/admin-users.js?v=20260420a"></script>
 

@@ -73,7 +73,7 @@
             <li class="nav-item">
                 <a class="nav-link" href="telemetry-admin.html">
                     <i class="fas fa-fw fa-broadcast-tower"></i>
-                    <span>Телеметрия</span>
+                    <span>Админ панель</span>
                 </a>
             </li>
 
@@ -128,34 +128,39 @@
                                     </button>
                                 </div>
                                 <div class="map-action-controls" role="group" aria-label="Управление картой">
-                                    <button type="button" class="map-action-button" id="mapTrackToggleButton" aria-pressed="false" title="Отслеживание метки" disabled>
-                                        <i class="fas fa-crosshairs" aria-hidden="true"></i>
-                                        <span class="map-action-button__label">Следить</span>
-                                    </button>
-                                    <button type="button" class="map-action-button" id="mapCenterOnMarkerButton" title="Вернуться к метке" disabled>
-                                        <i class="fas fa-location-arrow" aria-hidden="true"></i>
-                                        <span class="map-action-button__label">К метке</span>
-                                    </button>
+                                    <div class="map-action-menu">
+                                        <button type="button" class="map-action-button" id="mapTrackToggleButton" aria-pressed="false" title="Отслеживание метки" disabled>
+                                            <i class="fas fa-crosshairs" aria-hidden="true"></i>
+                                            <span class="map-action-button__label">Следить</span>
+                                        </button>
+                                        <div class="map-action-dropdown" role="menu" aria-label="Кого отслеживать">
+                                            <button type="button" class="map-action-dropdown__item" data-map-action="track" data-marker-target="host">Хозяин</button>
+                                            <button type="button" class="map-action-dropdown__item" data-map-action="track" data-marker-target="rtk">Погрузчик</button>
+                                        </div>
+                                    </div>
+                                    <div class="map-action-menu">
+                                        <button type="button" class="map-action-button" id="mapCenterOnMarkerButton" title="Вернуться к метке" disabled>
+                                            <i class="fas fa-location-arrow" aria-hidden="true"></i>
+                                            <span class="map-action-button__label">К метке</span>
+                                        </button>
+                                        <div class="map-action-dropdown" role="menu" aria-label="К какой метке перейти">
+                                            <button type="button" class="map-action-dropdown__item" data-map-action="center" data-marker-target="host">Хозяин</button>
+                                            <button type="button" class="map-action-dropdown__item" data-map-action="center" data-marker-target="rtk">Погрузчик</button>
+                                        </div>
+                                    </div>
                                     <button type="button" class="map-action-button" id="mapFullscreenButton" aria-pressed="false" title="Полноэкранный режим">
                                         <i class="fas fa-expand-arrows-alt" aria-hidden="true"></i>
                                         <span class="map-action-button__label">Экран</span>
                                     </button>
                                 </div>
-                                <div class="map-telemetry-stack" aria-label="RTK статус на карте">
-                                    <div class="map-telemetry-chip map-telemetry-chip--unknown" id="dashboardRtkMapChip">
-                                        <div class="map-telemetry-chip__label">RTK</div>
-                                        <div class="map-telemetry-chip__value" id="dashboardRtkMapChipState">Нет данных</div>
-                                        <div class="map-telemetry-chip__meta" id="dashboardRtkMapChipQuality">Quality: --</div>
-                                    </div>
-                                </div>
                                 <div class="map-marker-legend" aria-label="Обозначения меток">
                                     <div class="map-marker-legend__item">
                                         <span class="map-marker-legend__dot map-marker-legend__dot--host"></span>
-                                        <span>Host</span>
+                                        <span>Хозяин</span>
                                     </div>
                                     <div class="map-marker-legend__item">
                                         <span class="map-marker-legend__dot map-marker-legend__dot--rtk"></span>
-                                        <span>RTK</span>
+                                        <span>Погрузчик</span>
                                     </div>
                                 </div>
                                 <div id="map" class="dashboard-map"></div>
@@ -282,7 +287,7 @@
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
 
     <script src="js/sb-admin-2.min.js"></script>
-    <script src="js/sidebar-enhancements.js?v=20260428b"></script>
+    <script src="js/sidebar-enhancements.js?v=20260429d"></script>
 
     <script src="https://api-maps.yandex.ru/2.1/?apikey=3c050799-23a3-4bd9-a14a-b7eaf2e05511&lang=ru_RU"></script>
 

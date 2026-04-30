@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
 
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
-    <link href="css/custom.css?v=20260429a" rel="stylesheet">
+    <link href="css/custom.css?v=20260429b" rel="stylesheet">
     <script src="js/app-auth.js?v=20260419a"></script>
 </head>
 
@@ -71,7 +71,7 @@
             <li class="nav-item">
                 <a class="nav-link" href="telemetry-admin.html">
                     <i class="fas fa-fw fa-broadcast-tower"></i>
-                    <span>Телеметрия</span>
+                    <span>Админ панель</span>
                 </a>
             </li>
 
@@ -139,23 +139,14 @@
                                         </select>
                                     </div>
                                     <div class="col-lg-3 col-md-4 mb-3">
-                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupRadiusInput">Радиус, м</label>
-                                        <input id="groupRadiusInput" name="radius" type="number" class="form-control" min="1" step="0.1" value="30" placeholder="30">
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupStorageZoneSelect">Зона хранения</label>
+                                        <select id="groupStorageZoneSelect" name="storageZoneId" class="custom-select groups-zone-select">
+                                            <option value="">Выберите зону</option>
+                                        </select>
                                     </div>
-                                </div>
-
-                                <div class="form-row">
-                                    <div class="col-lg-3 col-md-6 mb-3">
-                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupLatInput">Широта</label>
-                                        <input id="groupLatInput" name="lat" type="number" class="form-control" min="-90" max="90" step="0.000001" placeholder="55.041500" autocomplete="off">
-                                    </div>
-                                    <div class="col-lg-3 col-md-6 mb-3">
-                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupLonInput">Долгота</label>
-                                        <input id="groupLonInput" name="lon" type="number" class="form-control" min="-180" max="180" step="0.000001" placeholder="82.934600" autocomplete="off">
-                                    </div>
-                                    <div class="col-lg-6 mb-3 d-flex align-items-end">
+                                    <div class="col-lg-12 mb-3">
                                         <div class="groups-form-hint">
-                                            Координаты можно не заполнять. Если указываете точку, заполните и широту, и долготу.
+                                            Координаты и радиус подставятся из выбранной зоны хранения.
                                         </div>
                                     </div>
                                 </div>
@@ -186,8 +177,7 @@
                                             <th>Название</th>
                                             <th>Поголовье</th>
                                             <th>Рацион</th>
-                                            <th>Координаты</th>
-                                            <th>Радиус</th>
+                                            <th>Зона хранения</th>
                                             <th data-requires-write hidden>Действия</th>
                                         </tr>
                                     </thead>
@@ -230,23 +220,14 @@
                                                 </select>
                                             </div>
                                             <div class="col-lg-3 col-md-4 mb-3">
-                                                <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupEditRadiusInput">Радиус, м</label>
-                                                <input id="groupEditRadiusInput" type="number" class="form-control" min="1" step="0.1" autocomplete="off">
+                                                <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupEditStorageZoneSelect">Зона хранения</label>
+                                                <select id="groupEditStorageZoneSelect" class="custom-select groups-zone-select">
+                                                    <option value="">Выберите зону</option>
+                                                </select>
                                             </div>
-                                        </div>
-
-                                        <div class="form-row">
-                                            <div class="col-lg-3 col-md-6 mb-3">
-                                                <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupEditLatInput">Широта</label>
-                                                <input id="groupEditLatInput" type="number" class="form-control" min="-90" max="90" step="0.000001" autocomplete="off">
-                                            </div>
-                                            <div class="col-lg-3 col-md-6 mb-3">
-                                                <label class="small text-primary font-weight-bold text-uppercase mb-2" for="groupEditLonInput">Долгота</label>
-                                                <input id="groupEditLonInput" type="number" class="form-control" min="-180" max="180" step="0.000001" autocomplete="off">
-                                            </div>
-                                            <div class="col-lg-6 mb-3 d-flex align-items-end">
+                                            <div class="col-lg-12 mb-3">
                                                 <div id="groupEditMeta" class="groups-form-hint">
-                                                    Можно изменить поголовье, рацион и геозону. Чтобы сбросить точку, очистите оба поля координат.
+                                                    Можно изменить поголовье, рацион и зону хранения.
                                                 </div>
                                             </div>
                                         </div>
@@ -293,8 +274,8 @@
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
 
     <script src="js/sb-admin-2.min.js"></script>
-    <script src="js/sidebar-enhancements.js?v=20260428b"></script>
-    <script src="js/groups.js?v=20260429a"></script>
+    <script src="js/sidebar-enhancements.js?v=20260429d"></script>
+    <script src="js/groups.js?v=20260429b"></script>
 
 </body>
 

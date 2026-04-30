@@ -116,6 +116,74 @@
     display: inline-flex;
     flex-direction: column;
     gap: 6px;
+    width: 132px;
+}
+
+.map-action-menu {
+    position: relative;
+    display: flex;
+    justify-content: flex-end;
+    width: 100%;
+}
+
+.map-action-dropdown {
+    position: absolute;
+    top: 0;
+    right: calc(100% + 8px);
+    display: flex;
+    min-width: 132px;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px;
+    border: 1px solid rgba(209, 211, 226, 0.95);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 12px 24px rgba(31, 45, 61, 0.18);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(4px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.map-action-menu:hover:not(.is-suppressed) .map-action-dropdown,
+.map-action-menu.is-pinned .map-action-dropdown {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+}
+
+.map-action-menu.is-suppressed .map-action-dropdown {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(4px);
+}
+
+.map-action-dropdown__item {
+    width: 100%;
+    min-height: 32px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #4f5d75;
+    font-size: 0.8rem;
+    font-weight: 700;
+    line-height: 1.1;
+    text-align: left;
+    white-space: nowrap;
+    padding: 0.45rem 0.6rem;
+}
+
+.map-action-dropdown__item:hover:not(:disabled),
+.map-action-dropdown__item:focus-visible:not(:disabled),
+.map-action-dropdown__item.is-active {
+    background: rgba(78, 115, 223, 0.12);
+    color: #2e59d9;
+    outline: none;
+}
+
+.map-action-dropdown__item:disabled {
+    color: #a5adbf;
+    cursor: not-allowed;
 }
 
 .map-telemetry-stack {
@@ -227,6 +295,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.45rem;
+    width: 100%;
     min-width: 46px;
     height: 42px;
     padding: 0 0.8rem;
@@ -959,6 +1028,82 @@
     line-height: 1.35;
 }
 
+.ration-ingredients-cell {
+    min-width: 460px;
+}
+
+.ration-ingredients-table-wrap {
+    max-height: 360px;
+    overflow: auto;
+    border: 1px solid #e3e8f2;
+    border-radius: 0.5rem;
+    background: #fff;
+}
+
+.ration-ingredients-table {
+    width: 100%;
+    min-width: 430px;
+    border-collapse: collapse;
+    color: #3f4a5f;
+    font-size: 0.86rem;
+}
+
+.ration-ingredients-table th,
+.ration-ingredients-table td {
+    padding: 0.5rem 0.65rem;
+    border-bottom: 1px solid #edf1f7;
+    vertical-align: middle;
+}
+
+.ration-ingredients-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f7f9fd;
+    color: #5b6680;
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.ration-ingredients-table tbody tr:nth-child(even) {
+    background: #fbfcff;
+}
+
+.ration-ingredients-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.ration-ingredients-table tfoot td {
+    position: sticky;
+    bottom: 0;
+    border-top: 1px solid #dbe3f1;
+    border-bottom: 0;
+    background: #f2f6ff;
+    color: #2f3a4f;
+    font-weight: 800;
+}
+
+.ration-ingredients-table__index {
+    width: 2.7rem;
+    color: #7b879c;
+    text-align: center;
+}
+
+.ration-ingredients-table__name {
+    min-width: 160px;
+    color: #2f3a4f;
+    font-weight: 700;
+    word-break: break-word;
+}
+
+.ration-ingredients-table__weight {
+    width: 7.5rem;
+    text-align: right;
+    white-space: nowrap;
+}
+
 .ration-actions {
     display: flex;
     flex-direction: column;
@@ -981,7 +1126,8 @@
     line-height: 1.45;
 }
 
-.groups-ration-select.is-unavailable {
+.groups-ration-select.is-unavailable,
+.groups-zone-select.is-unavailable {
     background-color: #f8f9fc;
 }
 
@@ -1010,16 +1156,22 @@
     color: #5a5c69;
 }
 
-.groups-coordinate-cell {
+.groups-coordinate-cell,
+.groups-zone-cell {
     font-variant-numeric: tabular-nums;
     color: #3a3b45;
     line-height: 1.45;
 }
 
-.groups-coordinate-cell__meta {
+.groups-coordinate-cell__meta,
+.groups-zone-cell__meta {
     color: #858796;
     font-size: 0.78rem;
     margin-top: 0.2rem;
+}
+
+.groups-zone-name {
+    font-weight: 700;
 }
 
 .groups-headcount {
@@ -1244,6 +1396,28 @@
     .batch-unloading-card {
         flex-direction: column;
     }
+}
+
+.admin-panel-tabs {
+    border-bottom: 1px solid #d8deef;
+}
+
+.admin-panel-tabs .nav-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 42px;
+    border-radius: 0.35rem 0.35rem 0 0;
+    font-weight: 800;
+}
+
+.admin-panel-tabs .nav-link.active {
+    color: #4e73df;
+    background: #fff;
+    border-color: #d8deef #d8deef #fff;
+}
+
+.admin-panel-tab-content > .tab-pane {
+    outline: none;
 }
 
 .admin-users-table-wrap {
