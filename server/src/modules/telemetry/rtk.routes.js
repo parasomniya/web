@@ -2,6 +2,7 @@ import { Router } from 'express'
 import prisma from '../../database.js'
 import { authenticate, requireAdmin, requireReadAccess } from '../../middleware/auth.js'
 import { calculateHaversine, detectZoneObject } from '../../../../module-1/geo.js'
+import { TELEMETRY_FRESHNESS_MS, isFreshTimestamp } from './telemetry-helpers.js'
 
 const router = Router()
 const DEFAULT_RECENT_LIMIT = 5
@@ -223,9 +224,7 @@ async function findLatestZonePoint(zoneId, seconds, deviceId) {
     take: MAX_ZONE_SCAN_ROWS
   })
 
-  const point = rows.find((row) =>
-    calculateHaversine(row.lat, row.lon, Number(zone.lat), Number(zone.lon)) <= Number(zone.radius)
-  ) || null
+  const point = rows.find((row) => Boolean(detectZoneObject(row.lat, row.lon, [zone]))) || null
 
   return {
     missingZone: false,

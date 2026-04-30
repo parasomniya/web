@@ -125,6 +125,7 @@
         fromDate: "",
         toDate: "",
         usingMock: false,
+        lastError: "",
     };
 
     const elements = {
@@ -359,6 +360,14 @@
     }
 
     function renderSourceState() {
+        if (state.lastError) {
+            elements.sourceBanner.className = "alert alert-light border-left-danger shadow-sm mb-4";
+            elements.sourceBanner.textContent = `Не удалось загрузить данные из /api/reports: ${state.lastError}`;
+            elements.sourceBadge.textContent = "Источник: API error";
+            elements.sourceBadge.className = "reports-source-badge reports-source-badge--mock mr-2";
+            return;
+        }
+
         if (state.usingMock) {
             elements.sourceBanner.className = "alert alert-light border-left-warning shadow-sm mb-4";
             elements.sourceBanner.textContent = "Бэкенд для /api/reports пока не подключен, поэтому страница показывает фронтовый mock-отчет.";
@@ -491,10 +500,11 @@
         };
     }
 
-    function applyReportData(reportData, usingMock) {
+    function applyReportData(reportData, usingMock, lastError = "") {
         state.batches = reportData.batches.map(normalizeBatch).sort(sortByDateDesc);
         state.violations = reportData.violations.map(normalizeViolation).sort(sortByDateDesc);
         state.usingMock = usingMock;
+        state.lastError = lastError;
         buildDefaultPeriod();
         syncFilterInputs();
         render();
@@ -518,13 +528,9 @@
             const payload = await response.json();
             const normalized = normalizeApiPayload(payload);
 
-            if (!normalized.batches.length && !normalized.violations.length) {
-                throw new Error("EMPTY_PAYLOAD");
-            }
-
-            applyReportData(normalized, false);
+            applyReportData(normalized, false, "");
         } catch (error) {
-            applyReportData(MOCK_REPORT, true);
+            applyReportData({ batches: [], violations: [] }, false, error?.message || "Не удалось загрузить API");
         }
     }
 

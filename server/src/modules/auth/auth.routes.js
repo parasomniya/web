@@ -2,30 +2,14 @@ import { Router } from 'express' // Роутер
 import bcrypt from 'bcrypt' // Хеширование паролей
 import jwt from 'jsonwebtoken' // Токены
 import prisma from '../../database.js' //БД
-import nodemailer from 'nodemailer' // Отправка email
+import { createTransporter, isSmtpConfigured } from '../../utils/smtp.js'
+import { SECRET_KEY } from '../../middleware/auth.js'
 
 const router = Router()
-const SECRET_KEY = process.env.JWT_SECRET || 'super_secret_farm_key_123'
 const TOKEN_COOKIE_NAME = 'token'
-
-function isSmtpConfigured() {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
-}
 
 function getFrontendUrl() {
   return (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')
-}
-
-function parseSmtpPort() {
-  const port = Number(process.env.SMTP_PORT || 465)
-  return Number.isInteger(port) && port > 0 ? port : 465
-}
-
-function parseSmtpSecure(port) {
-  if (process.env.SMTP_SECURE !== undefined) {
-    return String(process.env.SMTP_SECURE).trim().toLowerCase() === 'true'
-  }
-  return port === 465
 }
 
 function getAuthCookieOptions() {
@@ -37,21 +21,6 @@ function getAuthCookieOptions() {
     maxAge: 30 * 24 * 60 * 60 * 1000
   }
 }
-
-// Настройка почты
-function createTransporter() {
-  const port = parseSmtpPort()
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port,
-    secure: parseSmtpSecure(port),
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  })
-}
-
 
 // ============== Авторизация ==============
 

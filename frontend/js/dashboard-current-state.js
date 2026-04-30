@@ -4,11 +4,10 @@
     const WARNING_SECTION_TITLE = "Технические предупреждения";
     const WARNING_EMPTY_TEXT = "Активных предупреждений нет.";
     const WARNING_LOADING_TEXT = "Ожидание телеметрии...";
-    const WARNING_STUB_META = "Заглушки до подключения warning API";
     const WARNING_BACKEND_META = "Источник: backend warning API";
 
     let latestWarningItems = [];
-    let latestWarningSource = "stub";
+    let latestWarningSource = "backend";
     let latestWarningUpdatedAt = null;
     let warningApiAvailability = "unknown";
 
@@ -211,7 +210,7 @@
         }
 
         const countLabel = items.length > 0 ? `Активно: ${items.length}` : "Система в норме";
-        const sourceLabel = latestWarningSource === "backend" ? WARNING_BACKEND_META : WARNING_STUB_META;
+        const sourceLabel = WARNING_BACKEND_META;
         const updatedLabel = latestWarningUpdatedAt ? ` | ${formatDateTime(latestWarningUpdatedAt)}` : "";
 
         return `${countLabel} | ${sourceLabel}${updatedLabel}`;
@@ -268,15 +267,15 @@
     async function syncWarningsFromResponse(response, data, rtkData) {
         if (!CAN_VIEW_WARNING_SECTION) {
             latestWarningItems = [];
-            latestWarningSource = "stub";
+            latestWarningSource = "backend";
             latestWarningUpdatedAt = null;
             return;
         }
 
         if (!response || !response.ok) {
-            latestWarningItems = buildFallbackWarnings(data, rtkData);
-            latestWarningSource = "stub";
-            latestWarningUpdatedAt = data?.timestamp || rtkData?.timestamp || null;
+            latestWarningItems = [];
+            latestWarningSource = "backend";
+            latestWarningUpdatedAt = null;
             return;
         }
 
@@ -287,9 +286,9 @@
             latestWarningSource = normalized.source;
             latestWarningUpdatedAt = normalized.updatedAt || data?.timestamp || rtkData?.timestamp || null;
         } catch (error) {
-            latestWarningItems = buildFallbackWarnings(data, rtkData);
-            latestWarningSource = "stub";
-            latestWarningUpdatedAt = data?.timestamp || rtkData?.timestamp || null;
+            latestWarningItems = [];
+            latestWarningSource = "backend";
+            latestWarningUpdatedAt = null;
         }
     }
 
@@ -458,9 +457,9 @@
                 const errorMessage = await readDashboardErrorMessage(hostResponse);
                 latestFetchState.status = !isEmptyTelemetry(latestTelemetry) ? "stale" : "error";
                 latestFetchState.errorMessage = errorMessage || "Не удалось обновить текущее состояние.";
-                latestWarningSource = "stub";
-                latestWarningItems = buildFallbackWarnings(latestTelemetry, latestRtkTelemetry);
-                latestWarningUpdatedAt = latestTelemetry?.timestamp || latestRtkTelemetry?.timestamp || null;
+                latestWarningSource = "backend";
+                latestWarningItems = [];
+                latestWarningUpdatedAt = null;
                 renderDashboard(latestTelemetry);
                 return;
             }
@@ -492,9 +491,9 @@
             console.error("Error fetching latest:", error);
             latestFetchState.status = !isEmptyTelemetry(latestTelemetry) ? "stale" : "error";
             latestFetchState.errorMessage = "Не удалось обновить текущее состояние.";
-            latestWarningSource = "stub";
-            latestWarningItems = buildFallbackWarnings(latestTelemetry, latestRtkTelemetry);
-            latestWarningUpdatedAt = latestTelemetry?.timestamp || latestRtkTelemetry?.timestamp || null;
+            latestWarningSource = "backend";
+            latestWarningItems = [];
+            latestWarningUpdatedAt = null;
             renderDashboard(latestTelemetry);
         }
     };
