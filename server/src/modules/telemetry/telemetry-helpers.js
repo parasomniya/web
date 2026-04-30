@@ -85,3 +85,64 @@ export function getZoneByCoordinates(lat, lon, zones = []) {
 
   return detectZoneObject(Number(lat), Number(lon), zones)
 }
+
+function buildGroupZoneShape(group) {
+  if (group?.storageZone) {
+    return {
+      ...group.storageZone,
+      lat: Number(group.storageZone.lat),
+      lon: Number(group.storageZone.lon),
+      radius: Number(group.storageZone.radius),
+    }
+  }
+
+  if (
+    Number.isFinite(Number(group?.lat)) &&
+    Number.isFinite(Number(group?.lon)) &&
+    Number.isFinite(Number(group?.radius)) &&
+    Number(group.radius) > 0
+  ) {
+    return {
+      id: `group-fallback-${group.id}`,
+      name: group.name,
+      lat: Number(group.lat),
+      lon: Number(group.lon),
+      radius: Number(group.radius),
+      shapeType: 'CIRCLE',
+      active: true,
+    }
+  }
+
+  return null
+}
+
+export async function resolveGroupByCoordinates(prisma, lat, lon) {
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) {
+    return null
+  }
+
+  const groups = await prisma.livestockGroup.findMany({
+    include: {
+      storageZone: true,
+    },
+    orderBy: { id: 'asc' },
+  })
+
+  for (const group of groups) {
+    const zoneCandidate = buildGroupZoneShape(group)
+    if (!zoneCandidate) continue
+
+    const matchedZone = detectZoneObject(Number(lat), Number(lon), [zoneCandidate])
+    if (!matchedZone) continue
+
+    return {
+      id: group.id,
+      name: group.name,
+      rationId: group.rationId ?? null,
+      storageZoneId: group.storageZoneId ?? null,
+      matchedZoneId: group.storageZone?.id ?? null,
+    }
+  }
+
+  return null
+}

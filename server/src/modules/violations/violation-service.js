@@ -1,0 +1,188 @@
+import { normalizeIngredientName } from '../../../../module-2/rationManager.js'
+
+function round1(value) {
+  return Math.round(Number(value || 0) * 10) / 10
+}
+
+function toViolationDescriptor(violation) {
+  const plan = Number(violation?.plan || 0)
+  const fact = Number(violation?.fact || 0)
+  const deviation = fact - plan
+  const deviationPercent = plan > 0
+    ? Math.round(((deviation / plan) * 100) * 10) / 10
+    : (fact > 0 ? 100 : 0)
+
+  if (plan > 0 && fact === 0) {
+    return {
+      code: 'MISSING_COMPONENT',
+      title: 'Пропуск компонента',
+      message: `Не загружен плановый компонент ${violation.ingredient}`,
+      deviation,
+      deviationPercent
+    }
+  }
+
+  if (plan === 0 && fact > 0) {
+    return {
+      code: 'EXTRA_COMPONENT',
+      title: 'Лишний компонент',
+      message: `Загружен компонент вне плана: ${violation.ingredient}`,
+      deviation,
+      deviationPercent
+    }
+  }
+
+  if (deviation > 0) {
+    return {
+      code: 'OVERWEIGHT_COMPONENT',
+      title: 'Перевложение',
+      message: `Компонент ${violation.ingredient} загружен с перевесом`,
+      deviation,
+      deviationPercent
+    }
+  }
+
+  return {
+    code: 'UNDERWEIGHT_COMPONENT',
+    title: 'Недовложение',
+    message: `Компонент ${violation.ingredient} загружен с недовесом`,
+    deviation,
+    deviationPercent
+  }
+}
+
+function buildComponentKey(name) {
+  return normalizeIngredientName(name || '')
+}
+
+export async function syncBatchViolationLog(db, batch, checkResult, detectedAt = new Date()) {
+  if (!batch?.id) {
+    return { activeCount: 0 }
+  }
+
+  const existing = await db.violation.findMany({
+    where: {
+      batchId: batch.id,
+      category: 'BUSINESS'
+    },
+    select: {
+      id: true,
+      code: true,
+      componentKey: true,
+      status: true
+    }
+  })
+
+  const existingMap = new Map(
+    existing.map((item) => [`${item.code}:${item.componentKey}`, item])
+  )
+  const activeKeys = new Set()
+
+  for (const violation of checkResult.violations || []) {
+    const descriptor = toViolationDescriptor(violation)
+    const componentKey = buildComponentKey(violation.ingredient)
+    const compositeKey = `${descriptor.code}:${componentKey}`
+    const existingItem = existingMap.get(compositeKey)
+    activeKeys.add(compositeKey)
+
+    await db.violation.upsert({
+      where: {
+        batchId_code_componentKey: {
+          batchId: batch.id,
+          code: descriptor.code,
+          componentKey
+        }
+      },
+      update: {
+        deviceId: batch.deviceId,
+        title: descriptor.title,
+        componentName: violation.ingredient || null,
+        message: descriptor.message,
+        category: 'BUSINESS',
+        planWeight: round1(violation.plan),
+        actualWeight: round1(violation.fact),
+        deviation: round1(descriptor.deviation),
+        deviationPercent: descriptor.deviationPercent,
+        detectedAt,
+        resolvedAt: null,
+        status: existingItem && ['IN_PROGRESS', 'CLOSED'].includes(existingItem.status)
+          ? existingItem.status
+          : 'OPEN'
+      },
+      create: {
+        batchId: batch.id,
+        deviceId: batch.deviceId,
+        code: descriptor.code,
+        title: descriptor.title,
+        componentKey,
+        componentName: violation.ingredient || null,
+        message: descriptor.message,
+        category: 'BUSINESS',
+        status: 'OPEN',
+        planWeight: round1(violation.plan),
+        actualWeight: round1(violation.fact),
+        deviation: round1(descriptor.deviation),
+        deviationPercent: descriptor.deviationPercent,
+        detectedAt
+      }
+    })
+  }
+
+  for (const item of existing) {
+    const compositeKey = `${item.code}:${item.componentKey}`
+    if (activeKeys.has(compositeKey)) {
+      continue
+    }
+
+    const nextStatus = item.status === 'CLOSED' ? 'CLOSED' : 'RESOLVED'
+    await db.violation.update({
+      where: { id: item.id },
+      data: {
+        status: nextStatus,
+        resolvedAt: detectedAt
+      }
+    })
+  }
+
+  return { activeCount: activeKeys.size }
+}
+
+export async function recordLeftoverViolation(db, { batchId, deviceId, leftoverWeight, detectedAt = new Date() }) {
+  if (!batchId) {
+    return null
+  }
+
+  return db.violation.upsert({
+    where: {
+      batchId_code_componentKey: {
+        batchId,
+        code: 'LEFTOVER_WEIGHT',
+        componentKey: '__leftover__'
+      }
+    },
+    update: {
+      deviceId,
+      title: 'Остаток после выгрузки',
+      componentName: 'Остаток',
+      message: `После выгрузки осталось ${round1(leftoverWeight)} кг`,
+      category: 'LEFTOVER',
+      actualWeight: round1(leftoverWeight),
+      detectedAt,
+      resolvedAt: null,
+      status: 'OPEN'
+    },
+    create: {
+      batchId,
+      deviceId,
+      code: 'LEFTOVER_WEIGHT',
+      title: 'Остаток после выгрузки',
+      componentKey: '__leftover__',
+      componentName: 'Остаток',
+      message: `После выгрузки осталось ${round1(leftoverWeight)} кг`,
+      category: 'LEFTOVER',
+      status: 'OPEN',
+      actualWeight: round1(leftoverWeight),
+      detectedAt
+    }
+  })
+}

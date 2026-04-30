@@ -45,6 +45,21 @@ async function main() {
 
     console.log(`✅ Пользователь ${user.username} с ролью ${user.role} готов к работе!`);
   }
+
+  await prisma.telemetrySettings.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      id: 1,
+      batchStartThresholdKg: 30,
+      leftoverThresholdKg: 50,
+      unloadDropThresholdKg: 200,
+      unloadMinPeakKg: 400,
+      unloadUpdateDeltaKg: 1
+    }
+  });
+
+  console.log('✅ Настройки телеметрии инициализированы');
   
   console.log('🎉 Все пользователи успешно добавлены в базу!');
 }

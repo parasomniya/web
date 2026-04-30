@@ -14,6 +14,9 @@ const endpoints = {
         latest: window.AppAuth?.getApiUrl?.("/api/telemetry/rtk/admin/latest") || "/api/telemetry/rtk/admin/latest",
         history: window.AppAuth?.getApiUrl?.(`/api/telemetry/rtk/admin/history?limit=${HISTORY_LIMIT}`) || `/api/telemetry/rtk/admin/history?limit=${HISTORY_LIMIT}`,
     },
+    settings: {
+        current: window.AppAuth?.getApiUrl?.("/api/telemetry/settings") || "/api/telemetry/settings",
+    },
 };
 
 function getHeaders() {
@@ -158,6 +161,25 @@ function formatExtra(row) {
     return parts.join(", ");
 }
 
+async function readErrorMessage(response) {
+    const contentType = response.headers.get("content-type") || "";
+
+    if (contentType.includes("application/json")) {
+        try {
+            const payload = await response.json();
+            return payload?.error || payload?.message || "";
+        } catch (error) {
+            return "";
+        }
+    }
+
+    try {
+        return (await response.text()).trim();
+    } catch (error) {
+        return "";
+    }
+}
+
 async function fetchJson(url) {
     const response = await fetch(url, { headers: getHeaders() });
 
@@ -170,6 +192,126 @@ async function fetchJson(url) {
     }
 
     return response.json();
+}
+
+function setTelemetrySettingsMeta(message) {
+    setText("telemetrySettingsMeta", message);
+}
+
+function getTelemetrySettingsForm() {
+    return document.getElementById("telemetrySettingsForm");
+}
+
+function getTelemetrySettingsButton() {
+    return document.getElementById("telemetrySettingsSubmitButton");
+}
+
+function setTelemetrySettingsButtonState(isSaving) {
+    const button = getTelemetrySettingsButton();
+    if (!button) return;
+
+    button.disabled = Boolean(isSaving);
+    button.innerHTML = isSaving
+        ? '<span class="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>Сохранение...'
+        : 'Сохранить настройки';
+}
+
+function fillTelemetrySettingsForm(settings) {
+    const form = getTelemetrySettingsForm();
+    if (!form || !settings) return;
+
+    const fields = [
+        "batchStartThresholdKg",
+        "leftoverThresholdKg",
+        "unloadDropThresholdKg",
+        "unloadMinPeakKg",
+        "unloadUpdateDeltaKg",
+    ];
+
+    fields.forEach((field) => {
+        const input = form.elements.namedItem(field);
+        if (input) {
+            input.value = settings[field] != null ? String(settings[field]) : "";
+        }
+    });
+}
+
+async function loadTelemetrySettings() {
+    const form = getTelemetrySettingsForm();
+    if (!form) return;
+
+    try {
+        setTelemetrySettingsMeta("Загрузка настроек...");
+        const settings = await fetchJson(endpoints.settings.current);
+        fillTelemetrySettingsForm(settings);
+
+        const updatedAt = settings?.updatedAt ? formatDateTime(settings.updatedAt) : "--";
+        setTelemetrySettingsMeta(`Последнее изменение: ${updatedAt}`);
+        setText("telemetrySettingsState", "Настройки влияют на старт замеса, выгрузку и остаток.");
+    } catch (error) {
+        setTelemetrySettingsMeta("Не удалось загрузить настройки");
+        setText("telemetrySettingsState", "Сервер не отдал настройки телеметрии.");
+        window.AppAuth?.showAlert?.("Не удалось загрузить настройки телеметрии", "danger");
+    }
+}
+
+async function saveTelemetrySettings(event) {
+    event.preventDefault();
+
+    const form = getTelemetrySettingsForm();
+    if (!form) return;
+
+    const formData = new FormData(form);
+    const payload = {};
+    const fields = [
+        "batchStartThresholdKg",
+        "leftoverThresholdKg",
+        "unloadDropThresholdKg",
+        "unloadMinPeakKg",
+        "unloadUpdateDeltaKg",
+    ];
+
+    for (const field of fields) {
+        const rawValue = String(formData.get(field) || "").trim();
+        const number = Number(rawValue);
+
+        if (!rawValue || !Number.isInteger(number) || number <= 0) {
+            window.AppAuth?.showAlert?.("Все пороги должны быть положительными целыми числами", "warning");
+            return;
+        }
+
+        payload[field] = number;
+    }
+
+    try {
+        setTelemetrySettingsButtonState(true);
+        const response = await fetch(endpoints.settings.current, {
+            method: "PUT",
+            headers: {
+                ...(getHeaders()),
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const message = await readErrorMessage(response);
+            throw new Error(message || "Не удалось сохранить настройки телеметрии");
+        }
+
+        const result = await response.json();
+        const settings = result?.settings || payload;
+        fillTelemetrySettingsForm(settings);
+        const updatedAt = settings?.updatedAt ? formatDateTime(settings.updatedAt) : formatDateTime(new Date().toISOString());
+        setTelemetrySettingsMeta(`Последнее изменение: ${updatedAt}`);
+        setText("telemetrySettingsState", "Настройки сохранены и будут применяться к новым пакетам телеметрии.");
+        window.AppAuth?.showAlert?.("Настройки телеметрии сохранены", "success");
+    } catch (error) {
+        setText("telemetrySettingsState", "Не удалось сохранить настройки телеметрии.");
+        window.AppAuth?.showAlert?.(error.message || "Не удалось сохранить настройки телеметрии", "danger");
+    } finally {
+        setTelemetrySettingsButtonState(false);
+    }
 }
 
 function renderHostSummary(latest) {
@@ -396,3 +538,9 @@ async function refreshTelemetry() {
 bindTabs();
 refreshTelemetry();
 setInterval(refreshTelemetry, POLL_INTERVAL_MS);
+
+const telemetrySettingsForm = getTelemetrySettingsForm();
+if (telemetrySettingsForm) {
+    telemetrySettingsForm.addEventListener("submit", saveTelemetrySettings);
+    loadTelemetrySettings();
+}

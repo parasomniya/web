@@ -1,6 +1,5 @@
 import prisma from '../../database.js';
 import { aggregateFacts, getBatchPlan } from '../batches/batch-violations.js';
-import { checkViolations } from '../../../../module-2/rationManager.js';
 
 export const DEFAULT_LIMIT = 500;
 export const MAX_LIMIT = 1000;
@@ -36,37 +35,12 @@ function buildBatchDate(batch) {
     return batch.endTime || batch.startTime || null;
 }
 
-function getViolationType(violation) {
-    const plan = Number(violation?.plan || 0);
-    const fact = Number(violation?.fact || 0);
-    const deviation = fact - plan;
+function toUiViolationStatus(violation) {
+    if (violation.status === 'CLOSED') return 'closed';
+    if (violation.status === 'IN_PROGRESS') return 'in_progress';
 
-    if (plan > 0 && fact === 0) {
-        return 'Пропуск компонента';
-    }
-
-    if (plan === 0 && fact > 0) {
-        return 'Лишний компонент';
-    }
-
-    if (deviation > 0) {
-        return 'Перевложение';
-    }
-
-    if (deviation < 0) {
-        return 'Недовложение';
-    }
-
-    return 'Нарушение';
-}
-
-function getViolationStatus(violation) {
-    const plan = Number(violation?.plan || 0);
-    const fact = Number(violation?.fact || 0);
-    const deviation = fact - plan;
-    const deviationPercent = plan > 0 ? Math.abs((deviation / plan) * 100) : (fact > 0 ? 100 : 0);
-
-    if ((plan > 0 && fact === 0) || (plan === 0 && fact > 0) || deviationPercent >= 20) {
+    const deviationPercent = Math.abs(Number(violation?.deviationPercent || 0));
+    if (violation.code === 'MISSING_COMPONENT' || violation.code === 'EXTRA_COMPONENT' || violation.code === 'LEFTOVER_WEIGHT' || deviationPercent >= 20) {
         return 'critical';
     }
 
@@ -117,9 +91,43 @@ export async function collectReportData({ fromDate = null, toDate = null, limit 
                     addedAt: true
                 },
                 orderBy: { addedAt: 'asc' }
+            },
+            violations: {
+                where: {
+                    status: { not: 'RESOLVED' }
+                },
+                select: {
+                    id: true
+                }
             }
         },
         orderBy: { startTime: 'desc' },
+        take: Math.min(limit, MAX_LIMIT)
+    });
+
+    const violations = await prisma.violation.findMany({
+        where: {
+            ...(fromDate || toDate ? {
+                detectedAt: {
+                    ...(fromDate ? { gte: fromDate } : {}),
+                    ...(toDate ? { lte: toDate } : {})
+                }
+            } : {}),
+            status: { not: 'RESOLVED' }
+        },
+        include: {
+            batch: {
+                include: {
+                    group: {
+                        select: {
+                            id: true,
+                            name: true
+                        }
+                    }
+                }
+            }
+        },
+        orderBy: { detectedAt: 'desc' },
         take: Math.min(limit, MAX_LIMIT)
     });
 
@@ -130,7 +138,6 @@ export async function collectReportData({ fromDate = null, toDate = null, limit 
         const plan = getBatchPlan(batch);
         const facts = aggregateFacts(batch.actualIngredients || []);
         const factTotal = facts.reduce((sum, item) => sum + Number(item.actualWeight || 0), 0);
-        const violationsCheck = checkViolations(plan.ingredients || [], facts, VIOLATION_THRESHOLD);
         const batchDate = buildBatchDate(batch);
 
         reportBatches.push({
@@ -140,37 +147,31 @@ export async function collectReportData({ fromDate = null, toDate = null, limit 
             groupName: batch.group?.name || 'Без группы',
             planTotal: round1(plan.totalBatchWeight || 0),
             factTotal: round1(factTotal),
-            violationsCount: violationsCheck.violations.length
+            violationsCount: batch.violations.length
         });
+    }
 
-        for (const violation of violationsCheck.violations) {
-            const planWeight = round1(violation.plan || 0);
-            const factWeight = round1(violation.fact || 0);
-            const deviation = round1(factWeight - planWeight);
-            const type = getViolationType({
-                plan: planWeight,
-                fact: factWeight
-            });
-
-            reportViolations.push({
-                batchId: batch.id,
-                date: batchDate,
-                batchLabel: `Замес #${batch.id}`,
-                batch: `Замес #${batch.id}`,
-                groupName: batch.group?.name || 'Без группы',
-                group: batch.group?.name || 'Без группы',
-                component: violation.ingredient || '—',
-                type,
-                violationType: type,
-                plan: planWeight,
-                fact: factWeight,
-                deviation,
-                status: getViolationStatus({
-                    plan: planWeight,
-                    fact: factWeight
-                })
-            });
-        }
+    for (const violation of violations) {
+        const batch = violation.batch;
+        const batchDate = violation.detectedAt || buildBatchDate(batch);
+        reportViolations.push({
+            id: violation.id,
+            batchId: violation.batchId,
+            date: batchDate,
+            batchLabel: violation.batchId ? `Замес #${violation.batchId}` : 'Без замеса',
+            batch: violation.batchId ? `Замес #${violation.batchId}` : 'Без замеса',
+            groupName: batch?.group?.name || 'Без группы',
+            group: batch?.group?.name || 'Без группы',
+            component: violation.componentName || '—',
+            type: violation.title,
+            violationType: violation.title,
+            plan: round1(violation.planWeight || 0),
+            fact: round1(violation.actualWeight || 0),
+            deviation: round1(violation.deviation || 0),
+            status: toUiViolationStatus(violation),
+            code: violation.code,
+            comment: violation.comment || null
+        });
     }
 
     return {

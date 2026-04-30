@@ -78,6 +78,17 @@ function isoAt(baseTimeMs, offsetSeconds) {
 
 async function main() {
   const startedAt = new Date()
+  const runTag = Date.now().toString().slice(-6)
+  const userName = `e2e_operator_${runTag}`
+  const userEmail = `e2e.operator.${runTag}@example.com`
+  const circleZoneName = `Силосная зона E2E ${runTag}`
+  const squareZoneName = `Сенная зона E2E ${runTag}`
+  const unloadZoneName = `Коровник E2E ${runTag}`
+  const rationName = `Рацион E2E ${runTag}`
+  const mainGroupName = `Группа E2E ${runTag}`
+  const updatedGroupName = `Группа E2E основная ${runTag}`
+  const tempGroupName = `Группа E2E временная ${runTag}`
+
   const health = await request('GET', '/api/health')
   pushLog('health', { status: 'ok', health })
 
@@ -93,8 +104,8 @@ async function main() {
   const createdUser = await request('POST', '/api/users', {
     token: adminToken,
     json: {
-      username: 'e2e_operator',
-      email: 'e2e.operator@example.com',
+      username: userName,
+      email: userEmail,
       password: 'Operator123',
       role: 'GUEST'
     }
@@ -110,7 +121,7 @@ async function main() {
   const circleZone = await request('POST', '/api/telemetry/zones', {
     token: adminToken,
     json: {
-      name: 'Силосная зона E2E',
+      name: circleZoneName,
       ingredient: 'Силос',
       shapeType: 'CIRCLE',
       lat: 52.5284,
@@ -124,7 +135,7 @@ async function main() {
   const squareZone = await request('POST', '/api/telemetry/zones', {
     token: adminToken,
     json: {
-      name: 'Сенная зона E2E',
+      name: squareZoneName,
       ingredient: 'Сено',
       shapeType: 'SQUARE',
       lat: 52.5292,
@@ -135,8 +146,22 @@ async function main() {
   })
   pushLog('zone_square_create', { status: 'ok', id: squareZone.id })
 
+  const unloadZone = await request('POST', '/api/telemetry/zones', {
+    token: adminToken,
+    json: {
+      name: unloadZoneName,
+      ingredient: 'Коровник',
+      shapeType: 'CIRCLE',
+      lat: 52.53,
+      lon: 85.1293,
+      radius: 45,
+      active: true
+    }
+  })
+  pushLog('zone_unload_create', { status: 'ok', id: unloadZone.id })
+
   const form = new FormData()
-  form.append('name', 'Рацион E2E')
+  form.append('name', rationName)
   form.append(
     'file',
     new Blob(
@@ -155,10 +180,10 @@ async function main() {
   const mainGroup = await request('POST', '/api/groups', {
     token: adminToken,
     json: {
-      name: 'Группа E2E',
+      name: mainGroupName,
       headcount: 1,
       rationId: ration.id,
-      storageZoneId: circleZone.id
+      storageZoneId: unloadZone.id
     }
   })
   pushLog('group_create', { status: 'ok', id: mainGroup.id })
@@ -166,10 +191,10 @@ async function main() {
   const updatedGroup = await request('PUT', `/api/groups/${mainGroup.id}`, {
     token: adminToken,
     json: {
-      name: 'Группа E2E основная',
+      name: updatedGroupName,
       headcount: 1,
       rationId: ration.id,
-      storageZoneId: squareZone.id
+      storageZoneId: unloadZone.id
     }
   })
   pushLog('group_update', { status: 'ok', id: updatedGroup.group?.id || mainGroup.id })
@@ -177,7 +202,7 @@ async function main() {
   const tempGroup = await request('POST', '/api/groups', {
     token: adminToken,
     json: {
-      name: 'Группа E2E временная',
+      name: tempGroupName,
       headcount: 5,
       storageZoneId: circleZone.id
     }
@@ -307,22 +332,22 @@ async function main() {
   }
   pushLog('batches_list', { status: 'ok', count: batches.length, latestBatchId: latestBatch.id })
 
-  const batchPatched = await request('PATCH', `/api/batches/${latestBatch.id}`, {
-    token: adminToken,
-    json: {
-      rationId: ration.id,
-      groupId: mainGroup.id
-    }
-  })
-  pushLog('batch_patch', { status: 'ok', id: batchPatched.batch?.id || latestBatch.id })
-
   const batchDetails = await request('GET', `/api/batches/${latestBatch.id}`, {
     token: adminToken
   })
+  if (batchDetails.groupId !== mainGroup.id || batchDetails.rationId !== ration.id) {
+    throw new Error(`Автопривязка batch не сработала: groupId=${batchDetails.groupId}, rationId=${batchDetails.rationId}`)
+  }
   pushLog('batch_details', {
     status: 'ok',
     ingredients: batchDetails.ingredients?.length || 0,
     unloadingBarn: batchDetails.unloadingInfo?.barnName || null
+  })
+  pushLog('batch_auto_binding', {
+    status: 'ok',
+    batchId: latestBatch.id,
+    groupId: batchDetails.groupId,
+    rationId: batchDetails.rationId
   })
 
   const reports = await request('GET', '/api/reports', {
@@ -375,10 +400,14 @@ async function main() {
     startedAt: startedAt.toISOString(),
     finishedAt: new Date().toISOString(),
     created: {
+      runTag,
+      userId: createdUser.id,
+      userName,
       rationId: ration.id,
       groupId: mainGroup.id,
       circleZoneId: circleZone.id,
       squareZoneId: squareZone.id,
+      unloadZoneId: unloadZone.id,
       latestBatchId: latestBatch.id
     },
     credentials: {

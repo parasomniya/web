@@ -1,19 +1,14 @@
 import jwt from 'jsonwebtoken'
 
-const FALLBACK_SECRET_KEY = 'super_secret_farm_key_123'
 const CONFIGURED_SECRET_KEY = typeof process.env.JWT_SECRET === 'string'
   ? process.env.JWT_SECRET.trim()
   : ''
 
-if (!CONFIGURED_SECRET_KEY && process.env.NODE_ENV === 'production') {
-  throw new Error('JWT_SECRET is required in production')
-}
-
 if (!CONFIGURED_SECRET_KEY) {
-  console.warn('[AUTH] JWT_SECRET не задан, используется dev fallback. Для продакшена это нужно убрать.')
+  throw new Error('JWT_SECRET is required')
 }
 
-export const SECRET_KEY = CONFIGURED_SECRET_KEY || FALLBACK_SECRET_KEY
+export const SECRET_KEY = CONFIGURED_SECRET_KEY
 
 function getRequestIp(req) {
   const forwardedFor = req.headers['x-forwarded-for']

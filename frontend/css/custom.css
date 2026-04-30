@@ -1482,6 +1482,42 @@
     text-decoration: none;
 }
 
+.admin-users-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem;
+}
+
+.admin-users-edit-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 999px;
+    transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.admin-users-edit-button:hover:not(:disabled),
+.admin-users-edit-button:focus-visible:not(:disabled) {
+    background: rgba(78, 115, 223, 0.12);
+    color: #224abe !important;
+    text-decoration: none;
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.admin-users-edit-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    text-decoration: none;
+}
+
+.telemetry-settings-grid .form-control {
+    font-weight: 700;
+}
+
 .digest-hero-card {
     border: 1px solid #e3e6f0;
     border-radius: 1rem;
