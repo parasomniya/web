@@ -63,15 +63,11 @@ function mapQualityLabel(quality) {
     case 5:
       return 'rtk_float'
     default:
-      return quality == null ? null : `quality_${quality}`
+      return quality == null ? null : 'other'
   }
 }
 
 function resolveQualityLabel(rawLabel, quality) {
-  if (rawLabel !== undefined && rawLabel !== null && String(rawLabel).trim() !== '') {
-    return String(rawLabel).trim()
-  }
-
   return mapQualityLabel(quality)
 }
 

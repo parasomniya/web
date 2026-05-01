@@ -149,14 +149,8 @@ function formatWifiClients(value) {
 
 function formatExtra(row) {
     const parts = [];
-    if (row.speed != null) parts.push(`speed:${formatShortNumber(row.speed, 1)}`);
-    if (row.course != null) parts.push(`course:${formatShortNumber(row.course, 0)}`);
-    if (row.hacc != null) parts.push(`hacc:${formatShortNumber(row.hacc, 3)}m`);
-    if (row.vacc != null) parts.push(`vacc:${formatShortNumber(row.vacc, 3)}m`);
-    if (row.corrAgeS != null) parts.push(`corr_age:${formatShortNumber(row.corrAgeS, 1)}s`);
-    if (row.supplyVoltage != null) parts.push(`voltage:${formatShortNumber(row.supplyVoltage, 1)}`);
-    if (row.wifiProfile) parts.push(`wifi:${row.wifiProfile}`);
     if (row.rawGga) parts.push(`gga:${String(row.rawGga).slice(0, 28)}...`);
+    if (row.eventsReaderOk != null) parts.push(`events:${row.eventsReaderOk ? "ok" : "fail"}`);
     if (parts.length === 0) return "--";
     return parts.join(", ");
 }
@@ -405,28 +399,25 @@ async function loadEvents() {
 
 function renderRtkSummary(latest, missing) {
     const rtkState = getTelemetryState(latest, "rtk");
-    const qualityValue = latest?.quality != null
-        ? `${latest.quality}${latest?.qualityLabel ? ` · ${latest.qualityLabel}` : ""}`
-        : (latest?.qualityLabel || latest?.rtkQuality || "--");
+    const qualityValue = latest?.quality != null ? String(latest.quality) : "--";
+    const qualityFlagValue = latest?.qualityFlag || latest?.qualityLabel || latest?.rtkQuality || "--";
     const corrAgeValue = latest?.corrAgeS ?? latest?.rtkAge;
-    const wifiLabel = latest?.wifiConnected == null
-        ? "--"
-        : `${latest.wifiConnected ? "Подключен" : "Отключен"}${latest?.wifiProfile ? ` · ${latest.wifiProfile}` : ""}${latest?.wifiSsid ? ` · ${latest.wifiSsid}` : ""}`;
 
     setText("rtkStatus", missing ? "API не подключён" : rtkState.label);
     setText("rtkDevice", latest?.deviceId || "--");
     setText("rtkLastPacket", formatDateTime(latest?.timestamp));
     setText("rtkQuality", qualityValue);
+    setText("rtkQualityFlag", qualityFlagValue);
     setText("rtkAge", corrAgeValue != null ? `${formatShortNumber(corrAgeValue, 1)} c` : "--");
     setText("rtkValid", latest?.valid == null ? "--" : (latest.valid ? "Да" : "Нет"));
     setText("rtkCoordinates", latest ? `${formatNumber(latest.lat)}, ${formatNumber(latest.lon)}` : "--");
     setText("rtkZone", latest?.zone?.name || "--");
     setText("rtkSatellites", latest?.satellites != null ? String(latest.satellites) : "--");
-    setText("rtkWifi", wifiLabel);
+    setText("rtkHacc", latest?.hacc != null ? `${formatShortNumber(latest.hacc, 3)} м` : "--");
+    setText("rtkVacc", latest?.vacc != null ? `${formatShortNumber(latest.vacc, 3)} м` : "--");
+    setText("rtkWifiProfile", latest?.wifiProfile || "--");
     setText("rtkRssi", latest?.rssiDbm != null ? `${latest.rssiDbm} dBm` : "--");
-    setText("rtkSdReady", latest?.sdReady == null ? "--" : (latest.sdReady ? "Готова" : "Нет"));
     setText("rtkQueue", latest?.ramQueueLen != null ? String(latest.ramQueueLen) : "--");
-    setText("rtkHeap", formatBytes(latest?.freeHeapBytes));
 }
 
 function renderRtkTable(rows, missing) {
@@ -434,12 +425,12 @@ function renderRtkTable(rows, missing) {
     if (!tbody) return;
 
     if (missing) {
-        tbody.innerHTML = '<tr><td colspan="16" class="telemetry-empty-state">RTK API недоступен.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="15" class="telemetry-empty-state">RTK API недоступен.</td></tr>';
         return;
     }
 
     if (!Array.isArray(rows) || rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="16" class="telemetry-empty-state">По RTK пока нет записей.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="15" class="telemetry-empty-state">По RTK пока нет записей.</td></tr>';
         return;
     }
 
@@ -451,16 +442,15 @@ function renderRtkTable(rows, missing) {
             <td>${formatNumber(row.lon)}</td>
             <td>${boolBadge(row.valid)}</td>
             <td>${row.quality != null ? row.quality : "--"}</td>
-            <td>${qualityBadge(row.qualityLabel || row.rtkQuality, row.quality)}</td>
+            <td>${qualityBadge(row.qualityFlag || row.qualityLabel || row.rtkQuality, row.quality)}</td>
             <td>${row.satellites != null ? row.satellites : "--"}</td>
-            <td>${row.speed != null ? `${formatShortNumber(row.speed, 1)} км/ч` : "--"}</td>
-            <td>${row.course != null ? `${formatShortNumber(row.course, 0)}°` : "--"}</td>
-            <td>${row.wifiConnected == null ? "--" : `${row.wifiConnected ? "Да" : "Нет"}${row.wifiSsid ? ` · ${row.wifiSsid}` : ""}`}</td>
+            <td>${row.hacc != null ? `${formatShortNumber(row.hacc, 3)} м` : "--"}</td>
+            <td>${row.vacc != null ? `${formatShortNumber(row.vacc, 3)} м` : "--"}</td>
+            <td>${row.corrAgeS != null ? `${formatShortNumber(row.corrAgeS, 1)} c` : "--"}</td>
+            <td>${row.wifiProfile || "--"}</td>
             <td>${row.rssiDbm != null ? `${row.rssiDbm} dBm` : "--"}</td>
-            <td>${row.sdReady == null ? "--" : (row.sdReady ? "Да" : "Нет")}</td>
-            <td>${formatBytes(row.freeHeapBytes)}</td>
+            <td>${row.ramQueueLen != null ? row.ramQueueLen : "--"}</td>
             <td>${row.zone?.name || "--"}</td>
-            <td class="telemetry-extra">${formatExtra(row)}</td>
         </tr>
     `).join("");
 }
