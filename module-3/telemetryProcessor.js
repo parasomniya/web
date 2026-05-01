@@ -1,5 +1,15 @@
 import { detectZoneObject } from '../module-1/geo.js';
 import { isValidLocation } from '../module-1/validator.js';
+import {
+  BATCH_START_THRESHOLD_KG,
+  LEFTOVER_THRESHOLD_KG,
+  UNLOAD_DROP_THRESHOLD_KG,
+  UNLOAD_MIN_PEAK_KG,
+  UNLOAD_UPDATE_DELTA_KG,
+  UNLOAD_WEIGHT_BUFFER_KG,
+  EMPTY_VEHICLE_THRESHOLD_KG,
+  ANOMALY_THRESHOLD_KG
+} from './config.js';
 
 export class TelemetryProcessor {
   constructor() {
@@ -16,13 +26,11 @@ export class TelemetryProcessor {
       isUnloading: false,
       lastUnloadWeight: null,
       lastIngredientName: null,
-      isBatchStarted: false
+      isBatchStarted: false,
+      lastAcceptedWeight: null // 👈 Для сравнения с прошлым пакетом
     };
   }
 
-  /**
-   * Вычисляет текущий режим работы устройства
-   */
   _getCurrentMode(state) {
     if (state.isUnloading) return 'unloading';
     if (state.isMixing) return 'loading';
@@ -31,11 +39,11 @@ export class TelemetryProcessor {
 
   _resolveThresholds(settings = {}) {
     return {
-      batchStartThresholdKg: Number(settings.batchStartThresholdKg) > 0 ? Number(settings.batchStartThresholdKg) : 30,
-      leftoverThresholdKg: Number(settings.leftoverThresholdKg) > 0 ? Number(settings.leftoverThresholdKg) : 50,
-      unloadDropThresholdKg: Number(settings.unloadDropThresholdKg) > 0 ? Number(settings.unloadDropThresholdKg) : 200,
-      unloadMinPeakKg: Number(settings.unloadMinPeakKg) > 0 ? Number(settings.unloadMinPeakKg) : 400,
-      unloadUpdateDeltaKg: Number(settings.unloadUpdateDeltaKg) > 0 ? Number(settings.unloadUpdateDeltaKg) : 1
+      batchStartThresholdKg: Number(settings.batchStartThresholdKg) > 0 ? Number(settings.batchStartThresholdKg) : BATCH_START_THRESHOLD_KG,
+      leftoverThresholdKg: Number(settings.leftoverThresholdKg) > 0 ? Number(settings.leftoverThresholdKg) : LEFTOVER_THRESHOLD_KG,
+      unloadDropThresholdKg: Number(settings.unloadDropThresholdKg) > 0 ? Number(settings.unloadDropThresholdKg) : UNLOAD_DROP_THRESHOLD_KG,
+      unloadMinPeakKg: Number(settings.unloadMinPeakKg) > 0 ? Number(settings.unloadMinPeakKg) : UNLOAD_MIN_PEAK_KG,
+      unloadUpdateDeltaKg: Number(settings.unloadUpdateDeltaKg) > 0 ? Number(settings.unloadUpdateDeltaKg) : UNLOAD_UPDATE_DELTA_KG
     };
   }
 
@@ -98,6 +106,18 @@ export class TelemetryProcessor {
       this.deviceStates.set(deviceId, state);
     }
 
+    // 👈 Фильтр аномалий: сравнение с последним принятым пакетом
+    if (state.lastAcceptedWeight !== null && Math.abs(currentWeight - state.lastAcceptedWeight) > ANOMALY_THRESHOLD_KG) {
+      return {
+        isValid: true,
+        skipped: true,
+        error: null,
+        banner: null,
+        dbActions: [],
+        state: this.getState(deviceId)
+      };
+    }
+
     const activeZone = detectZoneObject(lat, lon, zonesConfig);
     const activeZoneName = activeZone?.name || null;
     const activeIngredientName = activeZone?.ingredient || activeZoneName;
@@ -148,7 +168,7 @@ export class TelemetryProcessor {
     }
 
     // ===== ШАГ 6: Защита от недовыгрузки =====
-    if (state.isUnloading && Number.isFinite(state.lastUnloadWeight) && currentWeight > state.lastUnloadWeight + 50) {
+    if (state.isUnloading && Number.isFinite(state.lastUnloadWeight) && currentWeight > state.lastUnloadWeight + UNLOAD_WEIGHT_BUFFER_KG) {
       const leftoverWeight = state.lastUnloadWeight;
   
       if (leftoverWeight > thresholds.leftoverThresholdKg) {
@@ -207,8 +227,8 @@ export class TelemetryProcessor {
       });
     }
 
-    // Окончание: если кузов пуст (< 50 кг)
-    if (state.isUnloading && currentWeight < 50) {
+    // Окончание: если кузов пуст
+    if (state.isUnloading && currentWeight < EMPTY_VEHICLE_THRESHOLD_KG) {
       result.dbActions.push({
         type: 'COMPLETE_BATCH',
         endWeight: Math.round(currentWeight)
@@ -217,7 +237,6 @@ export class TelemetryProcessor {
       this.deviceStates.delete(deviceId);
     }
 
-    // 🆕 Добавляем явный режим в output state
     result.state = {
       currentZone: activeZoneName,
       currentIngredient: activeIngredientName || (state.isMixing ? state.lastIngredientName : null),
@@ -226,9 +245,11 @@ export class TelemetryProcessor {
       peakWeight: state.peakWeight,
       lastIngredientName: state.lastIngredientName,
       isBatchStarted: state.isBatchStarted,
-      currentMode: this._getCurrentMode(state)  // ✅ Явный режим
+      currentMode: this._getCurrentMode(state)
     };
 
+    // 👈 Запоминаем вес только если пакет прошёл фильтр
+    state.lastAcceptedWeight = currentWeight;
     return result;
   }
 
@@ -238,7 +259,7 @@ export class TelemetryProcessor {
       ...state,
       currentZone: state.currentZone?.name || null,
       currentIngredient: state.currentZone?.ingredient || state.lastIngredientName || null,
-      currentMode: this._getCurrentMode(state)  // ✅ И здесь тоже
+      currentMode: this._getCurrentMode(state)
     };
   }
 
