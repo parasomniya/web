@@ -55,7 +55,10 @@ async function main() {
       leftoverThresholdKg: 50,
       unloadDropThresholdKg: 200,
       unloadMinPeakKg: 400,
-      unloadUpdateDeltaKg: 1
+      unloadUpdateDeltaKg: 1,
+      anomalyThresholdKg: 200,
+      anomalyConfirmDeltaKg: 40,
+      anomalyConfirmPackets: 3
     }
   });
 

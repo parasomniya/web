@@ -458,9 +458,24 @@
                                         <input type="number" min="1" step="1" class="form-control" id="telemetryUnloadUpdateDeltaKg" name="unloadUpdateDeltaKg" required>
                                         <small class="form-text text-muted">Минимальное изменение веса для обновления прогресса выгрузки.</small>
                                     </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryAnomalyThresholdKg">Скачок аномалии, кг</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryAnomalyThresholdKg" name="anomalyThresholdKg" required>
+                                        <small class="form-text text-muted">Если скачок между пакетами выше порога, пакет не принимается сразу.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryAnomalyConfirmDeltaKg">Окно подтверждения, кг</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryAnomalyConfirmDeltaKg" name="anomalyConfirmDeltaKg" required>
+                                        <small class="form-text text-muted">Допустимый разброс для пакетов, подтверждающих новый уровень веса.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryAnomalyConfirmPackets">Пакетов для подтверждения</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryAnomalyConfirmPackets" name="anomalyConfirmPackets" required>
+                                        <small class="form-text text-muted">Сколько подряд пакетов нужно, чтобы принять резкий переход как реальный.</small>
+                                    </div>
                                 </div>
                                 <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                                    <div class="small text-muted" id="telemetrySettingsState">Настройки влияют на старт замеса, выгрузку и остаток.</div>
+                                    <div class="small text-muted" id="telemetrySettingsState">Настройки влияют на старт замеса, выгрузку, остаток и антишум тензодатчика.</div>
                                     <button type="submit" class="btn btn-primary" id="telemetrySettingsSubmitButton">Сохранить настройки</button>
                                 </div>
                             </form>
@@ -599,7 +614,7 @@
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260429d"></script>
-    <script src="js/telemetry.js?v=20260501b"></script>
+    <script src="js/telemetry.js?v=20260504a"></script>
     <script src="js/admin-users.js?v=20260501a"></script>
 
 </body>

@@ -7,7 +7,10 @@ export const DEFAULT_TELEMETRY_SETTINGS = {
   leftoverThresholdKg: 50,
   unloadDropThresholdKg: 200,
   unloadMinPeakKg: 400,
-  unloadUpdateDeltaKg: 1
+  unloadUpdateDeltaKg: 1,
+  anomalyThresholdKg: 200,
+  anomalyConfirmDeltaKg: 40,
+  anomalyConfirmPackets: 3
 }
 
 function toPositiveInteger(value, fallback) {
@@ -25,7 +28,12 @@ export function coerceTelemetrySettings(row = {}) {
     leftoverThresholdKg: toPositiveInteger(row.leftoverThresholdKg, DEFAULT_TELEMETRY_SETTINGS.leftoverThresholdKg),
     unloadDropThresholdKg: toPositiveInteger(row.unloadDropThresholdKg, DEFAULT_TELEMETRY_SETTINGS.unloadDropThresholdKg),
     unloadMinPeakKg: toPositiveInteger(row.unloadMinPeakKg, DEFAULT_TELEMETRY_SETTINGS.unloadMinPeakKg),
-    unloadUpdateDeltaKg: toPositiveInteger(row.unloadUpdateDeltaKg, DEFAULT_TELEMETRY_SETTINGS.unloadUpdateDeltaKg)
+    unloadUpdateDeltaKg: toPositiveInteger(row.unloadUpdateDeltaKg, DEFAULT_TELEMETRY_SETTINGS.unloadUpdateDeltaKg),
+    anomalyThresholdKg: toPositiveInteger(row.anomalyThresholdKg, DEFAULT_TELEMETRY_SETTINGS.anomalyThresholdKg),
+    anomalyConfirmDeltaKg: toPositiveInteger(row.anomalyConfirmDeltaKg, DEFAULT_TELEMETRY_SETTINGS.anomalyConfirmDeltaKg),
+    anomalyConfirmPackets: toPositiveInteger(row.anomalyConfirmPackets, DEFAULT_TELEMETRY_SETTINGS.anomalyConfirmPackets),
+    createdAt: row.createdAt || null,
+    updatedAt: row.updatedAt || null
   }
 }
 
@@ -47,7 +55,10 @@ export function validateTelemetrySettingsInput(payload = {}, { partial = false }
     'leftoverThresholdKg',
     'unloadDropThresholdKg',
     'unloadMinPeakKg',
-    'unloadUpdateDeltaKg'
+    'unloadUpdateDeltaKg',
+    'anomalyThresholdKg',
+    'anomalyConfirmDeltaKg',
+    'anomalyConfirmPackets'
   ]
 
   const data = {}
