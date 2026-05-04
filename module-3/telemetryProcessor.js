@@ -7,7 +7,8 @@ import {
   UNLOAD_MIN_PEAK_KG,
   UNLOAD_UPDATE_DELTA_KG,
   UNLOAD_WEIGHT_BUFFER_KG,
-  EMPTY_VEHICLE_THRESHOLD_KG
+  EMPTY_VEHICLE_THRESHOLD_KG,
+  ANOMALY_THRESHOLD_KG
 } from './config.js';
 
 export class TelemetryProcessor {
@@ -25,13 +26,11 @@ export class TelemetryProcessor {
       isUnloading: false,
       lastUnloadWeight: null,
       lastIngredientName: null,
-      isBatchStarted: false
+      isBatchStarted: false,
+      lastAcceptedWeight: null // 👈 Для сравнения с прошлым пакетом
     };
   }
 
-  /**
-   * Вычисляет текущий режим работы устройства
-   */
   _getCurrentMode(state) {
     if (state.isUnloading) return 'unloading';
     if (state.isMixing) return 'loading';
@@ -105,6 +104,18 @@ export class TelemetryProcessor {
     if (!state) {
       state = this.getInitialState(currentWeight);
       this.deviceStates.set(deviceId, state);
+    }
+
+    // 👈 Фильтр аномалий: сравнение с последним принятым пакетом
+    if (state.lastAcceptedWeight !== null && Math.abs(currentWeight - state.lastAcceptedWeight) > ANOMALY_THRESHOLD_KG) {
+      return {
+        isValid: true,
+        skipped: true,
+        error: null,
+        banner: null,
+        dbActions: [],
+        state: this.getState(deviceId)
+      };
     }
 
     const activeZone = detectZoneObject(lat, lon, zonesConfig);
@@ -226,7 +237,6 @@ export class TelemetryProcessor {
       this.deviceStates.delete(deviceId);
     }
 
-    // 🆕 Добавляем явный режим в output state
     result.state = {
       currentZone: activeZoneName,
       currentIngredient: activeIngredientName || (state.isMixing ? state.lastIngredientName : null),
@@ -238,6 +248,8 @@ export class TelemetryProcessor {
       currentMode: this._getCurrentMode(state)
     };
 
+    // 👈 Запоминаем вес только если пакет прошёл фильтр
+    state.lastAcceptedWeight = currentWeight;
     return result;
   }
 
