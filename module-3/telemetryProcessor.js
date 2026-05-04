@@ -8,7 +8,9 @@ import {
   UNLOAD_UPDATE_DELTA_KG,
   UNLOAD_WEIGHT_BUFFER_KG,
   EMPTY_VEHICLE_THRESHOLD_KG,
-  ANOMALY_THRESHOLD_KG
+  ANOMALY_THRESHOLD_KG,
+  ANOMALY_CONFIRM_DELTA_KG,
+  ANOMALY_CONFIRM_PACKETS
 } from './config.js';
 
 export class TelemetryProcessor {
@@ -27,7 +29,9 @@ export class TelemetryProcessor {
       lastUnloadWeight: null,
       lastIngredientName: null,
       isBatchStarted: false,
-      lastAcceptedWeight: null // 👈 Для сравнения с прошлым пакетом
+      lastAcceptedWeight: null,
+      anomalyCandidateWeight: null,
+      anomalyCandidateCount: 0
     };
   }
 
@@ -43,7 +47,21 @@ export class TelemetryProcessor {
       leftoverThresholdKg: Number(settings.leftoverThresholdKg) > 0 ? Number(settings.leftoverThresholdKg) : LEFTOVER_THRESHOLD_KG,
       unloadDropThresholdKg: Number(settings.unloadDropThresholdKg) > 0 ? Number(settings.unloadDropThresholdKg) : UNLOAD_DROP_THRESHOLD_KG,
       unloadMinPeakKg: Number(settings.unloadMinPeakKg) > 0 ? Number(settings.unloadMinPeakKg) : UNLOAD_MIN_PEAK_KG,
-      unloadUpdateDeltaKg: Number(settings.unloadUpdateDeltaKg) > 0 ? Number(settings.unloadUpdateDeltaKg) : UNLOAD_UPDATE_DELTA_KG
+      unloadUpdateDeltaKg: Number(settings.unloadUpdateDeltaKg) > 0 ? Number(settings.unloadUpdateDeltaKg) : UNLOAD_UPDATE_DELTA_KG,
+      anomalyThresholdKg: Number(settings.anomalyThresholdKg) > 0 ? Number(settings.anomalyThresholdKg) : ANOMALY_THRESHOLD_KG,
+      anomalyConfirmDeltaKg: Number(settings.anomalyConfirmDeltaKg) > 0 ? Number(settings.anomalyConfirmDeltaKg) : ANOMALY_CONFIRM_DELTA_KG,
+      anomalyConfirmPackets: Number(settings.anomalyConfirmPackets) > 0 ? Number(settings.anomalyConfirmPackets) : ANOMALY_CONFIRM_PACKETS
+    };
+  }
+
+  _buildSkippedResult(deviceId) {
+    return {
+      isValid: true,
+      skipped: true,
+      error: null,
+      banner: null,
+      dbActions: [],
+      state: this.getState(deviceId)
     };
   }
 
@@ -91,7 +109,10 @@ export class TelemetryProcessor {
     const deviceId = packet.deviceId || packet.device_id || 'host_01';
     const lat = Number(packet.lat);
     const lon = Number(packet.lon);
-    const currentWeight = Number(packet.weight || 0);
+    const currentWeightRaw = Number(packet.weight || 0);
+    const currentWeight = Number.isFinite(currentWeightRaw)
+      ? Math.max(0, currentWeightRaw)
+      : 0;
     const thresholds = this._resolveThresholds(settings);
 
     if (!isValidLocation(lat, lon)) {
@@ -106,16 +127,35 @@ export class TelemetryProcessor {
       this.deviceStates.set(deviceId, state);
     }
 
-    // 👈 Фильтр аномалий: сравнение с последним принятым пакетом
-    if (state.lastAcceptedWeight !== null && Math.abs(currentWeight - state.lastAcceptedWeight) > ANOMALY_THRESHOLD_KG) {
-      return {
-        isValid: true,
-        skipped: true,
-        error: null,
-        banner: null,
-        dbActions: [],
-        state: this.getState(deviceId)
-      };
+    if (state.lastAcceptedWeight === null) {
+      state.lastAcceptedWeight = currentWeight;
+    }
+
+    // Фильтр аномалий:
+    // 1) если скачок от последнего принятого веса слишком большой - не принимаем сразу;
+    // 2) принимаем только после серии подтверждающих пакетов рядом с новым уровнем.
+    const deltaFromAccepted = Math.abs(currentWeight - state.lastAcceptedWeight);
+    if (deltaFromAccepted > thresholds.anomalyThresholdKg) {
+      if (
+        state.anomalyCandidateWeight !== null &&
+        Math.abs(currentWeight - state.anomalyCandidateWeight) <= thresholds.anomalyConfirmDeltaKg
+      ) {
+        state.anomalyCandidateCount += 1;
+      } else {
+        state.anomalyCandidateWeight = currentWeight;
+        state.anomalyCandidateCount = 1;
+      }
+
+      if (state.anomalyCandidateCount < thresholds.anomalyConfirmPackets) {
+        return this._buildSkippedResult(deviceId);
+      }
+
+      state.lastAcceptedWeight = state.anomalyCandidateWeight;
+      state.anomalyCandidateWeight = null;
+      state.anomalyCandidateCount = 0;
+    } else if (state.anomalyCandidateWeight !== null || state.anomalyCandidateCount > 0) {
+      state.anomalyCandidateWeight = null;
+      state.anomalyCandidateCount = 0;
     }
 
     const activeZone = detectZoneObject(lat, lon, zonesConfig);
@@ -248,7 +288,7 @@ export class TelemetryProcessor {
       currentMode: this._getCurrentMode(state)
     };
 
-    // 👈 Запоминаем вес только если пакет прошёл фильтр
+    // Запоминаем вес только если пакет прошёл фильтр
     state.lastAcceptedWeight = currentWeight;
     return result;
   }

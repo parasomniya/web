@@ -220,6 +220,9 @@ function fillTelemetrySettingsForm(settings) {
         "unloadDropThresholdKg",
         "unloadMinPeakKg",
         "unloadUpdateDeltaKg",
+        "anomalyThresholdKg",
+        "anomalyConfirmDeltaKg",
+        "anomalyConfirmPackets",
     ];
 
     fields.forEach((field) => {
@@ -241,7 +244,7 @@ async function loadTelemetrySettings() {
 
         const updatedAt = settings?.updatedAt ? formatDateTime(settings.updatedAt) : "--";
         setTelemetrySettingsMeta(`Последнее изменение: ${updatedAt}`);
-        setText("telemetrySettingsState", "Настройки влияют на старт замеса, выгрузку и остаток.");
+        setText("telemetrySettingsState", "Настройки влияют на старт замеса, выгрузку, остаток и антишум тензодатчика.");
     } catch (error) {
         setTelemetrySettingsMeta("Не удалось загрузить настройки");
         setText("telemetrySettingsState", "Сервер не отдал настройки телеметрии.");
@@ -263,6 +266,9 @@ async function saveTelemetrySettings(event) {
         "unloadDropThresholdKg",
         "unloadMinPeakKg",
         "unloadUpdateDeltaKg",
+        "anomalyThresholdKg",
+        "anomalyConfirmDeltaKg",
+        "anomalyConfirmPackets",
     ];
 
     for (const field of fields) {
@@ -298,7 +304,7 @@ async function saveTelemetrySettings(event) {
         fillTelemetrySettingsForm(settings);
         const updatedAt = settings?.updatedAt ? formatDateTime(settings.updatedAt) : formatDateTime(new Date().toISOString());
         setTelemetrySettingsMeta(`Последнее изменение: ${updatedAt}`);
-        setText("telemetrySettingsState", "Настройки сохранены и будут применяться к новым пакетам телеметрии.");
+        setText("telemetrySettingsState", "Настройки сохранены и будут применяться к новым пакетам телеметрии и антишум-фильтру.");
         window.AppAuth?.showAlert?.("Настройки телеметрии сохранены", "success");
     } catch (error) {
         setText("telemetrySettingsState", "Не удалось сохранить настройки телеметрии.");
