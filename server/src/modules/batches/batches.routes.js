@@ -85,18 +85,23 @@ router.get('/', authenticate, requireReadAccess, async (req, res) => {
         });
 
         // Форматируем ответ для удобной таблицы фронтенда
-        const formattedBatches = batches.map(b => ({
-            id: b.id,
-            deviceId: b.deviceId,
-            startTime: b.startTime,
-            endTime: b.endTime,
-            rationName: b.ration?.name || 'Неизвестный рацион',
-            groupName: b.group?.name || 'Без группы',
-            hasViolations: b.hasViolations, // Общий флаг нарушений
-            startWeight: b.startWeight,
-            endWeight: b.endWeight,
-            ingredients: buildIngredientSummary(b)
-        }));
+        const formattedBatches = batches.map(b => {
+            const ingredients = buildIngredientSummary(b);
+            const hasIngredientViolations = ingredients.some((item) => Boolean(item?.is_violation));
+
+            return {
+                id: b.id,
+                deviceId: b.deviceId,
+                startTime: b.startTime,
+                endTime: b.endTime,
+                rationName: b.ration?.name || 'Неизвестный рацион',
+                groupName: b.group?.name || 'Без группы',
+                hasViolations: Boolean(b.hasViolations || hasIngredientViolations), // Общий флаг нарушений
+                startWeight: b.startWeight,
+                endWeight: b.endWeight,
+                ingredients
+            };
+        });
 
         res.json(formattedBatches);
     } catch (error) {

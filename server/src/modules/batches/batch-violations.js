@@ -29,6 +29,7 @@ export function getBatchPlan(batch) {
 export function buildIngredientSummary(batch, threshold = 10) {
     const plan = getBatchPlan(batch);
     const facts = aggregateFacts(batch?.actualIngredients || []);
+    const hasPlanContext = plan.ingredients.length > 0;
     const factMap = new Map(facts.map((item) => [normalizeIngredientName(item.name), item.actualWeight]));
     const planMap = new Map(plan.ingredients.map((item) => [normalizeIngredientName(item.name), item.targetWeight]));
     const nameMap = new Map([
@@ -47,7 +48,9 @@ export function buildIngredientSummary(batch, threshold = 10) {
             : (factWeight > 0 ? 100 : 0);
         const isViolation = planWeight > 0
             ? Math.abs(deviationPercent) > threshold
-            : Boolean(persistedViolationMap.get(key) || key === 'unknown');
+            : (hasPlanContext
+                ? factWeight > 0
+                : Boolean(factWeight > 0 || persistedViolationMap.get(key) || key === 'unknown'));
 
         return {
             name,
@@ -89,16 +92,41 @@ export async function recalculateBatchViolations(prisma, batchId, threshold = 10
     }
 
     if (!batch.ration || !batch.group || !batch.group.headcount) {
-        await prisma.batchIngredient.updateMany({
-            where: { batchId: batch.id },
-            data: { plannedWeight: null, isViolation: false }
-        });
+        const facts = aggregateFacts(batch.actualIngredients);
+        const syntheticViolations = facts
+            .filter((item) => Number(item.actualWeight || 0) > 0)
+            .map((item) => ({
+                ingredient: item.name || 'Unknown',
+                plan: 0,
+                fact: Number(item.actualWeight || 0),
+                deviationPercent: 100,
+                message: 'Загружен компонент вне плана (рацион/группа не назначены)'
+            }));
+        const violationNames = new Set(syntheticViolations.map((item) => normalizeIngredientName(item.ingredient)));
+
+        for (const ingredient of batch.actualIngredients) {
+            await prisma.batchIngredient.update({
+                where: { id: ingredient.id },
+                data: {
+                    plannedWeight: 0,
+                    isViolation: violationNames.has(normalizeIngredientName(ingredient.ingredientName))
+                }
+            });
+        }
+
+        await syncBatchViolationLog(prisma, batch, { matches: [], violations: syntheticViolations });
+
         await prisma.batch.update({
             where: { id: batch.id },
-            data: { hasViolations: false }
+            data: { hasViolations: syntheticViolations.length > 0 }
         });
 
-        return { status: 'skipped', reason: 'Batch has no ration/group assignment', hasViolations: false };
+        return {
+            status: 'skipped',
+            reason: 'Batch has no ration/group assignment',
+            hasViolations: syntheticViolations.length > 0,
+            violations: syntheticViolations
+        };
     }
 
     const plan = getBatchPlan(batch);
