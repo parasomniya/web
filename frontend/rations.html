@@ -103,10 +103,86 @@
                         <div>
                             <h1 class="h3 mb-1 text-gray-800">Рационы</h1>
                         </div>
-                        <button id="rationsReloadButton" type="button" class="btn btn-outline-primary btn-sm mt-3 mt-sm-0">
-                            <i class="fas fa-sync-alt mr-1"></i>
-                            Обновить
-                        </button>
+                        <div class="d-flex flex-wrap align-items-center justify-content-sm-end">
+                            <button id="rationManualNewButton" type="button" class="btn btn-primary btn-sm mt-3 mt-sm-0 mr-2" data-requires-write>
+                                <i class="fas fa-plus mr-1"></i>
+                                Создать вручную
+                            </button>
+                            <button id="rationsReloadButton" type="button" class="btn btn-outline-primary btn-sm mt-3 mt-sm-0">
+                                <i class="fas fa-sync-alt mr-1"></i>
+                                Обновить
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="card shadow mb-4" data-requires-write>
+                        <div class="card-header py-3 d-sm-flex align-items-center justify-content-between">
+                            <h6 id="rationManualFormTitle" class="m-0 font-weight-bold text-primary">Ручное создание рациона</h6>
+                            <div id="rationManualFormMeta" class="small text-muted mt-2 mt-sm-0">Заполните состав рациона без Excel</div>
+                        </div>
+                        <div class="card-body">
+                            <form id="rationManualForm" novalidate>
+                                <input id="rationManualId" type="hidden">
+
+                                <div class="form-row">
+                                    <div class="col-lg-5 mb-3">
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="rationManualName">Название рациона</label>
+                                        <input id="rationManualName" type="text" class="form-control" maxlength="120" placeholder="Например, Рацион Дойные 1">
+                                    </div>
+                                    <div class="col-lg-2 mb-3">
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="rationManualIsActive">Статус</label>
+                                        <div class="custom-control custom-switch mt-2">
+                                            <input id="rationManualIsActive" type="checkbox" class="custom-control-input">
+                                            <label class="custom-control-label font-weight-bold text-gray-700" for="rationManualIsActive">Активен</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-5 mb-3">
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="rationManualGroups">Группы</label>
+                                        <select id="rationManualGroups" class="custom-select" multiple size="5"></select>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex align-items-center justify-content-between flex-wrap mb-2">
+                                    <label class="small text-primary font-weight-bold text-uppercase mb-2 mb-sm-0">Ингредиенты</label>
+                                    <button id="rationManualAddIngredientButton" type="button" class="btn btn-outline-primary btn-sm">
+                                        <i class="fas fa-plus mr-1"></i>
+                                        Добавить ингредиент
+                                    </button>
+                                </div>
+
+                                <div class="table-responsive ration-manual-table-wrap mb-3">
+                                    <table class="table table-bordered mb-0 ration-manual-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Ингредиент</th>
+                                                <th>Вес/голову, кг</th>
+                                                <th>СВ/голову, кг</th>
+                                                <th class="ration-manual-table__action">Действие</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="rationManualIngredientsBody"></tbody>
+                                    </table>
+                                </div>
+
+                                <div id="rationManualGroupsPreview" class="ration-groups-preview mb-3">
+                                    <span class="text-muted small">Группы не выбраны</span>
+                                </div>
+
+                                <div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between">
+                                    <div id="rationManualSummary" class="small text-muted mb-3 mb-sm-0"></div>
+                                    <div class="d-flex flex-wrap align-items-center">
+                                        <button id="rationManualCancelButton" type="button" class="btn btn-outline-secondary mr-2 d-none">
+                                            <i class="fas fa-times mr-1"></i>
+                                            Отменить
+                                        </button>
+                                        <button id="rationManualSubmitButton" type="submit" class="btn btn-primary">
+                                            <i class="fas fa-save mr-1"></i>
+                                            Сохранить рацион
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
                     </div>
 
                     <div class="card shadow mb-4" data-requires-write hidden>
@@ -205,7 +281,7 @@
 
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260429d"></script>
-    <script src="js/rations.js?v=20260429a"></script>
+    <script src="js/rations.js?v=20260505b"></script>
 
 </body>
 
