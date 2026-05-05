@@ -5,12 +5,23 @@ function round1(value) {
     return Math.round(Number(value || 0) * 10) / 10;
 }
 
+export function toDisplayIngredientName(value) {
+    const raw = String(value || '').trim();
+    const normalized = normalizeIngredientName(raw);
+
+    if (!raw || normalized === 'unknown') {
+        return 'Неизвестный';
+    }
+
+    return raw;
+}
+
 export function aggregateFacts(ingredients) {
     const facts = new Map();
 
     for (const ingredient of ingredients) {
         const key = normalizeIngredientName(ingredient.ingredientName);
-        const current = facts.get(key) || { name: String(ingredient.ingredientName || 'Unknown'), actualWeight: 0 };
+        const current = facts.get(key) || { name: toDisplayIngredientName(ingredient.ingredientName), actualWeight: 0 };
         current.actualWeight += Number(ingredient.actualWeight || 0);
         facts.set(key, current);
     }
@@ -40,7 +51,7 @@ export function buildIngredientSummary(batch, threshold = 10) {
     const names = new Set([...planMap.keys(), ...factMap.keys()]);
 
     return Array.from(names).map((key) => {
-        const name = nameMap.get(key) || key || 'Unknown';
+        const name = toDisplayIngredientName(nameMap.get(key) || key || 'Unknown');
         const planWeight = planMap.get(key) || 0;
         const factWeight = factMap.get(key) || 0;
         const deviationPercent = planWeight > 0
@@ -96,7 +107,7 @@ export async function recalculateBatchViolations(prisma, batchId, threshold = 10
         const syntheticViolations = facts
             .filter((item) => Number(item.actualWeight || 0) > 0)
             .map((item) => ({
-                ingredient: item.name || 'Unknown',
+                ingredient: toDisplayIngredientName(item.name || 'Unknown'),
                 plan: 0,
                 fact: Number(item.actualWeight || 0),
                 deviationPercent: 100,

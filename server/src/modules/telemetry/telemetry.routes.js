@@ -8,6 +8,9 @@ import { getTelemetrySettings } from './telemetry-settings.js'
 import { recordLeftoverViolation } from '../violations/violation-service.js'
 
 const router = Router()
+const AUTO_CLOSE_ZERO_WEIGHT_KG = 10
+const AUTO_CLOSE_EMPTY_STREAK = 5
+const AUTO_CLOSE_NEGATIVE_STREAK = 3
 
 function parseBoolean(value) {
   if (typeof value === 'boolean') return value
@@ -164,6 +167,7 @@ router.post('/', async (req, res) => {
     }
 
     let telemetry = null
+    let shouldClearDeviceState = false
     await prisma.$transaction(async (tx) => {
       telemetry = await tx.telemetry.create({
         data: {
@@ -183,10 +187,6 @@ router.post('/', async (req, res) => {
           eventsReaderOk: packet.eventsReaderOk
         }
       })
-
-      if (!result.dbActions || result.dbActions.length === 0) {
-        return
-      }
 
       let activeBatch = await tx.batch.findFirst({
         where: { deviceId, endTime: null },
@@ -221,7 +221,7 @@ router.post('/', async (req, res) => {
         batchIdsToRecalculate.add(activeBatch.id)
       }
 
-      for (const action of result.dbActions) {
+      for (const action of (result.dbActions || [])) {
         switch (action.type) {
           case 'START_BATCH':
             if (!activeBatch) {
@@ -370,6 +370,53 @@ router.post('/', async (req, res) => {
         }
       }
 
+      // Fallback: если замес завис (весы выключили/ушли в минус), принудительно закрываем.
+      // Это работает даже когда dbActions пустой и FSM не смог довести замес до COMPLETE_BATCH.
+      if (activeBatch) {
+        const hasCloseAction = (result.dbActions || []).some((action) =>
+          action.type === 'COMPLETE_BATCH' || action.type === 'FORCE_CLOSE_BATCH'
+        )
+        const hasAddAction = (result.dbActions || []).some((action) => action.type === 'ADD_INGREDIENT')
+
+        if (!hasCloseAction && !hasAddAction) {
+          const [recentTelemetry, ingredientCount] = await Promise.all([
+            tx.telemetry.findMany({
+              where: { deviceId },
+              orderBy: { timestamp: 'desc' },
+              take: AUTO_CLOSE_EMPTY_STREAK,
+              select: { weight: true }
+            }),
+            tx.batchIngredient.count({
+              where: { batchId: activeBatch.id }
+            })
+          ])
+
+          if (ingredientCount > 0) {
+            const negativeCount = recentTelemetry.filter((item) => Number(item.weight || 0) < 0).length
+            const nearZeroCount = recentTelemetry.filter((item) => Math.max(0, Number(item.weight || 0)) <= AUTO_CLOSE_ZERO_WEIGHT_KG).length
+
+            const shouldAutoCloseByNegative = recentTelemetry.length >= AUTO_CLOSE_NEGATIVE_STREAK && negativeCount >= AUTO_CLOSE_NEGATIVE_STREAK
+            const shouldAutoCloseByEmpty = recentTelemetry.length >= AUTO_CLOSE_EMPTY_STREAK && nearZeroCount >= AUTO_CLOSE_EMPTY_STREAK
+
+            if (shouldAutoCloseByNegative || shouldAutoCloseByEmpty) {
+              const closedBatchId = activeBatch.id
+              await bindBatchToResolvedGroup()
+              await tx.batch.update({
+                where: { id: closedBatchId },
+                data: {
+                  endTime: telemetry.timestamp,
+                  endWeight: Math.max(0, Number(packet.weight || 0))
+                }
+              })
+              batchIdsToRecalculate.add(closedBatchId)
+              shouldClearDeviceState = true
+              console.log(`Замес ${closedBatchId} автозакрыт (fallback по серии пустого/негативного веса)`)
+              activeBatch = null
+            }
+          }
+        }
+      }
+
       for (const batchId of batchIdsToRecalculate) {
         await recalculateBatchViolations(tx, batchId)
         if (stickyViolationBatchIds.has(batchId)) {
@@ -380,6 +427,10 @@ router.post('/', async (req, res) => {
         }
       }
     })
+
+    if (shouldClearDeviceState) {
+      telemetryProcessor.clearDeviceState(deviceId)
+    }
 
     // Возвращаем ответ контроллеру трактора
     res.status(201).json({ status: 'ok', id: telemetry.id, banner: result.banner });

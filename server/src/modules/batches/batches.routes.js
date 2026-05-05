@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import prisma from "../../database.js";
 import { authenticate, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js";
-import { buildIngredientSummary, buildUnloadProgress, recalculateBatchViolations } from './batch-violations.js';
+import { buildIngredientSummary, buildUnloadProgress, recalculateBatchViolations, toDisplayIngredientName } from './batch-violations.js';
 import { normalizeIngredientName } from '../../../../module-2/rationManager.js';
 
 const router = Router();
@@ -186,7 +186,7 @@ router.get('/:id', authenticate, requireReadAccess, async (req, res) => {
             // СПИСОК ИНГРЕДИЕНТОВ И ПЛАН/ФАКТ (пункты 2 и 3)
             actualIngredients: batch.actualIngredients.map(ing => ({
                 id: ing.id,
-                name: ing.ingredientName,
+                name: toDisplayIngredientName(ing.ingredientName),
                 time: ing.addedAt,
                 plan: ing.plannedWeight || 0,
                 fact: ing.actualWeight,
