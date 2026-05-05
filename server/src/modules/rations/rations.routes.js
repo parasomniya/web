@@ -27,6 +27,114 @@ function parseStrictBoolean(value) {
   return { ok: false, value: null };
 }
 
+function normalizeText(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function parseNumber(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().replace(',', '.');
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function parseGroupIdsInput(value) {
+  if (value === undefined || value === null || value === '') {
+    return { ok: true, groupIds: null };
+  }
+
+  let rawList = value;
+  if (typeof value === 'string') {
+    try {
+      rawList = JSON.parse(value);
+    } catch (error) {
+      return { ok: false, error: 'groups должен быть корректным JSON-массивом ID групп' };
+    }
+  }
+
+  if (!Array.isArray(rawList)) {
+    return { ok: false, error: 'groups должен быть массивом ID групп' };
+  }
+
+  const groupIds = [...new Set(rawList.map((id) => parseInt(id, 10)))];
+  if (groupIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+    return { ok: false, error: 'groups должен содержать только положительные числовые ID групп' };
+  }
+
+  return { ok: true, groupIds };
+}
+
+function validateIngredients(ingredients) {
+  if (!Array.isArray(ingredients) || ingredients.length === 0) {
+    return { ok: false, error: 'ingredients должен быть непустым массивом' };
+  }
+
+  const result = [];
+  const seen = new Set();
+
+  for (let i = 0; i < ingredients.length; i += 1) {
+    const row = ingredients[i] || {};
+    const ingredientName = normalizeText(row.name);
+
+    if (!ingredientName) {
+      return { ok: false, error: `Ингредиент #${i + 1}: не заполнено поле name` };
+    }
+
+    const normalizedIngredientName = ingredientName.toLowerCase();
+    if (seen.has(normalizedIngredientName)) {
+      return { ok: false, error: `Ингредиент "${ingredientName}" дублируется в рационе` };
+    }
+    seen.add(normalizedIngredientName);
+
+    const plannedWeight = parseNumber(row.plannedWeight);
+    if (plannedWeight === null || plannedWeight <= 0) {
+      return { ok: false, error: `Ингредиент "${ingredientName}": plannedWeight должен быть > 0` };
+    }
+
+    const dryMatterWeight = parseNumber(row.dryMatterWeight);
+    if (dryMatterWeight === null || dryMatterWeight < 0) {
+      return { ok: false, error: `Ингредиент "${ingredientName}": dryMatterWeight должен быть >= 0` };
+    }
+
+    if (dryMatterWeight > plannedWeight) {
+      return { ok: false, error: `Ингредиент "${ingredientName}": dryMatterWeight не может быть больше plannedWeight` };
+    }
+
+    result.push({
+      name: ingredientName,
+      plannedWeight,
+      dryMatterWeight
+    });
+  }
+
+  return { ok: true, ingredients: result };
+}
+
+async function validateGroupIdsExist(groupIds) {
+  if (!Array.isArray(groupIds) || groupIds.length === 0) {
+    return { ok: true };
+  }
+
+  const existingGroups = await prisma.livestockGroup.findMany({
+    where: { id: { in: groupIds } },
+    select: { id: true }
+  });
+
+  if (existingGroups.length !== groupIds.length) {
+    return { ok: false, error: 'Одна или несколько групп не найдены' };
+  }
+
+  return { ok: true };
+}
+
 function parseExcel(fileBuffer) {
   try {
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
@@ -65,6 +173,86 @@ async function findRationByNormalizedName(name) {
 
   return rations.find((item) => normalizeRationName(item.name) === normalizedName) || null;
 }
+
+// ============================================================================
+// POST / - Ручное создание рациона
+// ============================================================================
+router.post('/', requireWriteAccess, async (req, res) => {
+  try {
+    const rationName = normalizeText(req.body.name);
+    const parsedGroups = parseGroupIdsInput(req.body.groups);
+    const parsedIsActive = req.body.isActive === undefined
+      ? { ok: true, value: false }
+      : parseStrictBoolean(req.body.isActive);
+    const validatedIngredients = validateIngredients(req.body.ingredients);
+
+    if (!rationName) {
+      return res.status(400).json({ error: 'Необходимо указать название рациона' });
+    }
+    if (!parsedGroups.ok) {
+      return res.status(400).json({ error: parsedGroups.error });
+    }
+    if (!parsedIsActive.ok) {
+      return res.status(400).json({ error: 'isActive должен быть boolean true/false' });
+    }
+    if (!validatedIngredients.ok) {
+      return res.status(400).json({ error: validatedIngredients.error });
+    }
+
+    const existing = await findRationByNormalizedName(rationName);
+    if (existing) {
+      return res.status(400).json({ error: `Рацион с названием "${rationName}" уже существует` });
+    }
+
+    if (parsedGroups.groupIds) {
+      const groupCheck = await validateGroupIdsExist(parsedGroups.groupIds);
+      if (!groupCheck.ok) {
+        return res.status(404).json({ error: groupCheck.error });
+      }
+    }
+
+    const ration = await prisma.$transaction(async (tx) => {
+      const created = await tx.ration.create({
+        data: {
+          name: rationName,
+          isActive: parsedIsActive.value,
+          ingredients: {
+            create: validatedIngredients.ingredients
+          }
+        }
+      });
+
+      if (parsedGroups.groupIds && parsedGroups.groupIds.length > 0) {
+        await tx.livestockGroup.updateMany({
+          where: { id: { in: parsedGroups.groupIds } },
+          data: { rationId: created.id }
+        });
+      }
+
+      return tx.ration.findUnique({
+        where: { id: created.id },
+        include: {
+          ingredients: true,
+          livestockGroups: {
+            select: {
+              id: true,
+              name: true,
+              headcount: true
+            }
+          }
+        }
+      });
+    });
+
+    res.status(201).json({ status: 'ok', ration });
+  } catch (error) {
+    console.error('[Ошибка POST /rations]:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'Рацион с таким названием уже существует' });
+    }
+    res.status(500).json({ error: 'Внутренняя ошибка сервера при создании рациона' });
+  }
+});
 
 // ============================================================================
 // POST /upload - Загрузка Excel и создание рациона
@@ -220,6 +408,142 @@ router.patch('/:id/toggle', requireWriteAccess, async (req, res) => {
   } catch (error) {
     if (error.code === 'P2025') return res.status(404).json({ error: 'Рацион не найден' });
     res.status(500).json({ error: 'Ошибка при изменении статуса рациона' });
+  }
+});
+
+// ============================================================================
+// PATCH /:id - Ручное редактирование рациона
+// ============================================================================
+router.patch('/:id', requireWriteAccess, async (req, res) => {
+  try {
+    const id = parseId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: 'Некорректный ID рациона' });
+    }
+
+    const existingRation = await prisma.ration.findUnique({
+      where: { id },
+      include: { ingredients: true }
+    });
+
+    if (!existingRation) {
+      return res.status(404).json({ error: 'Рацион не найден' });
+    }
+
+    const hasName = Object.prototype.hasOwnProperty.call(req.body, 'name');
+    const hasIngredients = Object.prototype.hasOwnProperty.call(req.body, 'ingredients');
+    const hasGroups = Object.prototype.hasOwnProperty.call(req.body, 'groups');
+    const hasIsActive = Object.prototype.hasOwnProperty.call(req.body, 'isActive');
+
+    if (!hasName && !hasIngredients && !hasGroups && !hasIsActive) {
+      return res.status(400).json({ error: 'Нет полей для обновления' });
+    }
+
+    let nextName = existingRation.name;
+    if (hasName) {
+      nextName = normalizeText(req.body.name);
+      if (!nextName) {
+        return res.status(400).json({ error: 'Название рациона не может быть пустым' });
+      }
+
+      const existingWithSameName = await findRationByNormalizedName(nextName);
+      if (existingWithSameName && existingWithSameName.id !== id) {
+        return res.status(400).json({ error: `Рацион с названием "${nextName}" уже существует` });
+      }
+    }
+
+    let validatedIngredients = null;
+    if (hasIngredients) {
+      validatedIngredients = validateIngredients(req.body.ingredients);
+      if (!validatedIngredients.ok) {
+        return res.status(400).json({ error: validatedIngredients.error });
+      }
+    }
+
+    let parsedGroups = { ok: true, groupIds: null };
+    if (hasGroups) {
+      parsedGroups = parseGroupIdsInput(req.body.groups);
+      if (!parsedGroups.ok) {
+        return res.status(400).json({ error: parsedGroups.error });
+      }
+      const groupCheck = await validateGroupIdsExist(parsedGroups.groupIds || []);
+      if (!groupCheck.ok) {
+        return res.status(404).json({ error: groupCheck.error });
+      }
+    }
+
+    let parsedIsActive = { ok: true, value: undefined };
+    if (hasIsActive) {
+      parsedIsActive = parseStrictBoolean(req.body.isActive);
+      if (!parsedIsActive.ok) {
+        return res.status(400).json({ error: 'isActive должен быть boolean true/false' });
+      }
+    }
+
+    const ration = await prisma.$transaction(async (tx) => {
+      const updateData = {};
+      if (hasName) updateData.name = nextName;
+      if (hasIsActive) updateData.isActive = parsedIsActive.value;
+
+      if (Object.keys(updateData).length > 0) {
+        await tx.ration.update({
+          where: { id },
+          data: updateData
+        });
+      }
+
+      if (hasIngredients) {
+        await tx.rationIngredient.deleteMany({ where: { rationId: id } });
+        if (validatedIngredients.ingredients.length > 0) {
+          await tx.rationIngredient.createMany({
+            data: validatedIngredients.ingredients.map((item) => ({
+              rationId: id,
+              name: item.name,
+              plannedWeight: item.plannedWeight,
+              dryMatterWeight: item.dryMatterWeight
+            }))
+          });
+        }
+      }
+
+      if (hasGroups) {
+        await tx.livestockGroup.updateMany({
+          where: { rationId: id },
+          data: { rationId: null }
+        });
+        if (parsedGroups.groupIds && parsedGroups.groupIds.length > 0) {
+          await tx.livestockGroup.updateMany({
+            where: { id: { in: parsedGroups.groupIds } },
+            data: { rationId: id }
+          });
+        }
+      }
+
+      return tx.ration.findUnique({
+        where: { id },
+        include: {
+          ingredients: true,
+          livestockGroups: {
+            select: {
+              id: true,
+              name: true,
+              headcount: true
+            }
+          }
+        }
+      });
+    });
+
+    res.json({ status: 'ok', ration });
+  } catch (error) {
+    console.error('[Ошибка PATCH /rations/:id]:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'Рацион с таким названием уже существует' });
+    }
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Рацион не найден' });
+    }
+    res.status(500).json({ error: 'Не удалось обновить рацион' });
   }
 });
 
