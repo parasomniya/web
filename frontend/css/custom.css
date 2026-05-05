@@ -829,6 +829,12 @@
     outline: none;
 }
 
+span.batch-ingredient-editor__trigger {
+    color: #5a5c69;
+    text-decoration: none;
+    cursor: default;
+}
+
 .batch-ingredient-editor__trigger:disabled {
     color: #858796;
     text-decoration: none;

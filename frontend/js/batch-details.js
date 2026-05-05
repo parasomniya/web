@@ -29,9 +29,11 @@ $(document).ready(function () {
     const editGroupSelect = document.getElementById("batchEditGroupSelect");
     const editGroupHint = document.getElementById("batchEditGroupHint");
     const editSubmitButton = document.getElementById("batchEditSubmitButton");
+    const stopButton = document.getElementById("batchStopButton");
 
     const batchUrl = window.AppAuth?.getApiUrl?.(`/api/batches/${batchId}`) || `/api/batches/${batchId}`;
     const telemetryUrl = window.AppAuth?.getApiUrl?.(`/api/batches/${batchId}/telemetry`) || `/api/batches/${batchId}/telemetry`;
+    const stopBatchUrl = window.AppAuth?.getApiUrl?.("/api/telemetry/host/manual-stop") || "/api/telemetry/host/manual-stop";
     const rationsUrl = window.AppAuth?.getApiUrl?.("/api/rations") || "/api/rations";
     const groupsUrl = window.AppAuth?.getApiUrl?.("/api/groups") || "/api/groups";
 
@@ -59,8 +61,8 @@ $(document).ready(function () {
         batch: null,
         isBatchLoading: false,
         isSaving: false,
-        ingredientEditorId: null,
         ingredientUpdateId: null,
+        stopBatchInFlight: false,
         batchError: "",
         editorMessage: null,
         rations: [],
@@ -197,11 +199,12 @@ $(document).ready(function () {
 
     function isUnknownIngredientName(value) {
         const normalized = String(value ?? "").trim().toLowerCase();
-        return !normalized || normalized === "unknown";
+        return !normalized || normalized === "unknown" || normalized === "неизвестный";
     }
 
     function getIngredientDisplayName(value) {
-        return String(value ?? "").trim();
+        const raw = String(value ?? "").trim();
+        return isUnknownIngredientName(raw) ? "Неизвестный" : raw;
     }
 
     function getReplacementIngredientOptions() {
@@ -279,6 +282,7 @@ $(document).ready(function () {
         setText(barnName, batch?.unloadingInfo?.barnName || "Коровник не выбран");
         setText(remainingWeight, formatWeight(batch?.unloadingInfo?.remainingWeight));
         renderUnloadProgress(batch?.unloadingInfo?.progress || null);
+        updateStopButtonState(batch);
     }
 
     function renderUnloadProgress(progress) {
@@ -345,42 +349,35 @@ $(document).ready(function () {
             return `<strong>${escapeHtml(ingredientName || "Без названия")}</strong>`;
         }
 
-        const isEditing = state.ingredientEditorId === ingredientId;
-
         if (state.ingredientUpdateId === ingredientId) {
             return `
                 <div class="batch-ingredient-editor">
-                    <strong class="d-block text-warning">Unknown</strong>
+                    <strong class="d-block text-warning">Неизвестный</strong>
                     <small class="text-muted d-block mt-1">Сохраняем выбранный корм...</small>
                 </div>
             `;
         }
 
         const isDisabled = state.isBatchLoading || state.isSaving;
-        const canOpenEditor = !isDisabled && hasRation && hasReplacementOptions;
-        const disabledAttribute = canOpenEditor ? "" : " disabled";
+        const canPickReplacement = !isDisabled && hasRation && hasReplacementOptions;
+        const disabledAttribute = canPickReplacement ? "" : " disabled";
         const optionsMarkup = replacementOptions
             .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
             .join("");
 
-        let hint = "Выберите корм вместо Unknown.";
+        let hint = "Выберите корм вместо «Неизвестного».";
         if (!hasRation) {
             hint = "Сначала привяжите рацион к замесу.";
         } else if (!hasReplacementOptions) {
             hint = "В привязанном рационе нет ингредиентов для выбора.";
+        } else if (isDisabled) {
+            hint = "Подождите завершения текущего сохранения/загрузки.";
         }
 
-        if (!isEditing) {
+        if (!canPickReplacement) {
             return `
                 <div class="batch-ingredient-editor">
-                    <button
-                        type="button"
-                        class="batch-ingredient-editor__trigger"
-                        data-role="ingredient-replacement-trigger"
-                        data-ingredient-id="${ingredientId}"${disabledAttribute}
-                    >
-                        ${escapeHtml(ingredientName || "Unknown")}
-                    </button>
+                    <strong>${escapeHtml(ingredientName || "Неизвестный")}</strong>
                     <small class="text-muted d-block mt-1">${escapeHtml(hint)}</small>
                 </div>
             `;
@@ -390,6 +387,7 @@ $(document).ready(function () {
             <div class="batch-ingredient-editor">
                 <div class="batch-ingredient-editor__controls">
                 <label class="sr-only" for="batchIngredientSelect${ingredientId}">Выбор корма</label>
+                <span class="batch-ingredient-editor__trigger">${escapeHtml(ingredientName || "Неизвестный")}</span>
                 <select
                     id="batchIngredientSelect${ingredientId}"
                     class="form-control form-control-sm batch-ingredient-editor__select"
@@ -399,14 +397,6 @@ $(document).ready(function () {
                     <option value="">Выберите корм</option>
                     ${optionsMarkup}
                 </select>
-                <button
-                    type="button"
-                    class="batch-ingredient-editor__cancel"
-                    data-role="ingredient-replacement-cancel"
-                    data-ingredient-id="${ingredientId}"${isDisabled ? " disabled" : ""}
-                >
-                    Cancel
-                </button>
                 </div>
                 <small class="text-muted d-block mt-1">${escapeHtml(hint)}</small>
             </div>
@@ -743,9 +733,11 @@ $(document).ready(function () {
             || !state.batch
             || Boolean(state.batchError)
             || state.isBatchLoading
-            || state.isSaving;
+            || state.isSaving
+            || state.stopBatchInFlight;
 
         editSubmitButton.textContent = state.isSaving ? "Сохраняем..." : "Пересчитать";
+        updateStopButtonState(state.batch);
     }
 
     function renderBatchEditor(batch) {
@@ -875,39 +867,12 @@ $(document).ready(function () {
         });
     }
 
-    function focusIngredientEditor(ingredientId) {
-        window.requestAnimationFrame(function () {
-            const selectElement = document.getElementById(`batchIngredientSelect${ingredientId}`);
-            if (selectElement instanceof HTMLSelectElement) {
-                selectElement.focus();
-            }
+    async function postJson(url, payload) {
+        return requestJson(url, {
+            method: "POST",
+            includeJson: true,
+            body: JSON.stringify(payload || {}),
         });
-    }
-
-    function handleIngredientReplacementClick(event) {
-        const control = event?.target?.closest?.("[data-role='ingredient-replacement-trigger'], [data-role='ingredient-replacement-cancel']");
-        if (!control) {
-            return;
-        }
-
-        const ingredientId = normalizeNullableId(control.dataset.ingredientId);
-        if (ingredientId === null || state.ingredientUpdateId !== null) {
-            return;
-        }
-
-        if (control.dataset.role === "ingredient-replacement-cancel") {
-            state.ingredientEditorId = null;
-            renderIngredientList(Array.isArray(state.batch?.actualIngredients) ? state.batch.actualIngredients : []);
-            return;
-        }
-
-        if (control instanceof HTMLButtonElement && control.disabled) {
-            return;
-        }
-
-        state.ingredientEditorId = ingredientId;
-        renderIngredientList(Array.isArray(state.batch?.actualIngredients) ? state.batch.actualIngredients : []);
-        focusIngredientEditor(ingredientId);
     }
 
     async function handleIngredientReplacementChange(event) {
@@ -931,7 +896,6 @@ $(document).ready(function () {
 
         try {
             await patchJson(`${batchUrl}/ingredients/${ingredientId}`, { ingredientName });
-            state.ingredientEditorId = null;
             const didReload = await loadBatchDetails();
             if (didReload) {
                 window.AppAuth?.showAlert?.("Ингредиент обновлен", "success");
@@ -941,6 +905,53 @@ $(document).ready(function () {
         } finally {
             state.ingredientUpdateId = null;
             renderIngredientList(Array.isArray(state.batch?.actualIngredients) ? state.batch.actualIngredients : []);
+        }
+    }
+
+    function updateStopButtonState(batch) {
+        if (!stopButton) {
+            return;
+        }
+
+        const canShow = canWrite && !batch?.endTime && normalizeNullableId(batch?.id) !== null;
+        if (!canShow) {
+            stopButton.classList.add("d-none");
+            stopButton.disabled = true;
+            stopButton.textContent = "Остановить замес";
+            return;
+        }
+
+        stopButton.classList.remove("d-none");
+        stopButton.disabled = state.stopBatchInFlight || state.isBatchLoading || state.isSaving;
+        stopButton.textContent = state.stopBatchInFlight ? "Останавливаем..." : "Остановить замес";
+    }
+
+    async function handleStopBatchClick() {
+        const currentBatchId = normalizeNullableId(state.batch?.id);
+        if (!canWrite || !currentBatchId || state.stopBatchInFlight) {
+            return;
+        }
+
+        const approved = window.confirm(`Остановить замес #${currentBatchId}?`);
+        if (!approved) {
+            return;
+        }
+
+        state.stopBatchInFlight = true;
+        updateStopButtonState(state.batch);
+
+        try {
+            await postJson(stopBatchUrl, {
+                batchId: currentBatchId,
+                deviceId: state.batch?.deviceId || null,
+            });
+            window.AppAuth?.showAlert?.(`Замес #${currentBatchId} остановлен`, "success");
+            await loadBatchDetails();
+        } catch (error) {
+            window.AppAuth?.showAlert?.(error.message || "Не удалось остановить замес", "danger");
+        } finally {
+            state.stopBatchInFlight = false;
+            updateStopButtonState(state.batch);
         }
     }
 
@@ -1003,7 +1014,6 @@ $(document).ready(function () {
 
         const requestId = ++state.loadRequestId;
         state.isBatchLoading = true;
-        state.ingredientEditorId = null;
         state.batchError = "";
         state.editorMessage = null;
         setLoadingState();
@@ -1123,8 +1133,11 @@ $(document).ready(function () {
     }
 
     if (ingredientListBody) {
-        ingredientListBody.addEventListener("click", handleIngredientReplacementClick);
         ingredientListBody.addEventListener("change", handleIngredientReplacementChange);
+    }
+
+    if (stopButton) {
+        stopButton.addEventListener("click", handleStopBatchClick);
     }
 
     if (canWrite) {

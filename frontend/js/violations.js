@@ -1,6 +1,8 @@
 (function () {
     const API_URL = window.AppAuth?.getApiUrl?.("/api/violations") || "/api/violations";
+    const RESET_API_URL = window.AppAuth?.getApiUrl?.("/api/violations/admin/reset") || "/api/violations/admin/reset";
     const DEFAULT_LIMIT = 1000;
+    const CAN_ADMIN_RESET = window.AppAuth?.isAdmin?.() === true;
 
     const STATUS_META = {
         critical: {
@@ -52,6 +54,7 @@
         componentFilter: document.getElementById("violationsComponentFilter"),
         scopeFilter: document.getElementById("violationsScopeFilter"),
         reloadButton: document.getElementById("violationsReloadButton"),
+        resetButton: document.getElementById("violationsResetButton"),
         criticalCount: document.getElementById("violationsCriticalCount"),
         openCount: document.getElementById("violationsOpenCount"),
         progressCount: document.getElementById("violationsProgressCount"),
@@ -156,6 +159,10 @@
             String(date.getMonth() + 1).padStart(2, "0"),
             String(date.getDate()).padStart(2, "0"),
         ].join("-");
+    }
+
+    function getTableColumnSpan() {
+        return CAN_ADMIN_RESET ? 10 : 9;
     }
 
     function normalizeSeverityStatus(value) {
@@ -332,7 +339,7 @@
         if (!state.filteredItems.length) {
             elements.tableBody.innerHTML = `
                 <tr>
-                    <td colspan="9" class="violations-empty-state">По текущим фильтрам записи не найдены.</td>
+                    <td colspan="${getTableColumnSpan()}" class="violations-empty-state">По текущим фильтрам записи не найдены.</td>
                 </tr>
             `;
             return;
@@ -354,6 +361,13 @@
                     <td><span class="violations-number">${escapeHtml(formatWeight(item.fact))}</span></td>
                     <td>${formatDeviation(item.deviation)}</td>
                     <td><span class="${statusMeta.className}">${escapeHtml(statusMeta.label)}</span></td>
+                    ${CAN_ADMIN_RESET ? `
+                        <td data-requires-admin>
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-role="violation-reset-one" data-violation-id="${Number(item.id) || ""}">
+                                Сбросить
+                            </button>
+                        </td>
+                    ` : ""}
                 </tr>
             `;
         }).join("");
@@ -398,6 +412,90 @@
         return url.toString();
     }
 
+    async function readErrorMessage(response) {
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+            try {
+                const payload = await response.json();
+                return payload?.error || payload?.message || "";
+            } catch (error) {
+                return "";
+            }
+        }
+
+        try {
+            return (await response.text()).trim();
+        } catch (error) {
+            return "";
+        }
+    }
+
+    async function resetAllViolations() {
+        if (!CAN_ADMIN_RESET || !elements.resetButton) {
+            return;
+        }
+
+        const approved = window.confirm("Сбросить все нарушения и флаги нарушений?");
+        if (!approved) {
+            return;
+        }
+
+        elements.resetButton.disabled = true;
+        const previousLabel = elements.resetButton.textContent;
+        elements.resetButton.textContent = "Сбрасываем...";
+
+        try {
+            const response = await fetch(RESET_API_URL, {
+                method: "POST",
+                headers: window.AppAuth?.getAuthHeaders?.({ includeJson: true }) || { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+                credentials: "same-origin",
+            });
+
+            if (!response.ok) {
+                const message = await readErrorMessage(response);
+                throw new Error(message || `HTTP ${response.status}`);
+            }
+
+            window.AppAuth?.showAlert?.("Нарушения успешно сброшены", "success");
+            await loadViolations();
+        } catch (error) {
+            window.AppAuth?.showAlert?.(error?.message || "Не удалось сбросить нарушения", "danger");
+        } finally {
+            elements.resetButton.disabled = false;
+            elements.resetButton.textContent = previousLabel;
+        }
+    }
+
+    async function resetViolationById(violationId) {
+        if (!CAN_ADMIN_RESET || !Number.isInteger(violationId) || violationId <= 0) {
+            return;
+        }
+
+        const approved = window.confirm(`Удалить нарушение #${violationId}?`);
+        if (!approved) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_URL}/${violationId}`, {
+                method: "DELETE",
+                headers: window.AppAuth?.getAuthHeaders?.() || {},
+                credentials: "same-origin",
+            });
+
+            if (!response.ok) {
+                const message = await readErrorMessage(response);
+                throw new Error(message || `HTTP ${response.status}`);
+            }
+
+            window.AppAuth?.showAlert?.(`Нарушение #${violationId} удалено`, "success");
+            await loadViolations();
+        } catch (error) {
+            window.AppAuth?.showAlert?.(error?.message || "Не удалось удалить нарушение", "danger");
+        }
+    }
+
     async function loadViolations() {
         if (elements.panelMeta) {
             elements.panelMeta.textContent = "Загрузка...";
@@ -406,7 +504,7 @@
         if (elements.tableBody) {
             elements.tableBody.innerHTML = `
                 <tr>
-                    <td colspan="9" class="violations-empty-state">Загрузка нарушений...</td>
+                    <td colspan="${getTableColumnSpan()}" class="violations-empty-state">Загрузка нарушений...</td>
                 </tr>
             `;
         }
@@ -467,11 +565,29 @@
         });
 
         elements.reloadButton?.addEventListener("click", loadViolations);
+        elements.resetButton?.addEventListener("click", resetAllViolations);
+
+        elements.tableBody?.addEventListener("click", (event) => {
+            const button = event.target?.closest?.("[data-role='violation-reset-one']");
+            if (!button) {
+                return;
+            }
+
+            const violationId = Number.parseInt(button.getAttribute("data-violation-id") || "", 10);
+            if (!Number.isInteger(violationId) || violationId <= 0) {
+                return;
+            }
+
+            resetViolationById(violationId);
+        });
     }
 
     function init() {
         setDefaultPeriod();
         syncDateInputs();
+        if (elements.resetButton) {
+            elements.resetButton.hidden = !CAN_ADMIN_RESET;
+        }
         bindEvents();
         loadViolations();
     }

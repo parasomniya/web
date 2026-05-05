@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
 
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
-    <link href="css/custom.css?v=20260504a" rel="stylesheet">
+    <link href="css/custom.css?v=20260505b" rel="stylesheet">
     <script src="js/app-auth.js?v=20260429a"></script>
 </head>
 
@@ -105,10 +105,16 @@
                             <h1 class="h3 mb-1 text-gray-800">Нарушения</h1>
                             <p class="mb-0 text-muted">Журнал нарушений по компонентам и замесам.</p>
                         </div>
-                        <button id="violationsReloadButton" type="button" class="btn btn-outline-primary btn-sm mt-3 mt-sm-0">
-                            <i class="fas fa-sync-alt mr-1"></i>
-                            Обновить
-                        </button>
+                        <div class="d-flex align-items-center mt-3 mt-sm-0">
+                            <button id="violationsResetButton" type="button" class="btn btn-outline-danger btn-sm mr-2" data-requires-admin hidden>
+                                <i class="fas fa-trash-alt mr-1"></i>
+                                Сбросить все
+                            </button>
+                            <button id="violationsReloadButton" type="button" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-sync-alt mr-1"></i>
+                                Обновить
+                            </button>
+                        </div>
                     </div>
 
                     <div id="violationsSourceBanner" class="alert alert-light border-left-info shadow-sm mb-4" role="status">
@@ -219,11 +225,12 @@
                                             <th>Факт</th>
                                             <th>Отклонение</th>
                                             <th>Статус</th>
+                                            <th data-requires-admin hidden>Действия</th>
                                         </tr>
                                     </thead>
                                     <tbody id="violationsTableBody">
                                         <tr>
-                                            <td colspan="9" class="violations-empty-state">Загрузка нарушений...</td>
+                                            <td colspan="10" class="violations-empty-state">Загрузка нарушений...</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -256,7 +263,7 @@
 
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260429d"></script>
-    <script src="js/violations.js?v=20260504a"></script>
+    <script src="js/violations.js?v=20260505a"></script>
 
 </body>
 
