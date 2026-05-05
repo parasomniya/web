@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import prisma from '../../database.js'
-import { authenticate, requireAdmin, requireReadAccess } from '../../middleware/auth.js'
+import { authenticate, requireAdmin, requireReadAccess, requireWriteAccess } from '../../middleware/auth.js'
 import { calculateHaversine, detectZoneObject } from '../../../../module-1/geo.js'
 
 const router = Router()
@@ -215,6 +215,7 @@ function serializeZone(zone, lat, lon) {
     id: zone.id,
     name: zone.name,
     ingredient: zone.ingredient,
+    zoneType: zone.zoneType,
     radius: zone.radius,
     distanceMeters: distance
   }
@@ -484,6 +485,16 @@ router.get('/admin/history', authenticate, requireAdmin, async (req, res) => {
     res.json(rows.map((row) => serializeRtkTelemetry(row, zones)))
   } catch (error) {
     console.error('[Ошибка GET /api/telemetry/rtk/admin/history]:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.delete('/admin/truncate', authenticate, requireWriteAccess, async (req, res) => {
+  try {
+    const deleted = await prisma.rtkTelemetry.deleteMany({})
+    res.json({ status: 'ok', message: 'RTK telemetry track cleared', count: deleted.count })
+  } catch (error) {
+    console.error('[Ошибка DELETE /api/telemetry/rtk/admin/truncate]:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

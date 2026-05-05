@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
 
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
-    <link href="css/custom.css?v=20260505b" rel="stylesheet">
+    <link href="css/custom.css?v=20260505e" rel="stylesheet">
     <script src="js/auth-route-alias.js?v=20260428b"></script>
     <script src="js/app-auth.js?v=20260428b"></script>
 
@@ -30,7 +30,7 @@
                 <div class="sidebar-brand-icon">
                     <i class="fas fa-tractor"></i>
                 </div>
-                <div class="sidebar-brand-text mx-3">Кормление КРС</div>
+                <div class="sidebar-brand-text mx-3">KOROVKI</div>
             </a>
 
             <hr class="sidebar-divider my-0">
@@ -66,7 +66,7 @@
             <li class="nav-item">
                 <a class="nav-link" href="map-zones.html">
                     <i class="fas fa-fw fa-map"></i>
-                    <span>Зоны хранения</span>
+                    <span>Зоны</span>
                 </a>
             </li>
 
@@ -111,19 +111,24 @@
                         <div class="card-header py-3">
                             <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between">
                                 <h6 class="m-0 font-weight-bold text-primary">Местоположение</h6>
-                                <button id="clearTelemetryButton" type="button" class="btn btn-outline-danger btn-sm mt-3 mt-md-0" data-requires-write hidden>
-                                    Очистить трек
-                                </button>
+                                <div class="d-flex flex-column flex-sm-row mt-3 mt-md-0" style="gap: 0.5rem;" data-requires-write hidden>
+                                    <button id="clearHostTelemetryButton" type="button" class="btn btn-outline-danger btn-sm">
+                                        Очистить трек: Хозяин
+                                    </button>
+                                    <button id="clearRtkTelemetryButton" type="button" class="btn btn-outline-danger btn-sm">
+                                        Очистить трек: Погрузчик
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
                         <div class="card-body">
                             <div class="dashboard-map-wrap">
                                 <div class="map-view-switch" role="group" aria-label="Переключение вида карты">
-                                    <button type="button" class="map-view-switch__button active" data-map-type="yandex#map" aria-pressed="true">
+                                    <button type="button" class="map-view-switch__button" data-map-type="yandex#map" aria-pressed="false">
                                         Схема
                                     </button>
-                                    <button type="button" class="map-view-switch__button" data-map-type="yandex#satellite" aria-pressed="false">
+                                    <button type="button" class="map-view-switch__button active" data-map-type="yandex#satellite" aria-pressed="true">
                                         Спутник
                                     </button>
                                 </div>
@@ -302,7 +307,7 @@
 
     <script src="https://api-maps.yandex.ru/2.1/?apikey=3c050799-23a3-4bd9-a14a-b7eaf2e05511&lang=ru_RU"></script>
 
-    <script src="js/dashboard.js?v=20260505g"></script>
+    <script src="js/dashboard.js?v=20260505m"></script>
     <script src="js/dashboard-current-state.js?v=20260505c"></script>
 
 </body>
