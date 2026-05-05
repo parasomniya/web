@@ -221,6 +221,7 @@ function serializeZone(zone, lat, lon) {
     id: zone.id,
     name: zone.name,
     ingredient: zone.ingredient,
+    zoneType: zone.zoneType,
     radius: zone.radius,
     distanceMeters: distance
   }

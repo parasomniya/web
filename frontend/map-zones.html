@@ -8,7 +8,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 
-    <title>Зоны хранения</title>
+    <title>Зоны</title>
 
     <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
@@ -217,7 +217,7 @@
                 <div class="sidebar-brand-icon">
                     <i class="fas fa-tractor"></i>
                 </div>
-                <div class="sidebar-brand-text mx-3">Кормление КРС</div>
+                <div class="sidebar-brand-text mx-3">KOROVKI</div>
             </a>
 
             <hr class="sidebar-divider my-0">
@@ -253,7 +253,7 @@
             <li class="nav-item active">
                 <a class="nav-link" href="map-zones.html">
                     <i class="fas fa-fw fa-map"></i>
-                    <span>Зоны хранения</span>
+                    <span>Зоны</span>
                 </a>
             </li>
 
@@ -285,17 +285,13 @@
                     <div class="page-wrapper">
                         <div data-page-alerts></div>
 
-                        <div class="page-header">
-                            <h1 class="page-title">Зоны хранения</h1>
-                        </div>
-
                         <div class="content-layout">
                             <div class="map-card">
                                 <div class="card-header-custom">Карта зон</div>
                                 <div class="dashboard-map-wrap">
                                     <div class="map-view-switch" role="group" aria-label="Переключение вида карты">
-                                        <button type="button" class="map-view-switch__button active" data-map-type="yandex#map" aria-pressed="true">Схема</button>
-                                        <button type="button" class="map-view-switch__button" data-map-type="yandex#satellite" aria-pressed="false">Спутник</button>
+                                        <button type="button" class="map-view-switch__button" data-map-type="yandex#map" aria-pressed="false">Схема</button>
+                                        <button type="button" class="map-view-switch__button active" data-map-type="yandex#satellite" aria-pressed="true">Спутник</button>
                                     </div>
                                     <div class="map-action-controls" role="group" aria-label="Управление картой">
                                         <button type="button" class="map-action-button" id="mapFullscreenButton" aria-pressed="false" title="Полноэкранный режим">
@@ -335,7 +331,16 @@
                                     <div data-requires-write>
                                         <form id="zone-form">
                                             <div class="form-group">
-                                                <label for="ingredient">Ингредиент</label>
+                                                <label for="zoneType">Тип зоны</label>
+                                                <select id="zoneType" class="form-control" required>
+                                                    <option value="">Выберите тип</option>
+                                                    <option value="STORAGE">Зона хранения</option>
+                                                    <option value="BARN">Коровник</option>
+                                                </select>
+                                            </div>
+
+                                            <div class="form-group">
+                                                <label for="ingredient">Название зоны</label>
                                                 <input id="ingredient" class="form-control" type="text" required>
                                             </div>
 
@@ -437,7 +442,7 @@
                         </div>
 
                         <div class="table-card">
-                            <div class="card-header-custom">Список зон</div>
+                            <div class="card-header-custom">Зоны хранения</div>
                             <div class="card-body-custom">
                                 <div class="table-responsive">
                                     <table class="table table-bordered table-hover mb-0">
@@ -451,7 +456,28 @@
                                                 <th>Активна</th>
                                             </tr>
                                         </thead>
-                                        <tbody id="zones-table"></tbody>
+                                        <tbody id="storage-zones-table"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="table-card">
+                            <div class="card-header-custom">Коровники</div>
+                            <div class="card-body-custom">
+                                <div class="table-responsive">
+                                    <table class="table table-bordered table-hover mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Коровник</th>
+                                                <th>Форма</th>
+                                                <th>Lat</th>
+                                                <th>Lon</th>
+                                                <th>Размер</th>
+                                                <th>Активна</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="barn-zones-table"></tbody>
                                     </table>
                                 </div>
                             </div>

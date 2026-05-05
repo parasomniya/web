@@ -61,6 +61,7 @@ model StorageZone {
   squareMinLon Float?
   squareMaxLat Float?
   squareMaxLon Float?
+  zoneType   String   @default("STORAGE")
   ingredient String
   active     Boolean  @default(true)
   createdAt  DateTime @default(now())

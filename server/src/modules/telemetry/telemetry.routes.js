@@ -144,7 +144,7 @@ router.post('/', async (req, res) => {
 
     // 1. Достаем геозоны из базы
     const [activeZones, telemetrySettings] = await Promise.all([
-      prisma.storageZone.findMany({ where: { active: true } }),
+      prisma.storageZone.findMany({ where: { active: true, zoneType: 'STORAGE' } }),
       getTelemetrySettings(prisma)
     ]);
     const effectivePosition = await resolveEffectiveCoordinates(prisma, packet, {

@@ -21,6 +21,7 @@ function mapGroupResponse(group) {
         storageZone: group.storageZone ? {
             id: group.storageZone.id,
             name: group.storageZone.name,
+            zoneType: group.storageZone.zoneType,
             shapeType: group.storageZone.shapeType,
             radius: group.storageZone.radius,
             sideMeters: group.storageZone.sideMeters,
@@ -40,6 +41,7 @@ async function findStorageZoneById(storageZoneId) {
         select: {
             id: true,
             name: true,
+            zoneType: true,
             lat: true,
             lon: true,
             radius: true,
@@ -128,7 +130,10 @@ async function buildGroupData(payload, options = {}) {
 
             const storageZone = await findStorageZoneById(storageZoneId);
             if (!storageZone) {
-                return { error: { status: 404, message: 'Зона хранения не найдена' } };
+                return { error: { status: 404, message: 'Коровник не найден' } };
+            }
+            if (storageZone.zoneType !== 'BARN') {
+                return { error: { status: 400, message: 'Для группы выберите коровник' } };
             }
 
             data.storageZoneId = storageZoneId;
@@ -160,7 +165,7 @@ async function buildGroupData(payload, options = {}) {
         data.lon = lon;
         data.radius = radius;
     } else if (!allowPartial) {
-        return { error: { status: 400, message: 'Выберите зону хранения' } };
+        return { error: { status: 400, message: 'Выберите коровник' } };
     }
 
     return { data };
@@ -181,6 +186,7 @@ router.get('/', requireReadAccess, async (req, res) => {
                     select: {
                         id: true,
                         name: true,
+                        zoneType: true,
                         shapeType: true,
                         radius: true,
                         sideMeters: true,
@@ -225,6 +231,7 @@ router.post('/', requireWriteAccess, async (req, res) => {
                     select: {
                         id: true,
                         name: true,
+                        zoneType: true,
                         shapeType: true,
                         radius: true,
                         sideMeters: true,
@@ -287,6 +294,7 @@ router.put('/:id', requireWriteAccess, async (req, res) => {
                     select: {
                         id: true,
                         name: true,
+                        zoneType: true,
                         shapeType: true,
                         radius: true,
                         sideMeters: true,
