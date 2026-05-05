@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
 
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
-    <link href="css/custom.css?v=20260429b" rel="stylesheet">
+    <link href="css/custom.css?v=20260504a" rel="stylesheet">
     <script src="js/app-auth.js?v=20260429a"></script>
 </head>
 
@@ -135,6 +135,28 @@
                     </div>
 
                     <div class="card shadow mb-4">
+                        <div class="card-header py-3">
+                            <h6 class="m-0 font-weight-bold text-primary">Топ проблем за период</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-12 col-lg-6 mb-3 mb-lg-0">
+                                    <h6 class="text-uppercase text-primary small mb-2">Компоненты</h6>
+                                    <ol id="violationsTopComponents" class="mb-0 pl-3">
+                                        <li class="text-muted">Нет данных</li>
+                                    </ol>
+                                </div>
+                                <div class="col-12 col-lg-6">
+                                    <h6 class="text-uppercase text-primary small mb-2">Группы</h6>
+                                    <ol id="violationsTopGroups" class="mb-0 pl-3">
+                                        <li class="text-muted">Нет данных</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow mb-4">
                         <div class="card-header py-3 d-sm-flex align-items-center justify-content-between">
                             <div>
                                 <h6 class="m-0 font-weight-bold text-primary">Журнал нарушений</h6>
@@ -148,8 +170,12 @@
                             <div class="violations-toolbar mb-3">
                                 <div class="violations-filters">
                                     <div>
-                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="violationsDateFilter">Дата</label>
-                                        <input id="violationsDateFilter" type="date" class="form-control">
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="violationsFromDateFilter">С даты</label>
+                                        <input id="violationsFromDateFilter" type="date" class="form-control">
+                                    </div>
+                                    <div>
+                                        <label class="small text-primary font-weight-bold text-uppercase mb-2" for="violationsToDateFilter">По дату</label>
+                                        <input id="violationsToDateFilter" type="date" class="form-control">
                                     </div>
                                     <div>
                                         <label class="small text-primary font-weight-bold text-uppercase mb-2" for="violationsTypeFilter">Тип</label>
@@ -174,6 +200,7 @@
                                         <select id="violationsScopeFilter" class="custom-select">
                                             <option value="all">Все</option>
                                             <option value="open">Только открытые</option>
+                                            <option value="resolved">Только закрытые</option>
                                         </select>
                                     </div>
                                 </div>
@@ -229,7 +256,7 @@
 
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260429d"></script>
-    <script src="js/violations.js?v=20260430b"></script>
+    <script src="js/violations.js?v=20260504a"></script>
 
 </body>
 

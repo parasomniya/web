@@ -4,6 +4,9 @@ import { aggregateFacts, getBatchPlan } from '../batches/batch-violations.js';
 export const DEFAULT_LIMIT = 500;
 export const MAX_LIMIT = 1000;
 export const VIOLATION_THRESHOLD = 10;
+export const WORKFLOW_STATUSES_ALL = ['OPEN', 'IN_PROGRESS', 'CLOSED', 'RESOLVED'];
+export const WORKFLOW_STATUSES_ACTIVE = new Set(['OPEN', 'IN_PROGRESS']);
+export const WORKFLOW_STATUSES_RESOLVED = new Set(['CLOSED', 'RESOLVED']);
 
 function round1(value) {
     return Math.round(Number(value || 0) * 10) / 10;
@@ -36,6 +39,7 @@ function buildBatchDate(batch) {
 }
 
 function toUiViolationStatus(violation) {
+    if (violation.status === 'RESOLVED') return 'closed';
     if (violation.status === 'CLOSED') return 'closed';
     if (violation.status === 'IN_PROGRESS') return 'in_progress';
 
@@ -45,6 +49,21 @@ function toUiViolationStatus(violation) {
     }
 
     return 'open';
+}
+
+function incrementCounter(map, key) {
+    const normalizedKey = String(key || '').trim() || '—';
+    map.set(normalizedKey, Number(map.get(normalizedKey) || 0) + 1);
+}
+
+function toTopList(counterMap, top = 3) {
+    return Array.from(counterMap.entries())
+        .map(([name, count]) => ({ name, count }))
+        .sort((left, right) => {
+            if (right.count !== left.count) return right.count - left.count;
+            return left.name.localeCompare(right.name, 'ru');
+        })
+        .slice(0, top);
 }
 
 export async function collectReportData({ fromDate = null, toDate = null, limit = DEFAULT_LIMIT } = {}) {
@@ -93,11 +112,10 @@ export async function collectReportData({ fromDate = null, toDate = null, limit 
                 orderBy: { addedAt: 'asc' }
             },
             violations: {
-                where: {
-                    status: { not: 'RESOLVED' }
-                },
+                where: { status: { in: WORKFLOW_STATUSES_ALL } },
                 select: {
-                    id: true
+                    id: true,
+                    status: true
                 }
             }
         },
@@ -113,7 +131,7 @@ export async function collectReportData({ fromDate = null, toDate = null, limit 
                     ...(toDate ? { lte: toDate } : {})
                 }
             } : {}),
-            status: { not: 'RESOLVED' }
+            status: { in: WORKFLOW_STATUSES_ALL }
         },
         include: {
             batch: {
@@ -133,12 +151,25 @@ export async function collectReportData({ fromDate = null, toDate = null, limit 
 
     const reportBatches = [];
     const reportViolations = [];
+    const componentsCounter = new Map();
+    const groupsCounter = new Map();
+    let activeViolationsCount = 0;
+    let resolvedViolationsCount = 0;
+    let criticalViolationsCount = 0;
 
     for (const batch of batches) {
         const plan = getBatchPlan(batch);
         const facts = aggregateFacts(batch.actualIngredients || []);
         const factTotal = facts.reduce((sum, item) => sum + Number(item.actualWeight || 0), 0);
         const batchDate = buildBatchDate(batch);
+
+        const violationsCount = batch.violations.length;
+        const openViolationsCount = batch.violations.reduce((sum, item) => (
+            sum + (WORKFLOW_STATUSES_ACTIVE.has(item.status) ? 1 : 0)
+        ), 0);
+        const resolvedForBatchCount = batch.violations.reduce((sum, item) => (
+            sum + (WORKFLOW_STATUSES_RESOLVED.has(item.status) ? 1 : 0)
+        ), 0);
 
         reportBatches.push({
             id: batch.id,
@@ -147,35 +178,77 @@ export async function collectReportData({ fromDate = null, toDate = null, limit 
             groupName: batch.group?.name || 'Без группы',
             planTotal: round1(plan.totalBatchWeight || 0),
             factTotal: round1(factTotal),
-            violationsCount: batch.violations.length
+            violationsCount,
+            openViolationsCount,
+            resolvedViolationsCount: resolvedForBatchCount,
+            hasViolations: violationsCount > 0
         });
     }
 
     for (const violation of violations) {
         const batch = violation.batch;
         const batchDate = violation.detectedAt || buildBatchDate(batch);
+        const severityStatus = toUiViolationStatus(violation);
+        const workflowStatus = String(violation.status || 'OPEN').toUpperCase();
+        const groupName = batch?.group?.name || 'Без группы';
+        const componentName = violation.componentName || '—';
+
+        if (WORKFLOW_STATUSES_ACTIVE.has(workflowStatus)) {
+            activeViolationsCount += 1;
+        } else if (WORKFLOW_STATUSES_RESOLVED.has(workflowStatus)) {
+            resolvedViolationsCount += 1;
+        }
+
+        if (severityStatus === 'critical') {
+            criticalViolationsCount += 1;
+        }
+
+        incrementCounter(componentsCounter, componentName);
+        incrementCounter(groupsCounter, groupName);
+
         reportViolations.push({
             id: violation.id,
             batchId: violation.batchId,
             date: batchDate,
             batchLabel: violation.batchId ? `Замес #${violation.batchId}` : 'Без замеса',
             batch: violation.batchId ? `Замес #${violation.batchId}` : 'Без замеса',
-            groupName: batch?.group?.name || 'Без группы',
-            group: batch?.group?.name || 'Без группы',
-            component: violation.componentName || '—',
+            groupName,
+            group: groupName,
+            component: componentName,
             type: violation.title,
             violationType: violation.title,
             plan: round1(violation.planWeight || 0),
             fact: round1(violation.actualWeight || 0),
             deviation: round1(violation.deviation || 0),
-            status: toUiViolationStatus(violation),
+            status: severityStatus,
+            workflowStatus,
             code: violation.code,
             comment: violation.comment || null
         });
     }
 
+    const batchesWithViolationsCount = reportBatches.reduce((sum, item) => (
+        sum + (item.violationsCount > 0 ? 1 : 0)
+    ), 0);
+
     return {
+        period: {
+            from: fromDate ? fromDate.toISOString() : null,
+            to: toDate ? toDate.toISOString() : null
+        },
         batches: reportBatches,
-        violations: reportViolations
+        violations: reportViolations,
+        summary: {
+            counts: {
+                batches: reportBatches.length,
+                batchesWithViolations: batchesWithViolationsCount,
+                violationsTotal: reportViolations.length,
+                violationsActive: activeViolationsCount,
+                violationsResolved: resolvedViolationsCount,
+                violationsCritical: criticalViolationsCount
+            },
+            topComponents: toTopList(componentsCounter, 3),
+            topGroups: toTopList(groupsCounter, 3)
+        }
     };
 }

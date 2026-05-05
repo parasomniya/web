@@ -1,5 +1,6 @@
 (function () {
     const API_URL = window.AppAuth?.getApiUrl?.("/api/violations") || "/api/violations";
+    const DEFAULT_LIMIT = 1000;
 
     const STATUS_META = {
         critical: {
@@ -20,80 +21,23 @@
         },
     };
 
-    const MOCK_VIOLATIONS = [
-        {
-            date: "2026-04-29T06:18:00+07:00",
-            batch: "Замес №2419",
-            group: "Группа 12",
-            component: "Кукурузный силос",
-            violationType: "Недовложение",
-            plan: 820,
-            fact: 768,
-            deviation: -52,
-            status: "critical",
-        },
-        {
-            date: "2026-04-29T07:42:00+07:00",
-            batch: "Замес №2420",
-            group: "Группа 7",
-            component: "Жом свекловичный",
-            violationType: "Перевложение",
-            plan: 160,
-            fact: 183,
-            deviation: 23,
-            status: "open",
-        },
-        {
-            date: "2026-04-29T08:10:00+07:00",
-            batch: "Замес №2420",
-            group: "Группа 7",
-            component: "Премикс",
-            violationType: "Пропуск компонента",
-            plan: 12,
-            fact: 0,
-            deviation: -12,
-            status: "critical",
-        },
-        {
-            date: "2026-04-28T16:25:00+07:00",
-            batch: "Замес №2417",
-            group: "Группа 4",
-            component: "Сенаж люцерновый",
-            violationType: "Недовложение",
-            plan: 540,
-            fact: 521,
-            deviation: -19,
-            status: "in_progress",
-        },
-        {
-            date: "2026-04-28T15:54:00+07:00",
-            batch: "Замес №2416",
-            group: "Группа 2",
-            component: "Комбикорм",
-            violationType: "Перевложение",
-            plan: 210,
-            fact: 216,
-            deviation: 6,
-            status: "closed",
-        },
-        {
-            date: "2026-04-27T18:04:00+07:00",
-            batch: "Замес №2410",
-            group: "Группа 9",
-            component: "Минеральная добавка",
-            violationType: "Ошибка выбора группы",
-            plan: 25,
-            fact: 25,
-            deviation: 0,
-            status: "closed",
-        },
-    ];
-
     const state = {
         items: [],
         filteredItems: [],
-        usingMock: false,
+        summary: {
+            counts: {
+                violationsCritical: 0,
+                violationsActive: 0,
+                violationsResolved: 0,
+            },
+            topComponents: [],
+            topGroups: [],
+            shownCount: 0,
+            scope: "all",
+        },
         lastError: "",
+        fromDate: "",
+        toDate: "",
     };
 
     const elements = {
@@ -101,7 +45,8 @@
         panelMeta: document.getElementById("violationsPanelMeta"),
         sourceBanner: document.getElementById("violationsSourceBanner"),
         sourceBadge: document.getElementById("violationsSourceBadge"),
-        dateFilter: document.getElementById("violationsDateFilter"),
+        fromDateFilter: document.getElementById("violationsFromDateFilter"),
+        toDateFilter: document.getElementById("violationsToDateFilter"),
         typeFilter: document.getElementById("violationsTypeFilter"),
         groupFilter: document.getElementById("violationsGroupFilter"),
         componentFilter: document.getElementById("violationsComponentFilter"),
@@ -111,6 +56,8 @@
         openCount: document.getElementById("violationsOpenCount"),
         progressCount: document.getElementById("violationsProgressCount"),
         closedCount: document.getElementById("violationsClosedCount"),
+        topComponents: document.getElementById("violationsTopComponents"),
+        topGroups: document.getElementById("violationsTopGroups"),
     };
 
     const dateTimeFormatter = new Intl.DateTimeFormat("ru-RU", {
@@ -199,41 +146,41 @@
         ].join("-");
     }
 
-    function normalizeStatus(value) {
+    function formatDateValue(date) {
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+            return "";
+        }
+
+        return [
+            date.getFullYear(),
+            String(date.getMonth() + 1).padStart(2, "0"),
+            String(date.getDate()).padStart(2, "0"),
+        ].join("-");
+    }
+
+    function normalizeSeverityStatus(value) {
         const normalized = String(value || "").trim().toLowerCase();
-
-        if (normalized === "critical" || normalized === "критично") {
-            return "critical";
-        }
-
-        if (normalized === "in_progress" || normalized === "in progress" || normalized === "processing" || normalized === "в работе") {
-            return "in_progress";
-        }
-
-        if (normalized === "closed" || normalized === "resolved" || normalized === "закрыто") {
-            return "closed";
-        }
-
+        if (normalized === "critical") return "critical";
+        if (normalized === "in_progress" || normalized === "in progress" || normalized === "processing") return "in_progress";
+        if (normalized === "closed" || normalized === "resolved") return "closed";
         return "open";
     }
 
+    function normalizeWorkflowStatus(value) {
+        const normalized = String(value || "").trim().toUpperCase();
+        if (["OPEN", "IN_PROGRESS", "CLOSED", "RESOLVED"].includes(normalized)) {
+            return normalized;
+        }
+
+        if (normalized === "IN PROGRESS") return "IN_PROGRESS";
+        return "OPEN";
+    }
+
     function inferViolationType(plan, fact, deviation, fallback) {
-        if (fallback) {
-            return fallback;
-        }
-
-        if (Number.isFinite(plan) && Number.isFinite(fact) && plan > 0 && fact === 0) {
-            return "Пропуск компонента";
-        }
-
-        if (Number.isFinite(deviation) && deviation < 0) {
-            return "Недовложение";
-        }
-
-        if (Number.isFinite(deviation) && deviation > 0) {
-            return "Перевложение";
-        }
-
+        if (fallback) return fallback;
+        if (Number.isFinite(plan) && Number.isFinite(fact) && plan > 0 && fact === 0) return "Пропуск компонента";
+        if (Number.isFinite(deviation) && deviation < 0) return "Недовложение";
+        if (Number.isFinite(deviation) && deviation > 0) return "Перевложение";
         return "Нарушение рецепта";
     }
 
@@ -246,6 +193,7 @@
         const type = inferViolationType(plan, fact, deviation, item.violationType ?? item.type ?? item.reason ?? "");
 
         return {
+            id: item.id ?? null,
             date: item.date ?? item.createdAt ?? item.timestamp ?? item.eventTime ?? "",
             batch: item.batch ?? item.batchName ?? item.mix ?? item.mixName ?? "—",
             group: item.group ?? item.groupName ?? "—",
@@ -255,16 +203,38 @@
             plan,
             fact,
             deviation,
-            status: normalizeStatus(item.status ?? item.state),
+            status: normalizeSeverityStatus(item.status ?? item.state),
+            workflowStatus: normalizeWorkflowStatus(item.workflowStatus ?? item.state ?? item.status),
+        };
+    }
+
+    function normalizeTopItems(items) {
+        if (!Array.isArray(items)) return [];
+        return items
+            .map((item) => ({
+                name: String(item?.name || "—").trim() || "—",
+                count: Number(item?.count || 0) || 0,
+            }))
+            .filter((item) => item.count > 0);
+    }
+
+    function normalizeSummary(summary) {
+        const counts = summary?.counts || {};
+        return {
+            counts: {
+                violationsCritical: Number(counts.violationsCritical || 0) || 0,
+                violationsActive: Number(counts.violationsActive || 0) || 0,
+                violationsResolved: Number(counts.violationsResolved || 0) || 0,
+            },
+            topComponents: normalizeTopItems(summary?.topComponents),
+            topGroups: normalizeTopItems(summary?.topGroups),
+            shownCount: Number(summary?.shownCount || 0) || 0,
+            scope: String(summary?.scope || "all"),
         };
     }
 
     function getStatusMeta(status) {
         return STATUS_META[status] || STATUS_META.open;
-    }
-
-    function isOpenStatus(status) {
-        return status !== "closed";
     }
 
     function buildUniqueValues(items, fieldName) {
@@ -277,10 +247,7 @@
     }
 
     function syncFilterSelectOptions(select, values, defaultLabel) {
-        if (!select) {
-            return;
-        }
-
+        if (!select) return;
         const previousValue = select.value;
         const options = [`<option value="">${escapeHtml(defaultLabel)}</option>`]
             .concat(values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`));
@@ -298,72 +265,49 @@
     }
 
     function getVisibleItems() {
-        const dateFilter = elements.dateFilter?.value || "";
         const typeFilter = elements.typeFilter?.value || "";
         const groupFilter = elements.groupFilter?.value || "";
         const componentFilter = elements.componentFilter?.value || "";
-        const scopeFilter = elements.scopeFilter?.value || "all";
 
         return state.items.filter((item) => {
-            if (dateFilter && getDateKey(item.date) !== dateFilter) {
-                return false;
-            }
-
-            if (typeFilter && item.type !== typeFilter) {
-                return false;
-            }
-
-            if (groupFilter && item.group !== groupFilter) {
-                return false;
-            }
-
-            if (componentFilter && item.component !== componentFilter) {
-                return false;
-            }
-
-            if (scopeFilter === "open" && !isOpenStatus(item.status)) {
-                return false;
-            }
-
+            if (typeFilter && item.type !== typeFilter) return false;
+            if (groupFilter && item.group !== groupFilter) return false;
+            if (componentFilter && item.component !== componentFilter) return false;
             return true;
         });
     }
 
     function renderSummary() {
-        const counts = {
-            critical: 0,
-            open: 0,
-            in_progress: 0,
-            closed: 0,
-        };
+        const criticalCount = state.items.filter((item) => item.status === "critical").length;
+        const openCount = state.items.filter((item) => item.workflowStatus === "OPEN").length;
+        const progressCount = state.items.filter((item) => item.workflowStatus === "IN_PROGRESS").length;
+        const closedCount = state.items.filter((item) => ["CLOSED", "RESOLVED"].includes(item.workflowStatus)).length;
 
-        state.items.forEach((item) => {
-            counts[item.status] = (counts[item.status] || 0) + 1;
-        });
+        elements.criticalCount.textContent = String(criticalCount);
+        elements.openCount.textContent = String(openCount);
+        elements.progressCount.textContent = String(progressCount);
+        elements.closedCount.textContent = String(closedCount);
+    }
 
-        elements.criticalCount.textContent = String(counts.critical || 0);
-        elements.openCount.textContent = String(counts.open || 0);
-        elements.progressCount.textContent = String(counts.in_progress || 0);
-        elements.closedCount.textContent = String(counts.closed || 0);
+    function renderTopList(container, items) {
+        if (!container) return;
+        if (!Array.isArray(items) || !items.length) {
+            container.innerHTML = '<li class="text-muted">Нет данных за период</li>';
+            return;
+        }
+
+        container.innerHTML = items.map((item) => (
+            `<li><span class="font-weight-bold">${escapeHtml(item.name)}</span> · ${item.count}</li>`
+        )).join("");
     }
 
     function renderBanner() {
-        if (!elements.sourceBanner || !elements.sourceBadge) {
-            return;
-        }
+        if (!elements.sourceBanner || !elements.sourceBadge) return;
 
         if (state.lastError) {
             elements.sourceBanner.className = "alert alert-light border-left-danger shadow-sm mb-4";
             elements.sourceBanner.textContent = `Не удалось загрузить данные из /api/violations: ${state.lastError}`;
             elements.sourceBadge.textContent = "Источник: API error";
-            elements.sourceBadge.className = "violations-source-badge violations-source-badge--mock mr-2";
-            return;
-        }
-
-        if (state.usingMock) {
-            elements.sourceBanner.className = "alert alert-light border-left-warning shadow-sm mb-4";
-            elements.sourceBanner.textContent = "API /api/violations пока не ответил, поэтому показан макет с тестовыми данными.";
-            elements.sourceBadge.textContent = "Источник: mock";
             elements.sourceBadge.className = "violations-source-badge violations-source-badge--mock mr-2";
             return;
         }
@@ -375,21 +319,15 @@
     }
 
     function renderMeta() {
-        if (!elements.panelMeta) {
-            return;
-        }
-
+        if (!elements.panelMeta) return;
         const shownCount = state.filteredItems.length;
         const totalCount = state.items.length;
-        const sourceLabel = state.lastError ? "API error" : (state.usingMock ? "mock" : "API");
-
-        elements.panelMeta.textContent = `Показано ${shownCount} из ${totalCount} · источник: ${sourceLabel}`;
+        const scope = state.summary.scope || (elements.scopeFilter?.value || "all");
+        elements.panelMeta.textContent = `Показано ${shownCount} из ${totalCount} · scope: ${scope}`;
     }
 
     function renderTable() {
-        if (!elements.tableBody) {
-            return;
-        }
+        if (!elements.tableBody) return;
 
         if (!state.filteredItems.length) {
             elements.tableBody.innerHTML = `
@@ -402,7 +340,6 @@
 
         elements.tableBody.innerHTML = state.filteredItems.map((item) => {
             const statusMeta = getStatusMeta(item.status);
-
             return `
                 <tr>
                     <td>
@@ -426,9 +363,39 @@
         renderFilterOptions();
         state.filteredItems = getVisibleItems();
         renderSummary();
+        renderTopList(elements.topComponents, state.summary.topComponents);
+        renderTopList(elements.topGroups, state.summary.topGroups);
         renderBanner();
         renderMeta();
         renderTable();
+    }
+
+    function setDefaultPeriod() {
+        const today = new Date();
+        const from = new Date(today);
+        from.setDate(from.getDate() - 6);
+
+        state.fromDate = formatDateValue(from);
+        state.toDate = formatDateValue(today);
+    }
+
+    function syncDateInputs() {
+        if (elements.fromDateFilter) {
+            elements.fromDateFilter.value = state.fromDate;
+        }
+        if (elements.toDateFilter) {
+            elements.toDateFilter.value = state.toDate;
+        }
+    }
+
+    function buildApiUrl() {
+        const url = new URL(API_URL, window.location.origin);
+        if (state.fromDate) url.searchParams.set("from", state.fromDate);
+        if (state.toDate) url.searchParams.set("to", state.toDate);
+        const scope = elements.scopeFilter?.value || "all";
+        url.searchParams.set("scope", scope);
+        url.searchParams.set("limit", String(DEFAULT_LIMIT));
+        return url.toString();
     }
 
     async function loadViolations() {
@@ -445,7 +412,7 @@
         }
 
         try {
-            const response = await fetch(API_URL, {
+            const response = await fetch(buildApiUrl(), {
                 headers: window.AppAuth?.getAuthHeaders?.() || {},
                 credentials: "same-origin",
             });
@@ -455,32 +422,47 @@
             }
 
             const payload = await response.json();
-            const items = Array.isArray(payload)
+            const itemsRaw = Array.isArray(payload)
                 ? payload
                 : Array.isArray(payload?.items)
                     ? payload.items
-                    : [];
+                    : Array.isArray(payload?.violations)
+                        ? payload.violations
+                        : [];
 
-            state.items = items.map(normalizeItem);
-            state.usingMock = false;
+            state.items = itemsRaw.map(normalizeItem);
+            state.summary = normalizeSummary(payload?.summary);
             state.lastError = "";
         } catch (error) {
             state.items = [];
-            state.usingMock = false;
+            state.summary = normalizeSummary(null);
             state.lastError = error?.message || "Не удалось загрузить API";
         }
 
         render();
     }
 
+    function handleDateChange() {
+        const fromDate = elements.fromDateFilter?.value || "";
+        const toDate = elements.toDateFilter?.value || "";
+
+        if (fromDate && toDate && fromDate > toDate) {
+            window.AppAuth?.showAlert?.("Дата начала периода не может быть позже даты окончания.", "warning");
+            syncDateInputs();
+            return;
+        }
+
+        state.fromDate = fromDate;
+        state.toDate = toDate;
+        loadViolations();
+    }
+
     function bindEvents() {
-        [
-            elements.dateFilter,
-            elements.typeFilter,
-            elements.groupFilter,
-            elements.componentFilter,
-            elements.scopeFilter,
-        ].forEach((control) => {
+        elements.fromDateFilter?.addEventListener("change", handleDateChange);
+        elements.toDateFilter?.addEventListener("change", handleDateChange);
+        elements.scopeFilter?.addEventListener("change", loadViolations);
+
+        [elements.typeFilter, elements.groupFilter, elements.componentFilter].forEach((control) => {
             control?.addEventListener("change", render);
         });
 
@@ -488,6 +470,8 @@
     }
 
     function init() {
+        setDefaultPeriod();
+        syncDateInputs();
         bindEvents();
         loadViolations();
     }
