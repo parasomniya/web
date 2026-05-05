@@ -226,7 +226,18 @@
                             <div id="dashboardActiveBatchCard" class="dashboard-section d-none">
                                 <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-3">
                                     <div class="text-xs font-weight-bold text-primary text-uppercase mb-2 mb-md-0">План / Факт текущего замеса</div>
-                                    <div id="dashboardActiveBatchMeta" class="dashboard-section-meta">--</div>
+                                    <div class="d-flex align-items-center">
+                                        <button
+                                            id="dashboardStopBatchButton"
+                                            type="button"
+                                            class="btn btn-outline-danger btn-sm mr-2 d-none"
+                                            data-requires-write
+                                            hidden
+                                        >
+                                            Остановить замес
+                                        </button>
+                                        <div id="dashboardActiveBatchMeta" class="dashboard-section-meta">--</div>
+                                    </div>
                                 </div>
                                 <div class="table-responsive dashboard-mini-table-wrap">
                                     <table class="table table-sm dashboard-mini-table mb-0">
@@ -292,7 +303,7 @@
     <script src="https://api-maps.yandex.ru/2.1/?apikey=3c050799-23a3-4bd9-a14a-b7eaf2e05511&lang=ru_RU"></script>
 
     <script src="js/dashboard.js?v=20260430b"></script>
-    <script src="js/dashboard-current-state.js?v=20260430b"></script>
+    <script src="js/dashboard-current-state.js?v=20260505a"></script>
 
 </body>
 

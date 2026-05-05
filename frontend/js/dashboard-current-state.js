@@ -1,6 +1,8 @@
 (function () {
     const WARNING_API_URL = window.AppAuth?.getApiUrl?.("/api/telemetry/warnings/current") || "/api/telemetry/warnings/current";
+    const STOP_BATCH_API_URL = window.AppAuth?.getApiUrl?.("/api/telemetry/host/manual-stop") || "/api/telemetry/host/manual-stop";
     const CAN_VIEW_WARNING_SECTION = window.AppAuth?.isAdmin?.() === true;
+    const CAN_STOP_BATCH = window.AppAuth?.hasWriteAccess?.() === true;
     const WARNING_SECTION_TITLE = "Технические предупреждения";
     const WARNING_EMPTY_TEXT = "Активных предупреждений нет.";
     const WARNING_LOADING_TEXT = "Ожидание телеметрии...";
@@ -10,6 +12,8 @@
     let latestWarningSource = "backend";
     let latestWarningUpdatedAt = null;
     let warningApiAvailability = "unknown";
+    let stopBatchInFlight = false;
+    let stopBatchTarget = null;
 
     async function readDashboardErrorMessage(response) {
         const contentType = response.headers.get("content-type") || "";
@@ -292,6 +296,86 @@
         }
     }
 
+    function getStopBatchButton() {
+        return document.getElementById("dashboardStopBatchButton");
+    }
+
+    function updateStopBatchButton(batch) {
+        const button = getStopBatchButton();
+        if (!button) {
+            return;
+        }
+
+        if (!CAN_STOP_BATCH) {
+            button.classList.add("d-none");
+            button.disabled = true;
+            return;
+        }
+
+        const batchId = Number.parseInt(batch?.id, 10);
+        const hasActiveBatch = Number.isInteger(batchId) && batchId > 0;
+
+        if (!hasActiveBatch) {
+            button.classList.add("d-none");
+            button.disabled = true;
+            button.textContent = "Остановить замес";
+            stopBatchTarget = null;
+            return;
+        }
+
+        stopBatchTarget = {
+            id: batchId,
+            deviceId: typeof latestTelemetry?.deviceId === "string" && latestTelemetry.deviceId.trim()
+                ? latestTelemetry.deviceId.trim()
+                : null,
+        };
+
+        button.classList.remove("d-none");
+        button.disabled = stopBatchInFlight;
+        button.textContent = stopBatchInFlight ? "Останавливаем..." : "Остановить замес";
+    }
+
+    async function stopActiveBatch() {
+        if (stopBatchInFlight || !CAN_STOP_BATCH || !stopBatchTarget?.id) {
+            return;
+        }
+
+        const approved = window.confirm(`Остановить замес #${stopBatchTarget.id}?`);
+        if (!approved) {
+            return;
+        }
+
+        stopBatchInFlight = true;
+        updateStopBatchButton(stopBatchTarget);
+
+        try {
+            const response = await fetch(STOP_BATCH_API_URL, {
+                method: "POST",
+                headers: getHeaders(),
+                body: JSON.stringify({
+                    batchId: stopBatchTarget.id,
+                    deviceId: stopBatchTarget.deviceId,
+                }),
+            });
+
+            if (!response.ok) {
+                const errorMessage = await readDashboardErrorMessage(response);
+                throw new Error(errorMessage || `HTTP ${response.status}`);
+            }
+
+            window.AppAuth?.showAlert?.(`Замес #${stopBatchTarget.id} остановлен`, "success");
+            await fetchLatest();
+            if (typeof fetchHistory === "function") {
+                await fetchHistory();
+            }
+        } catch (error) {
+            window.AppAuth?.showAlert?.(error?.message || "Не удалось остановить замес", "danger");
+        } finally {
+            stopBatchInFlight = false;
+            updateStopBatchButton(latestTelemetry?.active_batch);
+        }
+    }
+
     async function fetchWarningsResponse() {
         if (!CAN_VIEW_WARNING_SECTION || warningApiAvailability === "unavailable") {
             return null;
@@ -360,10 +444,13 @@
             return;
         }
 
+        const batchId = Number.parseInt(batch?.id, 10);
+        const hasActiveBatch = Number.isInteger(batchId) && batchId > 0;
         const rows = Array.isArray(batch?.ingredients) ? batch.ingredients : [];
-        const isVisible = rows.length > 0;
+        const isVisible = hasActiveBatch;
 
         setSectionVisible("dashboardActiveBatchCard", isVisible);
+        updateStopBatchButton(hasActiveBatch ? batch : null);
 
         if (!isVisible) {
             setText("dashboardActiveBatchMeta", "--");
@@ -372,12 +459,15 @@
         }
 
         const metaParts = [];
-        if (batch?.id != null) {
-            metaParts.push(`Замес #${batch.id}`);
-        }
+        metaParts.push(`Замес #${batchId}`);
         metaParts.push(`Компонентов: ${rows.length}`);
 
         setText("dashboardActiveBatchMeta", metaParts.join(" | "));
+
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="dashboard-mini-table-empty">Компоненты ещё не зафиксированы</td></tr>';
+            return;
+        }
 
         tbody.innerHTML = rows.map((row) => {
             const name = escapeHtml(row?.name ?? "--");
@@ -497,6 +587,12 @@
             renderDashboard(latestTelemetry);
         }
     };
+
+    const stopBatchButton = getStopBatchButton();
+    if (stopBatchButton && !stopBatchButton.dataset.bound) {
+        stopBatchButton.dataset.bound = "1";
+        stopBatchButton.addEventListener("click", stopActiveBatch);
+    }
 
     renderDashboard(latestTelemetry);
 })();
