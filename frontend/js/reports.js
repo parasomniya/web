@@ -1,127 +1,21 @@
 (function () {
     const API_URL = window.AppAuth?.getApiUrl?.("/api/reports") || "/api/reports";
-
-    const MOCK_REPORT = {
-        batches: [
-            {
-                id: 2420,
-                date: "2026-04-29T07:42:00+07:00",
-                rationName: "Рацион для группы 7",
-                groupName: "Группа 7",
-                planTotal: 992,
-                factTotal: 963,
-                violationsCount: 2,
-            },
-            {
-                id: 2419,
-                date: "2026-04-29T06:18:00+07:00",
-                rationName: "Рацион для группы 12",
-                groupName: "Группа 12",
-                planTotal: 1380,
-                factTotal: 1328,
-                violationsCount: 1,
-            },
-            {
-                id: 2417,
-                date: "2026-04-28T16:25:00+07:00",
-                rationName: "Лактация 2",
-                groupName: "Группа 4",
-                planTotal: 1210,
-                factTotal: 1191,
-                violationsCount: 1,
-            },
-            {
-                id: 2416,
-                date: "2026-04-28T15:54:00+07:00",
-                rationName: "Откорм 1",
-                groupName: "Группа 2",
-                planTotal: 810,
-                factTotal: 816,
-                violationsCount: 0,
-            },
-            {
-                id: 2410,
-                date: "2026-04-27T18:04:00+07:00",
-                rationName: "Сухостой",
-                groupName: "Группа 9",
-                planTotal: 605,
-                factTotal: 605,
-                violationsCount: 1,
-            },
-            {
-                id: 2408,
-                date: "2026-04-27T11:10:00+07:00",
-                rationName: "Лактация 1",
-                groupName: "Группа 5",
-                planTotal: 1280,
-                factTotal: 1283,
-                violationsCount: 0,
-            },
-        ],
-        violations: [
-            {
-                batchId: 2420,
-                date: "2026-04-29T07:42:00+07:00",
-                batchLabel: "Замес #2420",
-                groupName: "Группа 7",
-                component: "Жом свекловичный",
-                type: "Перевложение",
-                plan: 160,
-                fact: 183,
-                deviation: 23,
-            },
-            {
-                batchId: 2420,
-                date: "2026-04-29T08:10:00+07:00",
-                batchLabel: "Замес #2420",
-                groupName: "Группа 7",
-                component: "Премикс",
-                type: "Пропуск компонента",
-                plan: 12,
-                fact: 0,
-                deviation: -12,
-            },
-            {
-                batchId: 2419,
-                date: "2026-04-29T06:18:00+07:00",
-                batchLabel: "Замес #2419",
-                groupName: "Группа 12",
-                component: "Кукурузный силос",
-                type: "Недовложение",
-                plan: 820,
-                fact: 768,
-                deviation: -52,
-            },
-            {
-                batchId: 2417,
-                date: "2026-04-28T16:25:00+07:00",
-                batchLabel: "Замес #2417",
-                groupName: "Группа 4",
-                component: "Сенаж люцерновый",
-                type: "Недовложение",
-                plan: 540,
-                fact: 521,
-                deviation: -19,
-            },
-            {
-                batchId: 2410,
-                date: "2026-04-27T18:04:00+07:00",
-                batchLabel: "Замес #2410",
-                groupName: "Группа 9",
-                component: "Минеральная добавка",
-                type: "Ошибка выбора группы",
-                plan: 25,
-                fact: 25,
-                deviation: 0,
-            },
-        ],
-    };
+    const DEFAULT_LIMIT = 1000;
 
     const state = {
         batches: [],
         violations: [],
-        filteredBatches: [],
-        filteredViolations: [],
+        summary: {
+            counts: {
+                batches: 0,
+                batchesWithViolations: 0,
+                violationsTotal: 0,
+                violationsActive: 0,
+                violationsResolved: 0,
+            },
+            topComponents: [],
+            topGroups: [],
+        },
         fromDate: "",
         toDate: "",
         usingMock: false,
@@ -140,11 +34,15 @@
         batchesCount: document.getElementById("reportsBatchesCount"),
         problemBatchesCount: document.getElementById("reportsProblemBatchesCount"),
         violationsCount: document.getElementById("reportsViolationsCount"),
+        openViolationsCount: document.getElementById("reportsOpenViolationsCount"),
+        resolvedViolationsCount: document.getElementById("reportsResolvedViolationsCount"),
         violationRate: document.getElementById("reportsViolationRate"),
         batchesMeta: document.getElementById("reportsBatchesMeta"),
         violationsMeta: document.getElementById("reportsViolationsMeta"),
         batchesTableBody: document.getElementById("reportsBatchesTableBody"),
         violationsTableBody: document.getElementById("reportsViolationsTableBody"),
+        topComponents: document.getElementById("reportsTopComponents"),
+        topGroups: document.getElementById("reportsTopGroups"),
     };
 
     const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
@@ -193,6 +91,31 @@
         return Number.isNaN(parsed.getTime()) ? null : parsed;
     }
 
+    function formatDateValue(date) {
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+            return "";
+        }
+
+        return [
+            date.getFullYear(),
+            String(date.getMonth() + 1).padStart(2, "0"),
+            String(date.getDate()).padStart(2, "0"),
+        ].join("-");
+    }
+
+    function getDateKey(value) {
+        const parsed = parseDate(value);
+        if (!parsed) {
+            return "";
+        }
+
+        return [
+            parsed.getFullYear(),
+            String(parsed.getMonth() + 1).padStart(2, "0"),
+            String(parsed.getDate()).padStart(2, "0"),
+        ].join("-");
+    }
+
     function formatDateTime(value) {
         const parsed = parseDate(value);
         if (!parsed) {
@@ -209,31 +132,6 @@
         }
 
         return dateFormatter.format(parsed);
-    }
-
-    function getDateKey(value) {
-        const parsed = parseDate(value);
-        if (!parsed) {
-            return "";
-        }
-
-        return [
-            parsed.getFullYear(),
-            String(parsed.getMonth() + 1).padStart(2, "0"),
-            String(parsed.getDate()).padStart(2, "0"),
-        ].join("-");
-    }
-
-    function formatDateValue(date) {
-        if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
-            return "";
-        }
-
-        return [
-            date.getFullYear(),
-            String(date.getMonth() + 1).padStart(2, "0"),
-            String(date.getDate()).padStart(2, "0"),
-        ].join("-");
     }
 
     function formatWeight(value) {
@@ -279,6 +177,8 @@
             planTotal: toNumber(item.planTotal ?? item.plan ?? item.targetWeight) ?? 0,
             factTotal: toNumber(item.factTotal ?? item.fact ?? item.actualWeight) ?? 0,
             violationsCount,
+            openViolationsCount: Number(item.openViolationsCount ?? 0) || 0,
+            resolvedViolationsCount: Number(item.resolvedViolationsCount ?? 0) || 0,
             hasViolations: violationsCount > 0 || Boolean(item.hasViolations),
         };
     }
@@ -304,59 +204,62 @@
         };
     }
 
+    function normalizeTopItems(items) {
+        if (!Array.isArray(items)) return [];
+        return items
+            .map((item) => ({
+                name: String(item?.name || "—").trim() || "—",
+                count: Number(item?.count || 0) || 0,
+            }))
+            .filter((item) => item.count > 0);
+    }
+
+    function normalizeSummary(summary) {
+        const counts = summary?.counts || {};
+        return {
+            counts: {
+                batches: Number(counts.batches || 0) || 0,
+                batchesWithViolations: Number(counts.batchesWithViolations || 0) || 0,
+                violationsTotal: Number(counts.violationsTotal || 0) || 0,
+                violationsActive: Number(counts.violationsActive || 0) || 0,
+                violationsResolved: Number(counts.violationsResolved || 0) || 0,
+            },
+            topComponents: normalizeTopItems(summary?.topComponents),
+            topGroups: normalizeTopItems(summary?.topGroups),
+        };
+    }
+
     function sortByDateDesc(left, right) {
         const leftTime = parseDate(left.date)?.getTime() ?? 0;
         const rightTime = parseDate(right.date)?.getTime() ?? 0;
         return rightTime - leftTime;
     }
 
-    function buildDefaultPeriod() {
-        const allDates = state.batches
-            .concat(state.violations)
-            .map((item) => parseDate(item.date))
-            .filter(Boolean)
-            .sort((left, right) => right.getTime() - left.getTime());
+    function setDefaultPeriod() {
+        const today = new Date();
+        const from = new Date(today);
+        from.setDate(from.getDate() - 6);
 
-        const latestDate = allDates[0] || new Date();
-        const startDate = new Date(latestDate);
-        startDate.setDate(startDate.getDate() - 6);
-
-        state.fromDate = formatDateValue(startDate);
-        state.toDate = formatDateValue(latestDate);
+        state.fromDate = formatDateValue(from);
+        state.toDate = formatDateValue(today);
     }
 
-    function isWithinRange(dateKey) {
-        if (!dateKey) {
-            return false;
+    function syncFilterInputs() {
+        if (elements.fromDate) {
+            elements.fromDate.value = state.fromDate;
         }
 
-        if (state.fromDate && dateKey < state.fromDate) {
-            return false;
+        if (elements.toDate) {
+            elements.toDate.value = state.toDate;
         }
-
-        if (state.toDate && dateKey > state.toDate) {
-            return false;
-        }
-
-        return true;
     }
 
-    function filterData() {
-        state.filteredBatches = state.batches.filter((item) => isWithinRange(item.dateKey));
-        state.filteredViolations = state.violations.filter((item) => isWithinRange(item.dateKey));
-    }
-
-    function renderSummary() {
-        const totalBatches = state.filteredBatches.length;
-        const problemBatches = state.filteredBatches.filter((item) => item.hasViolations).length;
-        const totalViolations = state.filteredViolations.length;
-        const rate = totalBatches > 0 ? (problemBatches / totalBatches) * 100 : 0;
-
-        elements.batchesCount.textContent = String(totalBatches);
-        elements.problemBatchesCount.textContent = String(problemBatches);
-        elements.violationsCount.textContent = String(totalViolations);
-        elements.violationRate.textContent = formatPercent(Math.round(rate * 10) / 10);
-        elements.quickStats.textContent = `${totalBatches} замесов · ${totalViolations} нарушений`;
+    function buildReportsUrl() {
+        const url = new URL(API_URL, window.location.origin);
+        if (state.fromDate) url.searchParams.set("from", state.fromDate);
+        if (state.toDate) url.searchParams.set("to", state.toDate);
+        url.searchParams.set("limit", String(DEFAULT_LIMIT));
+        return url.toString();
     }
 
     function renderSourceState() {
@@ -364,14 +267,6 @@
             elements.sourceBanner.className = "alert alert-light border-left-danger shadow-sm mb-4";
             elements.sourceBanner.textContent = `Не удалось загрузить данные из /api/reports: ${state.lastError}`;
             elements.sourceBadge.textContent = "Источник: API error";
-            elements.sourceBadge.className = "reports-source-badge reports-source-badge--mock mr-2";
-            return;
-        }
-
-        if (state.usingMock) {
-            elements.sourceBanner.className = "alert alert-light border-left-warning shadow-sm mb-4";
-            elements.sourceBanner.textContent = "Бэкенд для /api/reports пока не подключен, поэтому страница показывает фронтовый mock-отчет.";
-            elements.sourceBadge.textContent = "Источник: mock";
             elements.sourceBadge.className = "reports-source-badge reports-source-badge--mock mr-2";
             return;
         }
@@ -387,12 +282,47 @@
         const toText = state.toDate ? formatDateOnly(state.toDate) : "—";
 
         elements.periodMeta.textContent = `${fromText} - ${toText}`;
-        elements.batchesMeta.textContent = `Показано ${state.filteredBatches.length} замесов`;
-        elements.violationsMeta.textContent = `Показано ${state.filteredViolations.length} нарушений`;
+        elements.batchesMeta.textContent = `Показано ${state.batches.length} замесов`;
+        elements.violationsMeta.textContent = `Показано ${state.violations.length} нарушений`;
+    }
+
+    function renderSummary() {
+        const counts = state.summary.counts;
+        const totalBatches = counts.batches;
+        const problemBatches = counts.batchesWithViolations;
+        const totalViolations = counts.violationsTotal;
+        const openViolations = counts.violationsActive;
+        const resolvedViolations = counts.violationsResolved;
+        const rate = totalBatches > 0 ? (problemBatches / totalBatches) * 100 : 0;
+
+        elements.batchesCount.textContent = String(totalBatches);
+        elements.problemBatchesCount.textContent = String(problemBatches);
+        elements.violationsCount.textContent = String(totalViolations);
+        if (elements.openViolationsCount) elements.openViolationsCount.textContent = String(openViolations);
+        if (elements.resolvedViolationsCount) elements.resolvedViolationsCount.textContent = String(resolvedViolations);
+        elements.violationRate.textContent = formatPercent(Math.round(rate * 10) / 10);
+        elements.quickStats.textContent = `${totalBatches} замесов · ${totalViolations} нарушений · ${openViolations} открыто`;
+    }
+
+    function renderTopList(container, items) {
+        if (!container) return;
+        if (!Array.isArray(items) || !items.length) {
+            container.innerHTML = '<li class="text-muted">Нет данных за период</li>';
+            return;
+        }
+
+        container.innerHTML = items.map((item) => (
+            `<li><span class="font-weight-bold">${escapeHtml(item.name)}</span> · ${item.count}</li>`
+        )).join("");
+    }
+
+    function renderTopProblems() {
+        renderTopList(elements.topComponents, state.summary.topComponents);
+        renderTopList(elements.topGroups, state.summary.topGroups);
     }
 
     function renderBatchesTable() {
-        if (!state.filteredBatches.length) {
+        if (!state.batches.length) {
             elements.batchesTableBody.innerHTML = `
                 <tr>
                     <td colspan="8" class="reports-empty-state">За выбранный период замесы не найдены.</td>
@@ -401,7 +331,7 @@
             return;
         }
 
-        elements.batchesTableBody.innerHTML = state.filteredBatches.map((item) => {
+        elements.batchesTableBody.innerHTML = state.batches.map((item) => {
             const statusClassName = item.hasViolations
                 ? "reports-status reports-status--danger"
                 : "reports-status reports-status--success";
@@ -431,7 +361,7 @@
     }
 
     function renderViolationsTable() {
-        if (!state.filteredViolations.length) {
+        if (!state.violations.length) {
             elements.violationsTableBody.innerHTML = `
                 <tr>
                     <td colspan="8" class="reports-empty-state">За выбранный период нарушений не найдено.</td>
@@ -440,7 +370,7 @@
             return;
         }
 
-        elements.violationsTableBody.innerHTML = state.filteredViolations.map((item) => {
+        elements.violationsTableBody.innerHTML = state.violations.map((item) => {
             const deviationClassName = item.deviation > 0
                 ? "reports-number reports-number--positive"
                 : item.deviation < 0
@@ -465,22 +395,12 @@
     }
 
     function render() {
-        filterData();
         renderSourceState();
         renderPeriodMeta();
         renderSummary();
+        renderTopProblems();
         renderBatchesTable();
         renderViolationsTable();
-    }
-
-    function syncFilterInputs() {
-        if (elements.fromDate) {
-            elements.fromDate.value = state.fromDate;
-        }
-
-        if (elements.toDate) {
-            elements.toDate.value = state.toDate;
-        }
     }
 
     function normalizeApiPayload(payload) {
@@ -493,20 +413,26 @@
                     : [];
 
         const violations = Array.isArray(payload?.violations) ? payload.violations : [];
+        const summary = normalizeSummary(payload?.summary);
+
+        if (!summary.counts.batches) summary.counts.batches = batches.length;
+        if (!summary.counts.violationsTotal) summary.counts.violationsTotal = violations.length;
+        if (!summary.counts.batchesWithViolations) {
+            summary.counts.batchesWithViolations = batches.filter((item) => Number(item?.violationsCount || 0) > 0).length;
+        }
 
         return {
             batches: batches.map(normalizeBatch).sort(sortByDateDesc),
             violations: violations.map(normalizeViolation).sort(sortByDateDesc),
+            summary,
         };
     }
 
-    function applyReportData(reportData, usingMock, lastError = "") {
-        state.batches = reportData.batches.map(normalizeBatch).sort(sortByDateDesc);
-        state.violations = reportData.violations.map(normalizeViolation).sort(sortByDateDesc);
-        state.usingMock = usingMock;
+    function applyReportData(reportData, lastError = "") {
+        state.batches = reportData.batches;
+        state.violations = reportData.violations;
+        state.summary = reportData.summary;
         state.lastError = lastError;
-        buildDefaultPeriod();
-        syncFilterInputs();
         render();
     }
 
@@ -516,7 +442,7 @@
         elements.violationsMeta.textContent = "Загрузка...";
 
         try {
-            const response = await fetch(API_URL, {
+            const response = await fetch(buildReportsUrl(), {
                 headers: window.AppAuth?.getAuthHeaders?.() || {},
                 credentials: "same-origin",
             });
@@ -527,10 +453,23 @@
 
             const payload = await response.json();
             const normalized = normalizeApiPayload(payload);
-
-            applyReportData(normalized, false, "");
+            applyReportData(normalized, "");
         } catch (error) {
-            applyReportData({ batches: [], violations: [] }, false, error?.message || "Не удалось загрузить API");
+            applyReportData({
+                batches: [],
+                violations: [],
+                summary: {
+                    counts: {
+                        batches: 0,
+                        batchesWithViolations: 0,
+                        violationsTotal: 0,
+                        violationsActive: 0,
+                        violationsResolved: 0,
+                    },
+                    topComponents: [],
+                    topGroups: [],
+                },
+            }, error?.message || "Не удалось загрузить API");
         }
     }
 
@@ -539,14 +478,16 @@
             ["Показатель", "Значение"],
             ["Период с", state.fromDate || ""],
             ["Период по", state.toDate || ""],
-            ["Замесов", String(state.filteredBatches.length)],
-            ["Замесов с нарушениями", String(state.filteredBatches.filter((item) => item.hasViolations).length)],
-            ["Нарушений", String(state.filteredViolations.length)],
+            ["Замесов", String(state.summary.counts.batches || 0)],
+            ["Замесов с нарушениями", String(state.summary.counts.batchesWithViolations || 0)],
+            ["Нарушений всего", String(state.summary.counts.violationsTotal || 0)],
+            ["Открытых нарушений", String(state.summary.counts.violationsActive || 0)],
+            ["Закрытых нарушений", String(state.summary.counts.violationsResolved || 0)],
         ];
 
         const batches = [
             ["Дата", "Замес", "Рацион", "Группа", "План", "Факт", "Нарушения", "Статус"],
-            ...state.filteredBatches.map((item) => [
+            ...state.batches.map((item) => [
                 formatDateTime(item.date),
                 item.label,
                 item.rationName,
@@ -560,7 +501,7 @@
 
         const violations = [
             ["Дата", "Замес", "Группа", "Компонент", "Тип", "План", "Факт", "Отклонение"],
-            ...state.filteredViolations.map((item) => [
+            ...state.violations.map((item) => [
                 formatDateTime(item.date),
                 item.batchLabel,
                 item.groupName,
@@ -646,7 +587,7 @@
 
         state.fromDate = nextFromDate;
         state.toDate = nextToDate;
-        render();
+        loadReports();
     }
 
     function bindEvents() {
@@ -657,6 +598,8 @@
     }
 
     function init() {
+        setDefaultPeriod();
+        syncFilterInputs();
         bindEvents();
         loadReports();
     }

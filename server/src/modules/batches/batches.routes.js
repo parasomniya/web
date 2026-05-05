@@ -79,7 +79,12 @@ router.get('/', authenticate, requireReadAccess, async (req, res) => {
             include: {
                 group: true,
                 ration: { include: { ingredients: true } }, // Связка с "Планом"
-                actualIngredients: true // Тут лежат компоненты и их нарушения
+                actualIngredients: true, // Тут лежат компоненты и их нарушения
+                violations: {
+                    select: {
+                        id: true
+                    }
+                }
             },
             orderBy: { startTime: 'desc' }
         });
@@ -87,7 +92,7 @@ router.get('/', authenticate, requireReadAccess, async (req, res) => {
         // Форматируем ответ для удобной таблицы фронтенда
         const formattedBatches = batches.map(b => {
             const ingredients = buildIngredientSummary(b);
-            const hasIngredientViolations = ingredients.some((item) => Boolean(item?.is_violation));
+            const hasLoggedViolations = (b.violations?.length || 0) > 0;
 
             return {
                 id: b.id,
@@ -96,7 +101,7 @@ router.get('/', authenticate, requireReadAccess, async (req, res) => {
                 endTime: b.endTime,
                 rationName: b.ration?.name || 'Неизвестный рацион',
                 groupName: b.group?.name || 'Без группы',
-                hasViolations: Boolean(b.hasViolations || hasIngredientViolations), // Общий флаг нарушений
+                hasViolations: hasLoggedViolations, // Единый источник статуса: журнал нарушений (все зафиксированные кейсы)
                 startWeight: b.startWeight,
                 endWeight: b.endWeight,
                 ingredients

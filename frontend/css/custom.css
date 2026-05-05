@@ -2087,6 +2087,10 @@
     border-left-color: #f6c23e;
 }
 
+.reports-summary-card--attention {
+    border-left-color: #36b9cc;
+}
+
 .reports-summary-card--success {
     border-left-color: #1cc88a;
 }

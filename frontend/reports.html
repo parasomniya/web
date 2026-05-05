@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
 
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
-    <link href="css/custom.css?v=20260429c" rel="stylesheet">
+    <link href="css/custom.css?v=20260504a" rel="stylesheet">
     <script src="js/app-auth.js?v=20260429b"></script>
 </head>
 
@@ -160,9 +160,39 @@
                             <div class="reports-summary-card__label">Нарушений</div>
                             <div id="reportsViolationsCount" class="reports-summary-card__value">0</div>
                         </div>
+                        <div class="reports-summary-card reports-summary-card--attention">
+                            <div class="reports-summary-card__label">Открытых</div>
+                            <div id="reportsOpenViolationsCount" class="reports-summary-card__value">0</div>
+                        </div>
+                        <div class="reports-summary-card reports-summary-card--success">
+                            <div class="reports-summary-card__label">Закрытых</div>
+                            <div id="reportsResolvedViolationsCount" class="reports-summary-card__value">0</div>
+                        </div>
                         <div class="reports-summary-card reports-summary-card--success">
                             <div class="reports-summary-card__label">Доля проблемных</div>
                             <div id="reportsViolationRate" class="reports-summary-card__value">0%</div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow mb-4">
+                        <div class="card-header py-3">
+                            <h6 class="m-0 font-weight-bold text-primary">Топ проблем за период</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-12 col-lg-6 mb-3 mb-lg-0">
+                                    <h6 class="text-uppercase text-primary small mb-2">Компоненты</h6>
+                                    <ol id="reportsTopComponents" class="mb-0 pl-3">
+                                        <li class="text-muted">Нет данных</li>
+                                    </ol>
+                                </div>
+                                <div class="col-12 col-lg-6">
+                                    <h6 class="text-uppercase text-primary small mb-2">Группы</h6>
+                                    <ol id="reportsTopGroups" class="mb-0 pl-3">
+                                        <li class="text-muted">Нет данных</li>
+                                    </ol>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -255,7 +285,7 @@
 
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260429d"></script>
-    <script src="js/reports.js?v=20260430b"></script>
+    <script src="js/reports.js?v=20260504a"></script>
 
 </body>
 

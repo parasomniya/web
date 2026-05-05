@@ -21,10 +21,31 @@ router.get('/', authenticate, requireReadAccess, async (req, res) => {
             return res.status(400).json({ error: 'Дата начала периода не может быть позже даты окончания' });
         }
 
+        const scope = String(req.query.scope || 'all').trim().toLowerCase();
+        if (!['all', 'open', 'resolved'].includes(scope)) {
+            return res.status(400).json({ error: 'Параметр scope должен быть all, open или resolved' });
+        }
+
         const limit = Math.min(parsePositiveInt(req.query.limit, DEFAULT_LIMIT), MAX_LIMIT);
         const data = await collectReportData({ fromDate, toDate, limit });
+        let items = data.violations;
 
-        res.json(data.violations);
+        if (scope === 'open') {
+            items = items.filter((item) => ['OPEN', 'IN_PROGRESS'].includes(String(item.workflowStatus || '').toUpperCase()));
+        } else if (scope === 'resolved') {
+            items = items.filter((item) => ['CLOSED', 'RESOLVED'].includes(String(item.workflowStatus || '').toUpperCase()));
+        }
+
+        res.json({
+            items,
+            violations: items,
+            period: data.period,
+            summary: {
+                ...data.summary,
+                shownCount: items.length,
+                scope
+            }
+        });
     } catch (error) {
         console.error('[Ошибка GET /violations]:', error);
         res.status(500).json({ error: 'Не удалось получить журнал нарушений' });
