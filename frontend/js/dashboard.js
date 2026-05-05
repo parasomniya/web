@@ -48,6 +48,8 @@ let undoAlertTimerId = null;
 let lastTelemetryChangeAt = 0;
 let lastTelemetrySnapshotKey = null;
 let isFetchingHistory = false;
+let trackHistoryVersion = { host: 0, rtk: 0 };
+let retainedTrackMarkerTelemetry = { host: null, rtk: null };
 let isMarkerTrackingEnabled = false;
 let markerTrackingTarget = "all";
 let mapTrackToggleButton = null;
@@ -1445,6 +1447,18 @@ function renderRtkRoute(historyRows) {
     map.geoObjects.add(rtkRoutePolyline);
 }
 
+function getRetainableTelemetry(track, snapshotRows = []) {
+    const currentTelemetry = track === "rtk" ? latestRtkTelemetry : latestTelemetry;
+
+    if (hasValidCoordinates(currentTelemetry?.lat, currentTelemetry?.lon)) {
+        return currentTelemetry;
+    }
+
+    return Array.isArray(snapshotRows)
+        ? snapshotRows.find((row) => hasValidCoordinates(row?.lat, row?.lon)) || null
+        : null;
+}
+
 async function fetchLatest() {
     try {
         const [hostResponse, rtkResponse] = await Promise.all([
@@ -1457,14 +1471,32 @@ async function fetchLatest() {
             return;
         }
 
-        latestTelemetry = await hostResponse.json();
+        const hostTelemetry = await hostResponse.json();
+        if (isEmptyTelemetry(hostTelemetry) && retainedTrackMarkerTelemetry.host) {
+            latestTelemetry = retainedTrackMarkerTelemetry.host;
+        } else {
+            latestTelemetry = hostTelemetry;
+            if (!isEmptyTelemetry(hostTelemetry)) {
+                retainedTrackMarkerTelemetry.host = null;
+            }
+        }
         noteTelemetryActivity(latestTelemetry);
 
         if (rtkResponse && rtkResponse.ok) {
-            latestRtkTelemetry = await rtkResponse.json();
+            const rtkTelemetry = await rtkResponse.json();
+            if (isEmptyTelemetry(rtkTelemetry) && retainedTrackMarkerTelemetry.rtk) {
+                latestRtkTelemetry = retainedTrackMarkerTelemetry.rtk;
+            } else {
+                latestRtkTelemetry = rtkTelemetry;
+                if (!isEmptyTelemetry(rtkTelemetry)) {
+                    retainedTrackMarkerTelemetry.rtk = null;
+                }
+            }
         } else if (rtkResponse && rtkResponse.status === 404) {
-            latestRtkTelemetry = null;
-            hideRtkPlacemark();
+            latestRtkTelemetry = retainedTrackMarkerTelemetry.rtk;
+            if (!latestRtkTelemetry) {
+                hideRtkPlacemark();
+            }
         }
 
         syncTelemetryZoneBanners();
@@ -1482,6 +1514,7 @@ async function fetchHistory() {
     }
 
     isFetchingHistory = true;
+    const requestedTrackHistoryVersion = { ...trackHistoryVersion };
 
     try {
         const [hostResponse, rtkResponse] = await Promise.all([
@@ -1494,11 +1527,15 @@ async function fetchHistory() {
         }
 
         const hostHistoryRows = await hostResponse.json();
-        renderRoute(hostHistoryRows);
+        if (requestedTrackHistoryVersion.host === trackHistoryVersion.host) {
+            renderRoute(hostHistoryRows);
+        }
 
         if (rtkResponse && rtkResponse.ok) {
             const rtkHistoryRows = await rtkResponse.json();
-            renderRtkRoute(rtkHistoryRows);
+            if (requestedTrackHistoryVersion.rtk === trackHistoryVersion.rtk) {
+                renderRtkRoute(rtkHistoryRows);
+            }
         }
     } catch (error) {
         console.error("Error fetching history:", error);
@@ -1584,11 +1621,11 @@ function getTrackConfig(track) {
             buttonId: "clearRtkTelemetryButton",
             label: "Погрузчик",
             buildRestorePayload: buildRtkTelemetryRestorePayload,
-            afterClear: () => {
+            afterClear: (snapshotRows = []) => {
                 clearRtkRoutePolyline();
-                latestRtkTelemetry = null;
-                hideRtkPlacemark();
-                updateRtkMapChip(null);
+                retainedTrackMarkerTelemetry.rtk = getRetainableTelemetry("rtk", snapshotRows);
+                latestRtkTelemetry = retainedTrackMarkerTelemetry.rtk || latestRtkTelemetry;
+                updateRtkMapPosition(latestRtkTelemetry);
                 syncTelemetryZoneBanners();
                 syncMapActionButtons();
             },
@@ -1602,13 +1639,11 @@ function getTrackConfig(track) {
         buttonId: "clearHostTelemetryButton",
         label: "Хозяин",
         buildRestorePayload: buildTelemetryRestorePayload,
-        afterClear: () => {
-            showBanner(null);
+        afterClear: (snapshotRows = []) => {
             clearRoutePolyline();
-            latestTelemetry = null;
-            hidePlacemark();
-            hasLiveCoordinates = false;
-            renderDashboard(null);
+            retainedTrackMarkerTelemetry.host = getRetainableTelemetry("host", snapshotRows);
+            latestTelemetry = retainedTrackMarkerTelemetry.host || latestTelemetry;
+            renderDashboard(latestTelemetry);
             syncTelemetryZoneBanners();
             syncMapActionButtons();
         },
@@ -1788,7 +1823,8 @@ async function clearTelemetryHistory(track = "host") {
             throw new Error(errorMessage);
         }
 
-        config.afterClear();
+        trackHistoryVersion[track] += 1;
+        config.afterClear(snapshotRows);
         pendingTelemetryUndo = { rows: snapshotRows, track };
         showTelemetryUndoAlert(config.label);
     } catch (error) {

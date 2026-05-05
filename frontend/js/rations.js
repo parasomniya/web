@@ -78,6 +78,27 @@ $(document).ready(function () {
         return normalizeText(value).toLowerCase();
     }
 
+    function isExcelFile(file) {
+        if (!file) {
+            return false;
+        }
+
+        const name = String(file.name || "").toLowerCase();
+        const type = String(file.type || "").toLowerCase();
+        return (
+            name.endsWith(".xlsx") ||
+            name.endsWith(".xls") ||
+            type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+            type === "application/vnd.ms-excel"
+        );
+    }
+
+    function clearUploadFileInput() {
+        if (uploadFileInput) {
+            uploadFileInput.value = "";
+        }
+    }
+
     function getHeaders(includeJson) {
         return window.AppAuth?.getAuthHeaders?.({ includeJson: Boolean(includeJson) }) || (
             includeJson ? { "Content-Type": "application/json" } : {}
@@ -841,6 +862,14 @@ $(document).ready(function () {
     }
 
     function handleSelectedFile(file) {
+        if (file && !isExcelFile(file)) {
+            state.selectedFile = null;
+            clearUploadFileInput();
+            showAlert("Выберите Excel-файл в формате .xlsx или .xls", "danger");
+            updateUploadState();
+            return;
+        }
+
         state.selectedFile = file || null;
         if (uploadFileInput && file && uploadFileInput.files?.[0] !== file) {
             try {
@@ -858,6 +887,7 @@ $(document).ready(function () {
     function resetUploadForm() {
         state.selectedFile = null;
         state.uploadSelectedGroupIds = [];
+        clearUploadFileInput();
 
         if (uploadForm) {
             uploadForm.reset();
@@ -880,6 +910,12 @@ $(document).ready(function () {
 
         if (!state.selectedFile) {
             showAlert("Выберите Excel-файл", "danger");
+            uploadFileInput?.focus();
+            return;
+        }
+
+        if (!isExcelFile(state.selectedFile)) {
+            showAlert("Выберите Excel-файл в формате .xlsx или .xls", "danger");
             uploadFileInput?.focus();
             return;
         }

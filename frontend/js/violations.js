@@ -45,8 +45,6 @@
     const elements = {
         tableBody: document.getElementById("violationsTableBody"),
         panelMeta: document.getElementById("violationsPanelMeta"),
-        sourceBanner: document.getElementById("violationsSourceBanner"),
-        sourceBadge: document.getElementById("violationsSourceBadge"),
         fromDateFilter: document.getElementById("violationsFromDateFilter"),
         toDateFilter: document.getElementById("violationsToDateFilter"),
         typeFilter: document.getElementById("violationsTypeFilter"),
@@ -309,28 +307,15 @@
     }
 
     function renderBanner() {
-        if (!elements.sourceBanner || !elements.sourceBadge) return;
-
-        if (state.lastError) {
-            elements.sourceBanner.className = "alert alert-light border-left-danger shadow-sm mb-4";
-            elements.sourceBanner.textContent = `Не удалось загрузить данные из /api/violations: ${state.lastError}`;
-            elements.sourceBadge.textContent = "Источник: API error";
-            elements.sourceBadge.className = "violations-source-badge violations-source-badge--mock mr-2";
-            return;
-        }
-
-        elements.sourceBanner.className = "alert alert-light border-left-success shadow-sm mb-4";
-        elements.sourceBanner.textContent = "Данные загружены из /api/violations.";
-        elements.sourceBadge.textContent = "Источник: API";
-        elements.sourceBadge.className = "violations-source-badge mr-2";
+        if (!state.lastError) return;
+        window.AppAuth?.showAlert?.(`Не удалось загрузить данные: ${state.lastError}`, "danger");
     }
 
     function renderMeta() {
         if (!elements.panelMeta) return;
         const shownCount = state.filteredItems.length;
         const totalCount = state.items.length;
-        const scope = state.summary.scope || (elements.scopeFilter?.value || "all");
-        elements.panelMeta.textContent = `Показано ${shownCount} из ${totalCount} · scope: ${scope}`;
+        elements.panelMeta.textContent = `Показано ${shownCount} из ${totalCount}`;
     }
 
     function renderTable() {
@@ -534,7 +519,7 @@
         } catch (error) {
             state.items = [];
             state.summary = normalizeSummary(null);
-            state.lastError = error?.message || "Не удалось загрузить API";
+            state.lastError = error?.message || "Не удалось загрузить данные";
         }
 
         render();

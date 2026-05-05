@@ -100,10 +100,7 @@
                 <div class="container-fluid">
                     <div data-page-alerts></div>
 
-                    <div class="d-sm-flex align-items-center justify-content-between mb-4">
-                        <div>
-                            <p class="mb-0 text-muted">Журнал нарушений по компонентам и замесам.</p>
-                        </div>
+                    <div class="d-sm-flex align-items-center justify-content-end mb-4">
                         <div class="d-flex align-items-center mt-3 mt-sm-0">
                             <button id="violationsResetButton" type="button" class="btn btn-outline-danger btn-sm mr-2" data-requires-admin hidden>
                                 <i class="fas fa-trash-alt mr-1"></i>
@@ -114,10 +111,6 @@
                                 Обновить
                             </button>
                         </div>
-                    </div>
-
-                    <div id="violationsSourceBanner" class="alert alert-light border-left-info shadow-sm mb-4" role="status">
-                        Загружаем журнал нарушений...
                     </div>
 
                     <div class="violations-summary-grid mb-4">
@@ -167,7 +160,6 @@
                                 <h6 class="m-0 font-weight-bold text-primary">Журнал нарушений</h6>
                             </div>
                             <div class="d-flex align-items-center mt-3 mt-sm-0">
-                                <span id="violationsSourceBadge" class="violations-source-badge mr-2">Источник: API</span>
                                 <span id="violationsPanelMeta" class="small text-muted">Загрузка...</span>
                             </div>
                         </div>

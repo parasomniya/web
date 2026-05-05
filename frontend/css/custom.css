@@ -982,6 +982,23 @@ span.batch-ingredient-editor__trigger {
     font-weight: 600;
 }
 
+.ration-upload-input {
+    margin-top: 0.75rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid #d1d3e2;
+    border-radius: 0.65rem;
+    background: #fff;
+    color: #4f5d75;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.ration-upload-input:focus {
+    border-color: #4e73df;
+    box-shadow: 0 0 0 0.2rem rgba(78, 115, 223, 0.18);
+    outline: none;
+}
+
 .ration-groups-preview {
     display: flex;
     flex-wrap: wrap;
@@ -1265,6 +1282,11 @@ span.batch-ingredient-editor__trigger {
     .ration-upload-dropzone {
         min-height: 150px;
     }
+
+    .ration-upload-input {
+        min-height: 44px;
+        font-size: 16px;
+    }
 }
 
 .telemetry-page-meta {
@@ -1377,15 +1399,25 @@ span.batch-ingredient-editor__trigger {
 
 .telemetry-sms-text,
 .telemetry-extra {
+    max-width: 100%;
+    min-width: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     word-break: break-word;
     line-height: 1.4;
 }
 
+.telemetry-sms-text {
+    display: block;
+}
+
 .telemetry-extra {
     max-width: 320px;
     color: #6b7280;
+}
+
+.telemetry-table td.telemetry-extra {
+    white-space: pre-wrap;
 }
 
 @media (max-width: 768px) {

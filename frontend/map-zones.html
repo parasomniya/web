@@ -43,6 +43,10 @@
             align-items: start;
         }
 
+        .content-layout > * {
+            min-width: 0;
+        }
+
         html[data-can-write="false"] .content-layout {
             grid-template-columns: 1fr;
         }
@@ -50,6 +54,7 @@
         .map-card,
         .panel-card,
         .table-card {
+            min-width: 0;
             background: #fff;
             border-radius: 12px;
             box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
@@ -67,6 +72,10 @@
 
         .card-body-custom {
             padding: 20px;
+        }
+
+        .card-body-custom .table-responsive {
+            -webkit-overflow-scrolling: touch;
         }
 
         #map {
@@ -128,6 +137,10 @@
 
         .table thead th {
             white-space: nowrap;
+        }
+
+        .table-card table {
+            min-width: 720px;
         }
 
         .zone-row {
@@ -203,6 +216,82 @@
 
             .shape-coords-grid {
                 grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .container-fluid {
+                padding-left: 0.75rem;
+                padding-right: 0.75rem;
+            }
+
+            .content-layout {
+                gap: 14px;
+            }
+
+            .map-card,
+            .panel-card,
+            .table-card {
+                border-radius: 8px;
+            }
+
+            .card-header-custom {
+                padding: 12px 14px;
+                font-size: 1rem;
+            }
+
+            .card-body-custom {
+                padding: 14px;
+            }
+
+            #map {
+                height: min(68vh, 440px);
+                min-height: 360px;
+            }
+
+            .map-view-switch {
+                max-width: calc(100% - 64px);
+                overflow-x: auto;
+                scrollbar-width: none;
+            }
+
+            .map-view-switch::-webkit-scrollbar {
+                display: none;
+            }
+
+            .map-marker-legend {
+                max-width: calc(100% - 16px);
+                flex-wrap: wrap;
+            }
+
+            .panel-actions {
+                gap: 8px;
+                margin-bottom: 18px;
+            }
+
+            .panel-actions .btn {
+                width: 100%;
+            }
+
+            .form-control,
+            .custom-select {
+                min-height: 44px;
+                font-size: 16px;
+            }
+
+            .status-box,
+            .shape-note {
+                font-size: 0.88rem;
+                line-height: 1.45;
+                overflow-wrap: anywhere;
+            }
+
+            .table-card {
+                margin-top: 14px;
+            }
+
+            .table-card table {
+                min-width: 680px;
             }
         }
 
@@ -505,7 +594,7 @@
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260429d"></script>
-    <script src="js/storage-zones.js?v=20260505b"></script>
+    <script src="js/storage-zones.js?v=20260506b"></script>
 </body>
 
 </html>

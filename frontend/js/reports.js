@@ -30,8 +30,6 @@
         reloadButton: document.getElementById("reportsReloadButton"),
         resetButton: document.getElementById("reportsResetButton"),
         exportButton: document.getElementById("reportsExportButton"),
-        sourceBanner: document.getElementById("reportsSourceBanner"),
-        sourceBadge: document.getElementById("reportsSourceBadge"),
         periodMeta: document.getElementById("reportsPeriodMeta"),
         quickStats: document.getElementById("reportsQuickStats"),
         batchesCount: document.getElementById("reportsBatchesCount"),
@@ -285,18 +283,8 @@
     }
 
     function renderSourceState() {
-        if (state.lastError) {
-            elements.sourceBanner.className = "alert alert-light border-left-danger shadow-sm mb-4";
-            elements.sourceBanner.textContent = `Не удалось загрузить данные из /api/reports: ${state.lastError}`;
-            elements.sourceBadge.textContent = "Источник: API error";
-            elements.sourceBadge.className = "reports-source-badge reports-source-badge--mock mr-2";
-            return;
-        }
-
-        elements.sourceBanner.className = "alert alert-light border-left-success shadow-sm mb-4";
-        elements.sourceBanner.textContent = "Данные загружены из /api/reports.";
-        elements.sourceBadge.textContent = "Источник: API";
-        elements.sourceBadge.className = "reports-source-badge mr-2";
+        if (!state.lastError) return;
+        window.AppAuth?.showAlert?.(`Не удалось загрузить данные: ${state.lastError}`, "danger");
     }
 
     function renderPeriodMeta() {
@@ -491,7 +479,7 @@
                     topComponents: [],
                     topGroups: [],
                 },
-            }, error?.message || "Не удалось загрузить API");
+            }, error?.message || "Не удалось загрузить данные");
         }
     }
 
