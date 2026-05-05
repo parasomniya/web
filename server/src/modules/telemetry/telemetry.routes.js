@@ -390,6 +390,75 @@ router.post('/', async (req, res) => {
   }
 });
 
+// ============================================================================
+// POST /manual-stop - РУЧНАЯ ОСТАНОВКА АКТИВНОГО ЗАМЕСА
+// ============================================================================
+router.post('/manual-stop', authenticate, requireWriteAccess, async (req, res) => {
+  try {
+    const rawBatchId = req.body?.batchId;
+    const rawDeviceId = req.body?.deviceId;
+    const batchId = rawBatchId === undefined || rawBatchId === null || rawBatchId === ''
+      ? null
+      : Number.parseInt(rawBatchId, 10);
+    const requestedDeviceId = typeof rawDeviceId === 'string' && rawDeviceId.trim()
+      ? rawDeviceId.trim()
+      : null;
+
+    if (rawBatchId !== undefined && rawBatchId !== null && rawBatchId !== '' && !Number.isInteger(batchId)) {
+      return res.status(400).json({ error: 'Некорректный batchId' });
+    }
+
+    const activeBatch = await prisma.batch.findFirst({
+      where: {
+        endTime: null,
+        ...(Number.isInteger(batchId) ? { id: batchId } : {}),
+        ...(requestedDeviceId ? { deviceId: requestedDeviceId } : {})
+      },
+      orderBy: { startTime: 'desc' }
+    });
+
+    if (!activeBatch) {
+      return res.status(404).json({ error: 'Активный замес не найден' });
+    }
+
+    const latestTelemetry = await prisma.telemetry.findFirst({
+      where: { deviceId: activeBatch.deviceId },
+      orderBy: { timestamp: 'desc' },
+      select: { weight: true }
+    });
+
+    const endWeight = Number.isFinite(Number(latestTelemetry?.weight))
+      ? Number(latestTelemetry.weight)
+      : Number(activeBatch.endWeight ?? activeBatch.startWeight ?? 0);
+
+    const now = new Date();
+    const updatedBatch = await prisma.batch.update({
+      where: { id: activeBatch.id },
+      data: {
+        endTime: now,
+        endWeight
+      }
+    });
+
+    await recalculateBatchViolations(prisma, updatedBatch.id);
+    telemetryProcessor.clearDeviceState(updatedBatch.deviceId);
+
+    res.json({
+      status: 'ok',
+      message: `Замес #${updatedBatch.id} остановлен вручную`,
+      batch: {
+        id: updatedBatch.id,
+        deviceId: updatedBatch.deviceId,
+        endTime: updatedBatch.endTime,
+        endWeight: updatedBatch.endWeight
+      }
+    });
+  } catch (error) {
+    console.error('[Ошибка POST /manual-stop]:', error);
+    res.status(500).json({ error: 'Не удалось остановить замес' });
+  }
+});
+
 
 // ============================================================================
 // GET /current - ДАННЫЕ ДЛЯ ГЛАВНОЙ СТРАНИЦЫ

@@ -307,6 +307,11 @@ export class TelemetryProcessor {
     return this.getState(deviceId);
   }
 
+  clearDeviceState(deviceId) {
+    if (!deviceId) return;
+    this.deviceStates.delete(deviceId);
+  }
+
   clearStates() {
     this.deviceStates.clear();
   }
