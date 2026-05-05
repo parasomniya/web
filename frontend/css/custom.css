@@ -1120,6 +1120,61 @@
     white-space: nowrap;
 }
 
+.ration-manual-table-wrap {
+    border: 1px solid #e3e8f2;
+    border-radius: 0.5rem;
+}
+
+.ration-manual-table {
+    min-width: 760px;
+}
+
+.ration-manual-table thead th {
+    background: #f7f9fd;
+    color: #5b6680;
+    font-size: 0.74rem;
+    font-weight: 800;
+    line-height: 1.2;
+    text-transform: uppercase;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.ration-manual-table td {
+    vertical-align: middle;
+}
+
+.ration-manual-row {
+    transition: background-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.ration-manual-row.is-highlighted td {
+    background: #fff8db;
+    box-shadow: inset 0 0 0 999px rgba(246, 194, 62, 0.12);
+}
+
+.ration-manual-row.is-highlighted td:first-child {
+    box-shadow: inset 4px 0 0 #f6c23e, inset 0 0 0 999px rgba(246, 194, 62, 0.12);
+}
+
+.ration-manual-table__action {
+    width: 6rem;
+    text-align: center;
+}
+
+.ration-manual-number {
+    min-width: 130px;
+}
+
+.ration-manual-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+}
+
 .groups-form-hint {
     color: #6b7280;
     font-size: 0.8rem;
