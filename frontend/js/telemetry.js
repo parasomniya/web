@@ -472,7 +472,7 @@ function renderRtkSummary(latest, missing) {
     const qualityFlagValue = latest?.qualityFlag || latest?.qualityLabel || latest?.rtkQuality || "--";
     const corrAgeValue = latest?.corrAgeS ?? latest?.rtkAge;
 
-    setText("rtkStatus", missing ? "API не подключён" : rtkState.label);
+    setText("rtkStatus", missing ? "Данные недоступны" : rtkState.label);
     setText("rtkDevice", latest?.deviceId || "--");
     setText("rtkLastPacket", formatDateTime(latest?.timestamp));
     setText("rtkQuality", qualityValue);
@@ -494,7 +494,7 @@ function renderRtkTable(rows, missing) {
     if (!tbody) return;
 
     if (missing) {
-        tbody.innerHTML = '<tr><td colspan="15" class="telemetry-empty-state">API погрузчика недоступен.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="15" class="telemetry-empty-state">Данные погрузчика недоступны.</td></tr>';
         return;
     }
 
@@ -548,7 +548,7 @@ async function loadRtk() {
     if (!endpoints.rtk) {
         renderRtkSummary(null, true);
         renderRtkTable([], true);
-        setStatus("rtkPanelStatus", "API не подключён", "warn");
+        setStatus("rtkPanelStatus", "Данные недоступны", "warn");
         return;
     }
 
@@ -564,7 +564,7 @@ async function loadRtk() {
 
         renderRtkSummary(rtkLatest, missing);
         renderRtkTable(Array.isArray(history) ? history : [], missing);
-        setStatus("rtkPanelStatus", missing ? "API не подключён" : rtkState.panelLabel, missing ? "warn" : rtkState.mode);
+        setStatus("rtkPanelStatus", missing ? "Данные недоступны" : rtkState.panelLabel, missing ? "warn" : rtkState.mode);
     } catch (error) {
         renderRtkSummary(null, true);
         renderRtkTable([], true);

@@ -17,6 +17,12 @@ const DEFAULT_MAP_TYPE = "yandex#satellite";
 const TELEMETRY_FRESHNESS_MS = 15000;
 const ZONE_TYPE_STORAGE = "STORAGE";
 const ZONE_TYPE_BARN = "BARN";
+const HOST_TRACK_COLOR = "#4e73df";
+const RTK_GPS_FIX_COLOR = "#e74a3b";
+const RTK_FIX_COLOR = "#1cc88a";
+const OFFLINE_MARKER_COLOR = "#858796";
+const HOST_MARKER_IMAGE_URL = "img/host.svg";
+const RTK_MARKER_IMAGE_URL = "img/rtk.svg";
 
 let map;
 let deviceMarker = null;
@@ -36,6 +42,9 @@ let mapWrapElement = null;
 let hasTelemetryAutoFocus = false;
 let previewShape = null;
 let previewCornerMarkers = [];
+let previewCircleCenterMarker = null;
+let previewCircleRadiusMarker = null;
+let mapViewportFitTimer = null;
 
 const shapeTypeInput = document.getElementById("shapeType");
 const zoneTypeInput = document.getElementById("zoneType");
@@ -137,6 +146,53 @@ function getZoneTypeColor(zone, isSelected) {
         : { fillColor: "#00c85355", strokeColor: "#1e88e5" };
 }
 
+function getMarkerLayout(color, imageUrl) {
+    const safeColor = /^#[0-9a-f]{6}$/i.test(color) ? color : OFFLINE_MARKER_COLOR;
+    const safeImageUrl = String(imageUrl || "").replace(/"/g, "&quot;");
+
+    return ymaps.templateLayoutFactory.createClass(`
+        <div style="position:relative;left:-22px;top:-22px;width:44px;height:44px;">
+            <div style="position:absolute;left:4px;top:5px;width:36px;height:36px;border-radius:8px;background:rgba(0,0,0,0.16);"></div>
+            <div style="position:absolute;left:2px;top:2px;width:36px;height:36px;border-radius:8px;background:${safeColor};display:flex;align-items:center;justify-content:center;">
+                <div style="width:25.6px;height:25.6px;border-radius:5px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+                    <img src="${safeImageUrl}" alt="" style="display:block;width:22px;height:22px;object-fit:contain;">
+                </div>
+            </div>
+        </div>
+    `);
+}
+
+function isRtkFixed(data) {
+    const label = String(data?.qualityLabel || data?.rtkQuality || "").toLowerCase();
+    const quality = Number(data?.quality);
+    return label.includes("fixed") || quality >= 4;
+}
+
+function getRtkFixColor(data, isOnline = true) {
+    if (!isOnline) {
+        return OFFLINE_MARKER_COLOR;
+    }
+
+    return isRtkFixed(data) ? RTK_FIX_COLOR : RTK_GPS_FIX_COLOR;
+}
+
+function getMarkerOptions(kind, isOnline, data = null) {
+    const color = !isOnline
+        ? OFFLINE_MARKER_COLOR
+        : kind === "rtk"
+            ? getRtkFixColor(data, isOnline)
+            : HOST_TRACK_COLOR;
+    const imageUrl = kind === "rtk" ? RTK_MARKER_IMAGE_URL : HOST_MARKER_IMAGE_URL;
+
+    return {
+        iconLayout: getMarkerLayout(color, imageUrl),
+        iconShape: {
+            type: "Rectangle",
+            coordinates: [[-22, -22], [22, 22]],
+        },
+    };
+}
+
 function isValidLat(value) {
     return Number.isFinite(value) && value >= -90 && value <= 90;
 }
@@ -147,6 +203,30 @@ function isValidLon(value) {
 
 function metersPerLonDegree(lat) {
     return Math.max(Math.cos(lat * Math.PI / 180) * 111320, 1);
+}
+
+function getDistanceMeters(firstCoords, secondCoords) {
+    if (ymaps?.coordSystem?.geo?.getDistance) {
+        return ymaps.coordSystem.geo.getDistance(firstCoords, secondCoords);
+    }
+
+    const earthRadiusMeters = 6371000;
+    const firstLat = Number(firstCoords[0]) * Math.PI / 180;
+    const secondLat = Number(secondCoords[0]) * Math.PI / 180;
+    const latDelta = secondLat - firstLat;
+    const lonDelta = (Number(secondCoords[1]) - Number(firstCoords[1])) * Math.PI / 180;
+    const halfChord = Math.sin(latDelta / 2) ** 2
+        + Math.cos(firstLat) * Math.cos(secondLat) * Math.sin(lonDelta / 2) ** 2;
+
+    return 2 * earthRadiusMeters * Math.atan2(Math.sqrt(halfChord), Math.sqrt(1 - halfChord));
+}
+
+function getCircleRadiusHandleCoords(centerCoords, radiusMeters) {
+    const lat = Number(centerCoords[0]);
+    const lon = Number(centerCoords[1]);
+    const radius = Number(radiusMeters);
+
+    return [lat, lon + (radius / metersPerLonDegree(lat))];
 }
 
 function buildSquareBoundsFromCenter(lat, lon, sideMeters) {
@@ -466,6 +546,13 @@ function removeCursorAccessor(accessor) {
     return null;
 }
 
+function suppressMapClickBriefly() {
+    suppressNextMapClick = true;
+    window.setTimeout(() => {
+        suppressNextMapClick = false;
+    }, 150);
+}
+
 function applyIdleMapCursor() {
     dragCursorAccessor = removeCursorAccessor(dragCursorAccessor);
 
@@ -521,6 +608,17 @@ function handleFullscreenChange() {
     }, 50);
 }
 
+function scheduleMapViewportFit() {
+    if (!map) {
+        return;
+    }
+
+    window.clearTimeout(mapViewportFitTimer);
+    mapViewportFitTimer = window.setTimeout(() => {
+        map?.container.fitToViewport();
+    }, 120);
+}
+
 function handleMapActionEnd() {
     applyIdleMapCursor();
 }
@@ -534,6 +632,8 @@ function initMapActionControls() {
     }
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
+    window.addEventListener("resize", scheduleMapViewportFit);
+    window.addEventListener("orientationchange", scheduleMapViewportFit);
     syncMapActionButtons();
 }
 
@@ -679,6 +779,16 @@ function clearZonePreview() {
 
     previewCornerMarkers.forEach((marker) => map.geoObjects.remove(marker));
     previewCornerMarkers = [];
+
+    if (previewCircleCenterMarker) {
+        map.geoObjects.remove(previewCircleCenterMarker);
+        previewCircleCenterMarker = null;
+    }
+
+    if (previewCircleRadiusMarker) {
+        map.geoObjects.remove(previewCircleRadiusMarker);
+        previewCircleRadiusMarker = null;
+    }
 }
 
 function handleSquareCornerDrag(cornerIndex, coords) {
@@ -692,6 +802,38 @@ function handleSquareCornerDrag(cornerIndex, coords) {
     const meta = syncSquareDerivedFieldsFromBounds();
     if (meta && previewShape) {
         previewShape.geometry.setCoordinates([polygonCoords]);
+    }
+}
+
+function handleCircleCenterDrag(coords) {
+    const centerCoords = [Number(coords[0]), Number(coords[1])];
+    const radius = Math.max(1, Math.round(parseNumberValue(document.getElementById("radius")?.value) ?? DEFAULT_ZONE_RADIUS));
+
+    setFormCoordinates(centerCoords);
+
+    if (previewShape) {
+        previewShape.geometry.setCoordinates(centerCoords);
+    }
+
+    if (previewCircleRadiusMarker) {
+        previewCircleRadiusMarker.geometry.setCoordinates(getCircleRadiusHandleCoords(centerCoords, radius));
+    }
+}
+
+function handleCircleRadiusDrag(coords) {
+    const lat = parseNumberValue(document.getElementById("lat")?.value);
+    const lon = parseNumberValue(document.getElementById("lon")?.value);
+    const radiusInput = document.getElementById("radius");
+
+    if (!isValidLat(lat) || !isValidLon(lon) || !radiusInput) {
+        return;
+    }
+
+    const radius = Math.max(1, Math.round(getDistanceMeters([lat, lon], [Number(coords[0]), Number(coords[1])])));
+    radiusInput.value = String(radius);
+
+    if (previewShape) {
+        previewShape.geometry.setRadius(radius);
     }
 }
 
@@ -756,6 +898,54 @@ function renderZonePreview() {
     );
 
     map.geoObjects.add(previewShape);
+
+    const centerCoords = [Number(zoneData.lat), Number(zoneData.lon)];
+    const radiusHandleCoords = getCircleRadiusHandleCoords(centerCoords, Number(zoneData.radius));
+
+    previewCircleCenterMarker = new ymaps.Placemark(centerCoords, {}, {
+        preset: "islands#blueCircleDotIcon",
+        draggable: true,
+    });
+
+    previewCircleRadiusMarker = new ymaps.Placemark(radiusHandleCoords, {}, {
+        preset: "islands#redCircleDotIcon",
+        draggable: true,
+    });
+
+    previewCircleCenterMarker.events.add("dragstart", () => {
+        suppressMapClickBriefly();
+    });
+    previewCircleCenterMarker.events.add("drag", () => {
+        handleCircleCenterDrag(previewCircleCenterMarker.geometry.getCoordinates());
+    });
+    previewCircleCenterMarker.events.add("dragend", () => {
+        suppressMapClickBriefly();
+        handleCircleCenterDrag(previewCircleCenterMarker.geometry.getCoordinates());
+        renderZonePreview();
+        setStatus("Центр круга изменен. Нажмите \"Сохранить зону\", чтобы записать изменения");
+    });
+    previewCircleCenterMarker.events.add("click", () => {
+        suppressMapClickBriefly();
+    });
+
+    previewCircleRadiusMarker.events.add("dragstart", () => {
+        suppressMapClickBriefly();
+    });
+    previewCircleRadiusMarker.events.add("drag", () => {
+        handleCircleRadiusDrag(previewCircleRadiusMarker.geometry.getCoordinates());
+    });
+    previewCircleRadiusMarker.events.add("dragend", () => {
+        suppressMapClickBriefly();
+        handleCircleRadiusDrag(previewCircleRadiusMarker.geometry.getCoordinates());
+        renderZonePreview();
+        setStatus("Радиус круга изменен. Нажмите \"Сохранить зону\", чтобы записать изменения");
+    });
+    previewCircleRadiusMarker.events.add("click", () => {
+        suppressMapClickBriefly();
+    });
+
+    map.geoObjects.add(previewCircleCenterMarker);
+    map.geoObjects.add(previewCircleRadiusMarker);
 }
 
 async function loadZones() {
@@ -1457,7 +1647,7 @@ function updateDeviceMarker(data) {
                 hintContent: `Хозяин • ${isFreshTelemetry(data.timestamp) ? "свежий пакет" : "нет свежих пакетов"}`,
             },
             {
-                preset: isFreshTelemetry(data.timestamp) ? "islands#greenIcon" : "islands#grayIcon",
+                ...getMarkerOptions("host", isFreshTelemetry(data.timestamp)),
             }
         );
 
@@ -1473,7 +1663,7 @@ function updateDeviceMarker(data) {
             `,
             hintContent: `Хозяин • ${isFreshTelemetry(data.timestamp) ? "свежий пакет" : "нет свежих пакетов"}`,
         });
-        deviceMarker.options.set("preset", isFreshTelemetry(data.timestamp) ? "islands#greenIcon" : "islands#grayIcon");
+        deviceMarker.options.set(getMarkerOptions("host", isFreshTelemetry(data.timestamp)));
     }
 
     if (!hasTelemetryAutoFocus) {
@@ -1488,14 +1678,6 @@ function getRtkQualityLabel(data) {
     }
 
     return data.qualityLabel || data.rtkQuality || (data.quality != null ? `Q${data.quality}` : "--");
-}
-
-function getRtkMarkerPreset(data) {
-    if (!isFreshTelemetry(data?.timestamp)) {
-        return "islands#grayCircleDotIcon";
-    }
-
-    return "islands#redCircleDotIcon";
 }
 
 function updateRtkMarker(data) {
@@ -1528,7 +1710,7 @@ function updateRtkMarker(data) {
                 hintContent: `Погрузчик • ${qualityLabel} • ${packetState}`,
             },
             {
-                preset: getRtkMarkerPreset(data),
+                ...getMarkerOptions("rtk", isFreshTelemetry(data.timestamp), data),
             }
         );
 
@@ -1539,7 +1721,7 @@ function updateRtkMarker(data) {
             balloonContent,
             hintContent: `Погрузчик • ${qualityLabel} • ${packetState}`,
         });
-        rtkMarker.options.set("preset", getRtkMarkerPreset(data));
+        rtkMarker.options.set(getMarkerOptions("rtk", isFreshTelemetry(data.timestamp), data));
     }
 
     if (!hasTelemetryAutoFocus) {

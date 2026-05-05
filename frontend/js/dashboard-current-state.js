@@ -6,7 +6,6 @@
     const WARNING_SECTION_TITLE = "Технические предупреждения";
     const WARNING_EMPTY_TEXT = "Активных предупреждений нет.";
     const WARNING_LOADING_TEXT = "Ожидание телеметрии...";
-    const WARNING_BACKEND_META = "Источник: backend warning API";
 
     let latestWarningItems = [];
     let latestWarningSource = "backend";
@@ -214,10 +213,9 @@
         }
 
         const countLabel = items.length > 0 ? `Активно: ${items.length}` : "Система в норме";
-        const sourceLabel = WARNING_BACKEND_META;
         const updatedLabel = latestWarningUpdatedAt ? ` | ${formatDateTime(latestWarningUpdatedAt)}` : "";
 
-        return `${countLabel} | ${sourceLabel}${updatedLabel}`;
+        return `${countLabel}${updatedLabel}`;
     }
 
     function renderWarnings(data) {
