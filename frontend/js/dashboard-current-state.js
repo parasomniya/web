@@ -178,8 +178,8 @@
         if (!hasFreshRtkPacket) {
             items.push({
                 code: "no_rtk",
-                title: "Нет RTK",
-                message: "Не удалось получить актуальный RTK пакет.",
+                title: "Нет погрузчика",
+                message: "Не удалось получить актуальный пакет погрузчика.",
                 severity: "warning",
             });
         }
@@ -560,11 +560,6 @@
             latestFetchState.errorMessage = "";
 
             noteTelemetryActivity(latestTelemetry);
-            if (latestTelemetry.banner) {
-                showBanner(latestTelemetry.banner);
-            } else if (currentBannerType && currentBannerType !== "zone_enter") {
-                showBanner(null);
-            }
 
             if (rtkResponse && rtkResponse.ok) {
                 latestRtkTelemetry = await rtkResponse.json();
@@ -573,6 +568,7 @@
                 hideRtkPlacemark();
             }
 
+            syncTelemetryZoneBanners();
             await syncWarningsFromResponse(warningsResponse, latestTelemetry, latestRtkTelemetry);
 
             renderDashboard(latestTelemetry);

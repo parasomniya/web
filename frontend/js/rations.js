@@ -184,7 +184,7 @@ $(document).ready(function () {
             uploadSubmitButton.disabled = !canWrite || state.isUploading;
             uploadSubmitButton.innerHTML = state.isUploading
                 ? '<span class="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>Загрузка...'
-                : '<i class="fas fa-upload mr-1"></i>Загрузить рацион';
+                : '<i class="fas fa-upload mr-1"></i>Создать рацион';
         }
 
         if (reloadButton) {

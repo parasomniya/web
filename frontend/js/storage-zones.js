@@ -1398,15 +1398,15 @@ function updateDeviceMarker(data) {
             coords,
             {
                 balloonContent: `
-                    <strong>Host</strong><br>
+                    <strong>Хозяин</strong><br>
                     Режим: ${escapeHtml(data.mode || "Ожидание")}<br>
                     Координаты: ${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}<br>
                     Пакет: ${isFreshTelemetry(data.timestamp) ? "свежий" : "устаревший"}
                 `,
-                hintContent: `Host • ${isFreshTelemetry(data.timestamp) ? "свежий пакет" : "нет свежих пакетов"}`,
+                hintContent: `Хозяин • ${isFreshTelemetry(data.timestamp) ? "свежий пакет" : "нет свежих пакетов"}`,
             },
             {
-                preset: isFreshTelemetry(data.timestamp) ? "islands#redIcon" : "islands#grayIcon",
+                preset: isFreshTelemetry(data.timestamp) ? "islands#greenIcon" : "islands#grayIcon",
             }
         );
 
@@ -1415,14 +1415,14 @@ function updateDeviceMarker(data) {
         deviceMarker.geometry.setCoordinates(coords);
         deviceMarker.properties.set({
             balloonContent: `
-                <strong>Host</strong><br>
+                <strong>Хозяин</strong><br>
                 Режим: ${escapeHtml(data.mode || "Ожидание")}<br>
                 Координаты: ${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}<br>
                 Пакет: ${isFreshTelemetry(data.timestamp) ? "свежий" : "устаревший"}
             `,
-            hintContent: `Host • ${isFreshTelemetry(data.timestamp) ? "свежий пакет" : "нет свежих пакетов"}`,
+            hintContent: `Хозяин • ${isFreshTelemetry(data.timestamp) ? "свежий пакет" : "нет свежих пакетов"}`,
         });
-        deviceMarker.options.set("preset", isFreshTelemetry(data.timestamp) ? "islands#redIcon" : "islands#grayIcon");
+        deviceMarker.options.set("preset", isFreshTelemetry(data.timestamp) ? "islands#greenIcon" : "islands#grayIcon");
     }
 
     if (!hasTelemetryAutoFocus) {
@@ -1444,18 +1444,7 @@ function getRtkMarkerPreset(data) {
         return "islands#grayCircleDotIcon";
     }
 
-    const label = String(data?.qualityLabel || data?.rtkQuality || "").toLowerCase();
-    const quality = Number(data?.quality);
-
-    if (label.includes("fixed") || quality >= 4) {
-        return "islands#greenCircleDotIcon";
-    }
-
-    if (label.includes("float") || quality >= 2) {
-        return "islands#yellowCircleDotIcon";
-    }
-
-    return "islands#grayCircleDotIcon";
+    return "islands#redCircleDotIcon";
 }
 
 function updateRtkMarker(data) {
@@ -1472,7 +1461,7 @@ function updateRtkMarker(data) {
     const zoneName = data?.zone?.name || "Вне зоны";
     const packetState = isFreshTelemetry(data?.timestamp) ? "свежий" : "устаревший";
     const balloonContent = `
-        <strong>RTK</strong><br>
+        <strong>Погрузчик</strong><br>
         Устройство: ${escapeHtml(data.deviceId || "--")}<br>
         Пакет: ${packetState}<br>
         Quality: ${escapeHtml(qualityLabel)}<br>
@@ -1485,7 +1474,7 @@ function updateRtkMarker(data) {
             coords,
             {
                 balloonContent,
-                hintContent: `RTK • ${qualityLabel} • ${packetState}`,
+                hintContent: `Погрузчик • ${qualityLabel} • ${packetState}`,
             },
             {
                 preset: getRtkMarkerPreset(data),
@@ -1497,7 +1486,7 @@ function updateRtkMarker(data) {
         rtkMarker.geometry.setCoordinates(coords);
         rtkMarker.properties.set({
             balloonContent,
-            hintContent: `RTK • ${qualityLabel} • ${packetState}`,
+            hintContent: `Погрузчик • ${qualityLabel} • ${packetState}`,
         });
         rtkMarker.options.set("preset", getRtkMarkerPreset(data));
     }

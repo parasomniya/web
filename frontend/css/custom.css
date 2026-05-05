@@ -283,11 +283,11 @@
 }
 
 .map-marker-legend__dot--host {
-    background: #d93636;
+    background: #1cc88a;
 }
 
 .map-marker-legend__dot--rtk {
-    background: #1cc88a;
+    background: #d93636;
 }
 
 .map-action-button {

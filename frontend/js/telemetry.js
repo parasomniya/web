@@ -330,7 +330,7 @@ function renderHostTable(rows) {
     if (!tbody) return;
 
     if (!Array.isArray(rows) || rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="14" class="telemetry-empty-state">По host пока нет записей.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="14" class="telemetry-empty-state">По хозяину пока нет записей.</td></tr>';
         return;
     }
 
@@ -431,12 +431,12 @@ function renderRtkTable(rows, missing) {
     if (!tbody) return;
 
     if (missing) {
-        tbody.innerHTML = '<tr><td colspan="15" class="telemetry-empty-state">RTK API недоступен.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="15" class="telemetry-empty-state">API погрузчика недоступен.</td></tr>';
         return;
     }
 
     if (!Array.isArray(rows) || rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="15" class="telemetry-empty-state">По RTK пока нет записей.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="15" class="telemetry-empty-state">По погрузчику пока нет записей.</td></tr>';
         return;
     }
 

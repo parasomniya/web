@@ -11,6 +11,11 @@ const DEFAULT_MAP_TYPE = "yandex#map";
 const ZONE_BANNER_DISPLAY_MS = 4500;
 const DEFAULT_ZONE_RADIUS = 20;
 const DEFAULT_SQUARE_SIDE = 40;
+const HOST_TRACK_COLOR = "#1cc88a";
+const RTK_TRACK_COLOR = "#d93636";
+const OFFLINE_MARKER_COLOR = "#858796";
+const HOST_MARKER_IMAGE_URL = "img/host-marker-source.png";
+const RTK_MARKER_IMAGE_URL = "img/loader-marker-source.png";
 
 let map;
 let placemark;
@@ -31,6 +36,8 @@ let dragCursorAccessor = null;
 let lastShownZone = null;
 let currentBannerElement = null;
 let currentBannerType = null;
+let currentZoneBannerElements = { host: null, rtk: null };
+let lastShownZoneBannerKeys = { host: null, rtk: null };
 let bannerDismissTimerId = null;
 let pendingTelemetryUndo = null;
 let currentUndoAlert = null;
@@ -410,32 +417,44 @@ function setVehicleStatus(isOnline) {
     element.classList.toggle("offline", !isOnline);
 }
 
-function getPlacemarkPreset(isOnline) {
-    return isOnline ? "islands#blueAutoIcon" : "islands#grayAutoIcon";
+function buildMarkerSvg(color, imageUrl) {
+    const safeColor = /^#[0-9a-f]{6}$/i.test(color) ? color : OFFLINE_MARKER_COLOR;
+    const safeImageUrl = String(imageUrl || "").replace(/"/g, "%22");
+
+    return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="50" viewBox="0 0 40 50">
+            <ellipse cx="25" cy="46" rx="9" ry="3" fill="#000" opacity="0.18"/>
+            <path d="M20 49C15.9 41.9 5.5 35.4 5.5 21.4C5.5 11.2 11.9 4.5 20 4.5s14.5 6.7 14.5 16.9C34.5 35.4 24.1 41.9 20 49z" fill="${safeColor}"/>
+            <circle cx="20" cy="20.5" r="12.2" fill="#fff"/>
+            <clipPath id="markerIconClip">
+                <circle cx="20" cy="20.5" r="9.2"/>
+            </clipPath>
+            <image href="${safeImageUrl}" x="9.4" y="12.1" width="21.2" height="16.8" preserveAspectRatio="xMidYMid meet" clip-path="url(#markerIconClip)"/>
+        </svg>
+    `.trim();
 }
 
-function getRtkPlacemarkPreset(data) {
-    if (!isPacketOnline(data?.timestamp)) {
-        return "islands#grayCircleDotIcon";
-    }
+function markerSvgToDataUrl(svg) {
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
 
-    const label = String(data?.qualityLabel || data?.rtkQuality || "").toLowerCase();
-    const quality = Number(data?.quality);
+function getMarkerOptions(kind, isOnline) {
+    const color = kind === "rtk"
+        ? (isOnline ? RTK_TRACK_COLOR : OFFLINE_MARKER_COLOR)
+        : (isOnline ? HOST_TRACK_COLOR : OFFLINE_MARKER_COLOR);
+    const imageUrl = kind === "rtk" ? RTK_MARKER_IMAGE_URL : HOST_MARKER_IMAGE_URL;
 
-    if (label.includes("fixed") || quality >= 4) {
-        return "islands#greenCircleDotIcon";
-    }
-
-    if (label.includes("float") || quality >= 2) {
-        return "islands#yellowCircleDotIcon";
-    }
-
-    return "islands#redCircleDotIcon";
+    return {
+        iconLayout: "default#image",
+        iconImageHref: markerSvgToDataUrl(buildMarkerSvg(color, imageUrl)),
+        iconImageSize: [40, 50],
+        iconImageOffset: [-20, -48],
+    };
 }
 
 function updatePlacemarkStatus(isOnline) {
     if (!placemark) return;
-    placemark.options.set("preset", getPlacemarkPreset(isOnline));
+    placemark.options.set(getMarkerOptions("host", isOnline));
 }
 
 function ensurePlacemarkVisible() {
@@ -1121,7 +1140,7 @@ function updateRtkMapPosition(data) {
     const zoneName = getCurrentZoneName(coords[0], coords[1]) || data?.zone?.name || "Вне зоны";
     const isOnline = isPacketOnline(data?.timestamp);
     const balloonContent = `
-        <strong>RTK</strong><br>
+        <strong>Погрузчик</strong><br>
         Устройство: ${escapeHtml(data?.deviceId || "--")}<br>
         Статус: ${isOnline ? "Свежий пакет" : "Нет свежих пакетов"}<br>
         Статус качества: ${escapeHtml(qualityLabel)}<br>
@@ -1134,19 +1153,19 @@ function updateRtkMapPosition(data) {
             coords,
             {
                 balloonContent,
-                hintContent: `RTK - ${qualityLabel}`,
+                hintContent: `Погрузчик - ${qualityLabel}`,
             },
             {
-                preset: getRtkPlacemarkPreset(data),
+                ...getMarkerOptions("rtk", isOnline),
             }
         );
     } else {
         rtkPlacemark.geometry.setCoordinates(coords);
         rtkPlacemark.properties.set({
             balloonContent,
-            hintContent: `RTK - ${qualityLabel}`,
+            hintContent: `Погрузчик - ${qualityLabel}`,
         });
-        rtkPlacemark.options.set("preset", getRtkPlacemarkPreset(data));
+        rtkPlacemark.options.set(getMarkerOptions("rtk", isOnline));
     }
 
     ensureRtkPlacemarkVisible();
@@ -1287,9 +1306,9 @@ function renderRoute(historyRows) {
     }
 
     routePolyline = new ymaps.Polyline(routeCoords, {
-        balloonContent: "Маршрут техники",
+        balloonContent: "Маршрут хозяина",
     }, {
-        strokeColor: "#2e59d9",
+        strokeColor: HOST_TRACK_COLOR,
         strokeWidth: 4,
         strokeOpacity: 0.75,
     });
@@ -1308,9 +1327,9 @@ function renderRtkRoute(historyRows) {
     }
 
     rtkRoutePolyline = new ymaps.Polyline(routeCoords, {
-        balloonContent: "RTK маршрут",
+        balloonContent: "Маршрут погрузчика",
     }, {
-        strokeColor: "#1cc88a",
+        strokeColor: RTK_TRACK_COLOR,
         strokeWidth: 4,
         strokeOpacity: 0.8,
     });
@@ -1332,11 +1351,6 @@ async function fetchLatest() {
 
         latestTelemetry = await hostResponse.json();
         noteTelemetryActivity(latestTelemetry);
-        if (latestTelemetry.banner) {
-            showBanner(latestTelemetry.banner);
-        } else if (currentBannerType && currentBannerType !== "zone_enter") {
-            showBanner(null);
-        }
 
         if (rtkResponse && rtkResponse.ok) {
             latestRtkTelemetry = await rtkResponse.json();
@@ -1345,6 +1359,7 @@ async function fetchLatest() {
             hideRtkPlacemark();
         }
 
+        syncTelemetryZoneBanners();
         renderDashboard(latestTelemetry);
         updateRtkMapPosition(latestRtkTelemetry);
     } catch (error) {
@@ -1668,16 +1683,69 @@ function ensureBannerStyles() {
     style.textContent = `
         @keyframes bannerInFinal { from { opacity: 0; transform: translateY(-15px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes bannerOutFinal { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.9); } }
+        #banner-container {
+            position: fixed;
+            right: 20px;
+            z-index: 99999;
+            display: flex;
+            flex-direction: row;
+            justify-content: flex-end;
+            align-items: flex-start;
+            gap: 10px;
+            max-width: calc(100vw - 40px);
+            pointer-events: none;
+        }
+        .dashboard-zone-banner {
+            color: white;
+            padding: 10px 18px;
+            border-radius: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            line-height: 1.4;
+            opacity: 0;
+            animation: bannerInFinal 0.4s ease-out forwards;
+            cursor: default;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        .dashboard-zone-banner--host {
+            background-color: #1a6b3d;
+            box-shadow: 0 5px 12px rgba(0, 50, 0, 0.35);
+        }
+        .dashboard-zone-banner--rtk {
+            background-color: #d93636;
+            box-shadow: 0 5px 12px rgba(120, 20, 20, 0.35);
+        }
         @media (max-width: 576px) {
             #banner-container {
                 left: 16px;
                 right: 16px !important;
                 width: auto !important;
+                max-width: none !important;
+                flex-direction: column;
                 align-items: stretch !important;
+            }
+            .dashboard-zone-banner {
+                white-space: normal;
+                text-align: center;
             }
         }
     `;
     document.head.appendChild(style);
+}
+
+function ensureBannerContainer() {
+    let container = document.getElementById("banner-container");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "banner-container";
+        document.body.appendChild(container);
+    }
+
+    ensureBannerStyles();
+    updateBannerContainerPosition(container);
+    return container;
 }
 
 function clearBannerDismissTimer() {
@@ -1702,6 +1770,8 @@ function dismissCurrentBanner() {
     if (!currentBannerElement) {
         currentBannerType = null;
         lastShownZone = null;
+        dismissZoneBanner("host");
+        dismissZoneBanner("rtk");
         return;
     }
 
@@ -1717,53 +1787,134 @@ function dismissCurrentBanner() {
     currentBannerElement = null;
     currentBannerType = null;
     lastShownZone = null;
+    dismissZoneBanner("host");
+    dismissZoneBanner("rtk");
+}
+
+function dismissZoneBanner(source) {
+    const elementToRemove = currentZoneBannerElements[source];
+    if (!elementToRemove) {
+        lastShownZoneBannerKeys[source] = null;
+        return;
+    }
+
+    elementToRemove.style.animation = "bannerOutFinal 0.35s ease-in forwards";
+    setTimeout(() => {
+        if (elementToRemove?.isConnected) {
+            elementToRemove.remove();
+        }
+    }, 350);
+
+    currentZoneBannerElements[source] = null;
+    lastShownZoneBannerKeys[source] = null;
+}
+
+function parseZoneNameFromBanner(banner) {
+    if (!banner) {
+        return "";
+    }
+
+    const explicitName = banner.zoneName || banner.name;
+    if (explicitName) {
+        return String(explicitName).trim();
+    }
+
+    const message = typeof banner.message === "string" ? banner.message.trim() : "";
+    const zoneMatch = message.match(/^Зона:\s*(.+)$/i);
+    if (zoneMatch) {
+        return zoneMatch[1].trim();
+    }
+
+    return "";
+}
+
+function getTelemetryZoneBannerName(data) {
+    const bannerZoneName = parseZoneNameFromBanner(data?.banner);
+    if (bannerZoneName) {
+        return bannerZoneName;
+    }
+
+    if (data?.zone?.name) {
+        return String(data.zone.name).trim();
+    }
+
+    if (hasValidCoordinates(data?.lat, data?.lon)) {
+        return getCurrentZoneName(Number(data.lat), Number(data.lon)) || "";
+    }
+
+    return "";
+}
+
+function buildZoneBanner(source, data) {
+    const zoneName = getTelemetryZoneBannerName(data);
+    if (!zoneName || zoneName === "Вне зоны") {
+        return null;
+    }
+
+    return {
+        source,
+        text: `Зона: ${zoneName}`,
+    };
+}
+
+function renderZoneBanner(container, source, banner) {
+    if (!banner) {
+        dismissZoneBanner(source);
+        return;
+    }
+
+    const bannerKey = `${source}:${banner.text}`;
+    if (lastShownZoneBannerKeys[source] === bannerKey && currentZoneBannerElements[source]) {
+        return;
+    }
+
+    dismissZoneBanner(source);
+
+    const alert = document.createElement("div");
+    alert.className = `dashboard-zone-banner dashboard-zone-banner--${source}`;
+    alert.textContent = banner.text;
+    alert.dataset.bannerSource = source;
+
+    container.appendChild(alert);
+    currentZoneBannerElements[source] = alert;
+    lastShownZoneBannerKeys[source] = bannerKey;
+}
+
+function showZoneBanners(banners = {}) {
+    clearBannerDismissTimer();
+    removeUndoAlert();
+
+    const hasAnyBanner = Boolean(banners.host || banners.rtk);
+    if (!hasAnyBanner) {
+        dismissZoneBanner("host");
+        dismissZoneBanner("rtk");
+        return;
+    }
+
+    const container = ensureBannerContainer();
+    renderZoneBanner(container, "host", banners.host || null);
+    renderZoneBanner(container, "rtk", banners.rtk || null);
+}
+
+function syncTelemetryZoneBanners() {
+    showZoneBanners({
+        host: buildZoneBanner("host", latestTelemetry),
+        rtk: buildZoneBanner("rtk", latestRtkTelemetry),
+    });
 }
 
 function showBanner(banner) {
     if (!banner) {
-        dismissCurrentBanner();
+        showZoneBanners({});
         return;
     }
 
-    const bannerType = typeof banner.type === "string" ? banner.type : "info";
-    const zoneName = banner.zoneName || banner.name || "";
-    const bannerText = zoneName ? `Въезд в зону: ${zoneName}` : (banner.message || "Новое уведомление");
-
-    let container = document.getElementById("banner-container");
-    if (!container) {
-        container = document.createElement("div");
-        container.id = "banner-container";
-        container.style.cssText = "position: fixed; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; width: min(420px, calc(100vw - 32px)); pointer-events: none;";
-        document.body.appendChild(container);
-    }
-
-    ensureBannerStyles();
-    updateBannerContainerPosition(container);
-
-    if (lastShownZone === bannerText && currentBannerType === bannerType) {
-        return;
-    }
-
-    clearBannerDismissTimer();
-    removeUndoAlert();
-
-    if (currentBannerElement) {
-        currentBannerElement.remove();
-    }
-
-    lastShownZone = bannerText;
-    currentBannerType = bannerType;
-
-    const alert = document.createElement("div");
-    alert.style.cssText = "background-color: #1a6b3d; color: white; padding: 10px 18px; border-radius: 20px; box-shadow: 0 5px 12px rgba(0,50,0,0.35); font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; font-size: 14px; font-weight: 500; line-height: 1.4; opacity: 0; animation: bannerInFinal 0.4s ease-out forwards; cursor: default; pointer-events: none;";
-    alert.textContent = bannerText;
-
-    container.appendChild(alert);
-    currentBannerElement = alert;
-
-    if (bannerType === "zone_enter") {
-        scheduleZoneBannerDismiss();
-    }
+    showZoneBanners({
+        host: {
+            source: "host",
+            text: banner.message || `Зона: ${parseZoneNameFromBanner(banner) || "без названия"}`,
+        },
+    });
 }
 
 function updateMapTypeButtons() {
@@ -1838,9 +1989,7 @@ function init() {
         yandexMapDisablePoiInteractivity: true,
     });
 
-    placemark = new ymaps.Placemark(DEFAULT_COORDS, {}, {
-        preset: getPlacemarkPreset(false),
-    });
+    placemark = new ymaps.Placemark(DEFAULT_COORDS, {}, getMarkerOptions("host", false));
 
     initMapTypeSwitch();
     initMapActionControls();
