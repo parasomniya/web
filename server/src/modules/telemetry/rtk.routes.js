@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import prisma from '../../database.js'
-import { authenticate, requireAdmin, requireReadAccess } from '../../middleware/auth.js'
+import { authenticate, requireAdmin, requireReadAccess, requireWriteAccess } from '../../middleware/auth.js'
 import { calculateHaversine, detectZoneObject } from '../../../../module-1/geo.js'
 
 const router = Router()
@@ -39,10 +39,16 @@ function parseInteger(value) {
   return Number.isInteger(parsed) ? parsed : null
 }
 
-function parseLimit(value, fallback) {
+function parseLimit(value, fallback, options = {}) {
+  const max = Number.isFinite(Number(options.max)) ? Number(options.max) : 500
   const parsed = parseInteger(value)
   if (!parsed || parsed <= 0) return fallback
-  return Math.min(parsed, 500)
+
+  if (max > 0) {
+    return Math.min(parsed, max)
+  }
+
+  return parsed
 }
 
 function getRequestedDeviceId(req) {
@@ -382,7 +388,9 @@ router.get('/recent', authenticate, requireReadAccess, async (req, res) => {
 router.get('/history', authenticate, requireReadAccess, async (req, res) => {
   try {
     const deviceId = getRequestedDeviceId(req)
-    const limit = parseLimit(req.query.limit, DEFAULT_HISTORY_LIMIT)
+    // Для отрисовки трека на главной странице не ограничиваем верхний cap:
+    // фронт сам задает разумный limit (сейчас 100000).
+    const limit = parseLimit(req.query.limit, DEFAULT_HISTORY_LIMIT, { max: 0 })
     const zones = await loadActiveZones()
     const rows = await prisma.rtkTelemetry.findMany({
       where: deviceId ? { deviceId } : undefined,
@@ -471,7 +479,7 @@ router.get('/admin/latest', authenticate, requireAdmin, async (req, res) => {
 router.get('/admin/history', authenticate, requireAdmin, async (req, res) => {
   try {
     const deviceId = getRequestedDeviceId(req)
-    const limit = parseLimit(req.query.limit, DEFAULT_HISTORY_LIMIT)
+    const limit = parseLimit(req.query.limit, DEFAULT_HISTORY_LIMIT, { max: 0 })
     const zones = await loadActiveZones()
     const rows = await prisma.rtkTelemetry.findMany({
       where: deviceId ? { deviceId } : undefined,
@@ -487,5 +495,40 @@ router.get('/admin/history', authenticate, requireAdmin, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' })
   }
 })
+
+async function clearRtkTrack(req, res) {
+  try {
+    const deviceId = getRequestedDeviceId(req)
+    const before = req.query.before ? parseTimestamp(req.query.before) : null
+
+    if (req.query.before && !before) {
+      return res.status(400).json({ error: 'Некорректный параметр before' })
+    }
+
+    const where = {
+      ...(deviceId ? { deviceId } : {}),
+      ...(before ? { timestamp: { lte: before } } : {})
+    }
+
+    const deleted = await prisma.rtkTelemetry.deleteMany({
+      where: Object.keys(where).length ? where : undefined
+    })
+
+    res.json({
+      status: 'ok',
+      count: deleted.count,
+      scope: {
+        deviceId: deviceId || null,
+        before: before ? before.toISOString() : null
+      }
+    })
+  } catch (error) {
+    console.error('[Ошибка DELETE /api/telemetry/rtk/admin/truncate]:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+}
+
+router.delete('/admin/truncate', authenticate, requireWriteAccess, clearRtkTrack)
+router.delete('/admin/clear-track', authenticate, requireWriteAccess, clearRtkTrack)
 
 export default router

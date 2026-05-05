@@ -3,6 +3,7 @@ import prisma from "../../database.js";
 import { authenticate, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js";
 import { buildIngredientSummary, buildUnloadProgress, recalculateBatchViolations, toDisplayIngredientName } from './batch-violations.js';
 import { normalizeIngredientName } from '../../../../module-2/rationManager.js';
+import { getTelemetrySettings } from '../telemetry/telemetry-settings.js';
 
 const router = Router();
 
@@ -69,29 +70,40 @@ router.get('/', authenticate, requireReadAccess, async (req, res) => {
             endDate.setHours(23, 59, 59, 999);
         }
 
-        const batches = await prisma.batch.findMany({
-            where: {
-                startTime: {
-                    gte: startDate,
-                    lte: endDate
-                }
-            },
-            include: {
-                group: true,
-                ration: { include: { ingredients: true } }, // Связка с "Планом"
-                actualIngredients: true, // Тут лежат компоненты и их нарушения
-                violations: {
-                    select: {
-                        id: true
+        const [batches, telemetrySettings] = await Promise.all([
+            prisma.batch.findMany({
+                where: {
+                    startTime: {
+                        gte: startDate,
+                        lte: endDate
                     }
-                }
-            },
-            orderBy: { startTime: 'desc' }
-        });
+                },
+                include: {
+                    group: {
+                        include: {
+                            ration: {
+                                include: {
+                                    ingredients: true
+                                }
+                            }
+                        }
+                    },
+                    ration: { include: { ingredients: true } }, // Связка с "Планом"
+                    actualIngredients: true, // Тут лежат компоненты и их нарушения
+                    violations: {
+                        select: {
+                            id: true
+                        }
+                    }
+                },
+                orderBy: { startTime: 'desc' }
+            }),
+            getTelemetrySettings(prisma)
+        ]);
 
         // Форматируем ответ для удобной таблицы фронтенда
         const formattedBatches = batches.map(b => {
-            const ingredients = buildIngredientSummary(b);
+            const ingredients = buildIngredientSummary(b, telemetrySettings);
             const hasLoggedViolations = (b.violations?.length || 0) > 0;
 
             return {
@@ -128,7 +140,15 @@ router.get('/:id', authenticate, requireReadAccess, async (req, res) => {
         const batch = await prisma.batch.findUnique({
             where: { id: batchId },
             include: {
-                group: true,
+                group: {
+                    include: {
+                        ration: {
+                            include: {
+                                ingredients: true
+                            }
+                        }
+                    }
+                },
                 ration: {
                     include: { ingredients: true }
                 },
@@ -142,7 +162,10 @@ router.get('/:id', authenticate, requireReadAccess, async (req, res) => {
             return res.status(404).json({ error: 'Замес не найден' });
         }
 
-        const weightContext = await getBatchWeightContext(batch);
+        const [weightContext, telemetrySettings] = await Promise.all([
+            getBatchWeightContext(batch),
+            getTelemetrySettings(prisma)
+        ]);
 
         // Форматируем ответ строго под нужды интерфейса Сони
         const detailedBatch = {
@@ -193,7 +216,7 @@ router.get('/:id', authenticate, requireReadAccess, async (req, res) => {
                 deviation: ing.plannedWeight ? (ing.actualWeight - ing.plannedWeight) : 0,
                 isViolation: ing.isViolation
             })),
-            ingredients: buildIngredientSummary(batch)
+            ingredients: buildIngredientSummary(batch, telemetrySettings)
         };
 
         res.json(detailedBatch);

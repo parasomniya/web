@@ -154,7 +154,6 @@ $(document).ready(function () {
             localId: `ingredient-${state.ingredientSeq}`,
             name: item.name || "",
             plannedWeight: item.plannedWeight ?? "",
-            dryMatterWeight: item.dryMatterWeight ?? "",
         };
     }
 
@@ -313,17 +312,6 @@ $(document).ready(function () {
                         >
                     </td>
                     <td>
-                        <input
-                            type="number"
-                            class="form-control form-control-sm ration-manual-number"
-                            data-ingredient-field="dryMatterWeight"
-                            min="0"
-                            step="0.01"
-                            value="${escapeHtml(ingredient.dryMatterWeight)}"
-                            placeholder="420"
-                        >
-                    </td>
-                    <td class="text-center">
                         <button
                             type="button"
                             class="btn btn-outline-danger btn-sm ration-manual-remove"
@@ -346,8 +334,7 @@ $(document).ready(function () {
         }
 
         const plannedTotal = state.manualIngredients.reduce((sum, ingredient) => sum + (parseFormNumber(ingredient.plannedWeight) || 0), 0);
-        const dryMatterTotal = state.manualIngredients.reduce((sum, ingredient) => sum + (parseFormNumber(ingredient.dryMatterWeight) || 0), 0);
-        manualSummary.textContent = `Ингредиентов: ${state.manualIngredients.length} | Вес: ${weightFormatter.format(plannedTotal)} кг | СВ: ${weightFormatter.format(dryMatterTotal)} кг`;
+        manualSummary.textContent = `Ингредиентов: ${state.manualIngredients.length} | Вес: ${weightFormatter.format(plannedTotal)} кг`;
     }
 
     function focusManualIngredientRow(localId) {
@@ -466,7 +453,6 @@ $(document).ready(function () {
         }
 
         const plannedTotal = items.reduce((sum, ingredient) => sum + getWeightValue(ingredient?.plannedWeight), 0);
-        const dryMatterTotal = items.reduce((sum, ingredient) => sum + getWeightValue(ingredient?.dryMatterWeight), 0);
 
         return `
             <div class="ration-ingredients-table-wrap">
@@ -476,7 +462,6 @@ $(document).ready(function () {
                             <th class="ration-ingredients-table__index">№</th>
                             <th>Ингредиент</th>
                             <th class="ration-ingredients-table__weight">Вес/голову</th>
-                            <th class="ration-ingredients-table__weight">СВ/голову</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -485,7 +470,6 @@ $(document).ready(function () {
                                 <td class="ration-ingredients-table__index">${index + 1}</td>
                                 <td class="ration-ingredients-table__name">${escapeHtml(ingredient?.name || "Без названия")}</td>
                                 <td class="ration-ingredients-table__weight">${formatWeight(ingredient?.plannedWeight)}</td>
-                                <td class="ration-ingredients-table__weight">${formatWeight(ingredient?.dryMatterWeight)}</td>
                             </tr>
                         `).join("")}
                     </tbody>
@@ -493,7 +477,6 @@ $(document).ready(function () {
                         <tr>
                             <td colspan="2">Итого</td>
                             <td class="ration-ingredients-table__weight">${formatWeight(plannedTotal)}</td>
-                            <td class="ration-ingredients-table__weight">${formatWeight(dryMatterTotal)}</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -718,16 +701,7 @@ $(document).ready(function () {
                 return { ok: false, message: `Ингредиент "${name}": вес должен быть больше 0` };
             }
 
-            const dryMatterWeight = parseFormNumber(row.dryMatterWeight);
-            if (dryMatterWeight === null || dryMatterWeight < 0) {
-                return { ok: false, message: `Ингредиент "${name}": СВ должен быть 0 или больше` };
-            }
-
-            if (dryMatterWeight > plannedWeight) {
-                return { ok: false, message: `Ингредиент "${name}": СВ не может быть больше веса` };
-            }
-
-            ingredients.push({ name, plannedWeight, dryMatterWeight });
+            ingredients.push({ name, plannedWeight });
         }
 
         if (!ingredients.length) {
@@ -846,7 +820,6 @@ $(document).ready(function () {
             .map((ingredient) => makeIngredientRow({
                 name: ingredient?.name || "",
                 plannedWeight: ingredient?.plannedWeight ?? "",
-                dryMatterWeight: ingredient?.dryMatterWeight ?? "",
             }));
 
         if (!state.manualIngredients.length) {

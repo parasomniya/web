@@ -1,6 +1,18 @@
 const POLL_INTERVAL_MS = 5000;
 const HISTORY_LIMIT = 20;
 const OFFLINE_THRESHOLD_MS = 15000;
+const TELEMETRY_SETTINGS_NUMERIC_FIELDS = [
+    "batchStartThresholdKg",
+    "leftoverThresholdKg",
+    "unloadDropThresholdKg",
+    "unloadMinPeakKg",
+    "unloadUpdateDeltaKg",
+    "anomalyThresholdKg",
+    "anomalyConfirmDeltaKg",
+    "anomalyConfirmPackets",
+    "deviationPercentThreshold",
+    "deviationMinKgThreshold",
+];
 
 const endpoints = {
     host: {
@@ -214,23 +226,17 @@ function fillTelemetrySettingsForm(settings) {
     const form = getTelemetrySettingsForm();
     if (!form || !settings) return;
 
-    const fields = [
-        "batchStartThresholdKg",
-        "leftoverThresholdKg",
-        "unloadDropThresholdKg",
-        "unloadMinPeakKg",
-        "unloadUpdateDeltaKg",
-        "anomalyThresholdKg",
-        "anomalyConfirmDeltaKg",
-        "anomalyConfirmPackets",
-    ];
-
-    fields.forEach((field) => {
+    TELEMETRY_SETTINGS_NUMERIC_FIELDS.forEach((field) => {
         const input = form.elements.namedItem(field);
         if (input) {
             input.value = settings[field] != null ? String(settings[field]) : "";
         }
     });
+
+    const resetTimeInput = form.elements.namedItem("rtkTrackResetTime");
+    if (resetTimeInput) {
+        resetTimeInput.value = settings.rtkTrackResetTime || "03:00";
+    }
 }
 
 async function loadTelemetrySettings() {
@@ -244,7 +250,7 @@ async function loadTelemetrySettings() {
 
         const updatedAt = settings?.updatedAt ? formatDateTime(settings.updatedAt) : "--";
         setTelemetrySettingsMeta(`Последнее изменение: ${updatedAt}`);
-        setText("telemetrySettingsState", "Настройки влияют на старт замеса, выгрузку, остаток и антишум тензодатчика.");
+        setText("telemetrySettingsState", "Настройки влияют на замес, нарушения, антишум и ежедневную очистку RTK-трека.");
     } catch (error) {
         setTelemetrySettingsMeta("Не удалось загрузить настройки");
         setText("telemetrySettingsState", "Сервер не отдал настройки телеметрии.");
@@ -260,18 +266,8 @@ async function saveTelemetrySettings(event) {
 
     const formData = new FormData(form);
     const payload = {};
-    const fields = [
-        "batchStartThresholdKg",
-        "leftoverThresholdKg",
-        "unloadDropThresholdKg",
-        "unloadMinPeakKg",
-        "unloadUpdateDeltaKg",
-        "anomalyThresholdKg",
-        "anomalyConfirmDeltaKg",
-        "anomalyConfirmPackets",
-    ];
 
-    for (const field of fields) {
+    for (const field of TELEMETRY_SETTINGS_NUMERIC_FIELDS) {
         const rawValue = String(formData.get(field) || "").trim();
         const number = Number(rawValue);
 
@@ -282,6 +278,14 @@ async function saveTelemetrySettings(event) {
 
         payload[field] = number;
     }
+
+    const resetTime = String(formData.get("rtkTrackResetTime") || "").trim();
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(resetTime)) {
+        window.AppAuth?.showAlert?.("Время очистки RTK должно быть в формате HH:mm", "warning");
+        return;
+    }
+
+    payload.rtkTrackResetTime = resetTime;
 
     try {
         setTelemetrySettingsButtonState(true);
@@ -304,7 +308,7 @@ async function saveTelemetrySettings(event) {
         fillTelemetrySettingsForm(settings);
         const updatedAt = settings?.updatedAt ? formatDateTime(settings.updatedAt) : formatDateTime(new Date().toISOString());
         setTelemetrySettingsMeta(`Последнее изменение: ${updatedAt}`);
-        setText("telemetrySettingsState", "Настройки сохранены и будут применяться к новым пакетам телеметрии и антишум-фильтру.");
+        setText("telemetrySettingsState", "Настройки сохранены: антишум, пороги нарушений и расписание очистки RTK применены.");
         window.AppAuth?.showAlert?.("Настройки телеметрии сохранены", "success");
     } catch (error) {
         setText("telemetrySettingsState", "Не удалось сохранить настройки телеметрии.");

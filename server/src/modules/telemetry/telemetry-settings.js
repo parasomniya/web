@@ -10,7 +10,10 @@ export const DEFAULT_TELEMETRY_SETTINGS = {
   unloadUpdateDeltaKg: 1,
   anomalyThresholdKg: 200,
   anomalyConfirmDeltaKg: 40,
-  anomalyConfirmPackets: 3
+  anomalyConfirmPackets: 3,
+  deviationPercentThreshold: 10,
+  deviationMinKgThreshold: 10,
+  rtkTrackResetTime: '03:00'
 }
 
 function toPositiveInteger(value, fallback) {
@@ -20,6 +23,19 @@ function toPositiveInteger(value, fallback) {
   }
 
   return parsed
+}
+
+function normalizeTime(value, fallback) {
+  if (typeof value !== 'string') {
+    return fallback
+  }
+
+  const normalized = value.trim()
+  if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(normalized)) {
+    return fallback
+  }
+
+  return normalized
 }
 
 export function coerceTelemetrySettings(row = {}) {
@@ -32,6 +48,9 @@ export function coerceTelemetrySettings(row = {}) {
     anomalyThresholdKg: toPositiveInteger(row.anomalyThresholdKg, DEFAULT_TELEMETRY_SETTINGS.anomalyThresholdKg),
     anomalyConfirmDeltaKg: toPositiveInteger(row.anomalyConfirmDeltaKg, DEFAULT_TELEMETRY_SETTINGS.anomalyConfirmDeltaKg),
     anomalyConfirmPackets: toPositiveInteger(row.anomalyConfirmPackets, DEFAULT_TELEMETRY_SETTINGS.anomalyConfirmPackets),
+    deviationPercentThreshold: toPositiveInteger(row.deviationPercentThreshold, DEFAULT_TELEMETRY_SETTINGS.deviationPercentThreshold),
+    deviationMinKgThreshold: toPositiveInteger(row.deviationMinKgThreshold, DEFAULT_TELEMETRY_SETTINGS.deviationMinKgThreshold),
+    rtkTrackResetTime: normalizeTime(row.rtkTrackResetTime, DEFAULT_TELEMETRY_SETTINGS.rtkTrackResetTime),
     createdAt: row.createdAt || null,
     updatedAt: row.updatedAt || null
   }
@@ -50,7 +69,7 @@ export async function getTelemetrySettings(db = prisma) {
 }
 
 export function validateTelemetrySettingsInput(payload = {}, { partial = false } = {}) {
-  const fields = [
+  const integerFields = [
     'batchStartThresholdKg',
     'leftoverThresholdKg',
     'unloadDropThresholdKg',
@@ -58,12 +77,14 @@ export function validateTelemetrySettingsInput(payload = {}, { partial = false }
     'unloadUpdateDeltaKg',
     'anomalyThresholdKg',
     'anomalyConfirmDeltaKg',
-    'anomalyConfirmPackets'
+    'anomalyConfirmPackets',
+    'deviationPercentThreshold',
+    'deviationMinKgThreshold'
   ]
 
   const data = {}
 
-  for (const field of fields) {
+  for (const field of integerFields) {
     if (payload[field] === undefined) {
       if (!partial) {
         data[field] = DEFAULT_TELEMETRY_SETTINGS[field]
@@ -79,6 +100,21 @@ export function validateTelemetrySettingsInput(payload = {}, { partial = false }
     }
 
     data[field] = parsed
+  }
+
+  if (payload.rtkTrackResetTime === undefined) {
+    if (!partial) {
+      data.rtkTrackResetTime = DEFAULT_TELEMETRY_SETTINGS.rtkTrackResetTime
+    }
+  } else {
+    const normalizedTime = normalizeTime(payload.rtkTrackResetTime, null)
+    if (!normalizedTime) {
+      return {
+        error: 'rtkTrackResetTime должен быть в формате HH:mm'
+      }
+    }
+
+    data.rtkTrackResetTime = normalizedTime
   }
 
   return { data }

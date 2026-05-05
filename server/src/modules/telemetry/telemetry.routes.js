@@ -418,7 +418,7 @@ router.post('/', async (req, res) => {
       }
 
       for (const batchId of batchIdsToRecalculate) {
-        await recalculateBatchViolations(tx, batchId)
+        await recalculateBatchViolations(tx, batchId, telemetrySettings)
         if (stickyViolationBatchIds.has(batchId)) {
           await tx.batch.update({
             where: { id: batchId },
@@ -491,7 +491,8 @@ router.post('/manual-stop', authenticate, requireWriteAccess, async (req, res) =
       }
     });
 
-    await recalculateBatchViolations(prisma, updatedBatch.id);
+    const telemetrySettings = await getTelemetrySettings(prisma)
+    await recalculateBatchViolations(prisma, updatedBatch.id, telemetrySettings);
     telemetryProcessor.clearDeviceState(updatedBatch.deviceId);
 
     res.json({
@@ -525,11 +526,19 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
     if (!data) return res.json(buildEmptyLatestResponse(requestedDeviceId));
 
     const memoryState = telemetryProcessor.getState(data.deviceId);
-    const [activeBatch, activeZones, effectivePosition] = await Promise.all([
+    const [activeBatch, activeZones, effectivePosition, telemetrySettings] = await Promise.all([
       prisma.batch.findFirst({
       where: { deviceId: data.deviceId, endTime: null },
       include: {
-        group: true,
+        group: {
+          include: {
+            ration: {
+              include: {
+                ingredients: true
+              }
+            }
+          }
+        },
         ration: { include: { ingredients: true } },
         actualIngredients: true
       },
@@ -539,7 +548,8 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
       resolveEffectiveCoordinates(prisma, data, {
         deviceId: data.deviceId,
         referenceTime: data.timestamp
-      })
+      }),
+      getTelemetrySettings(prisma)
     ]);
     const detectedZone = getZoneByCoordinates(effectivePosition.lat, effectivePosition.lon, activeZones);
 
@@ -585,7 +595,7 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
         id: activeBatch.id,
         rationId: activeBatch.rationId,
         groupId: activeBatch.groupId,
-        ingredients: buildIngredientSummary(activeBatch)
+        ingredients: buildIngredientSummary(activeBatch, telemetrySettings)
       };
     }
 

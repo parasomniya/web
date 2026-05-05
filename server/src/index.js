@@ -21,6 +21,7 @@
   import violationsRoutes from './modules/violations/violations.routes.js';
   import digestRoutes from './modules/digest/digest.routes.js';
   import { startDigestScheduler } from './modules/digest/digest-scheduler.js';
+  import { startRtkTrackScheduler } from './modules/telemetry/rtk-track-scheduler.js';
 
   const __filename = fileURLToPath(import.meta.url)
   const __dirname = path.dirname(__filename)
@@ -131,6 +132,7 @@
   })
 
   startDigestScheduler(prisma)
+  startRtkTrackScheduler(prisma)
 
   // Запуск
   //app.listen(PORT, () => {

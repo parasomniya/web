@@ -57,9 +57,6 @@ export function processRationRows(rawExelData) {
   if (!hasColumn(PLAN_COLUMNS)) {
     result.errors.push(`Не найдена колонка планового веса. Поддерживаются: ${PLAN_COLUMNS.join(', ')}`);
   }
-  if (!hasColumn(DRY_COLUMNS)) {
-    result.errors.push(`Не найдена колонка сухого вещества. Поддерживаются: ${DRY_COLUMNS.join(', ')}`);
-  }
 
   if (result.errors.length > 0) {
     result.success = false;
@@ -95,19 +92,22 @@ export function processRationRows(rawExelData) {
       return;
     }
 
-    // 4. Валидация: СВ
-    const dryMatterWeight = normalizeNumber(dryMatterWeightRaw);
-    if (isNaN(dryMatterWeight) || dryMatterWeight < 0) {
-      result.errors.push(`Строка ${lineNumber}: Сухое вещество '${dryMatterWeightRaw}' не является числом или меньше 0`);
-      result.success = false;
-      return;
-    }
+    // 4. СВ не обязательно. Если нет в файле — подставляем 0.
+    let dryMatterWeight = 0;
+    if (dryMatterWeightRaw !== undefined && String(dryMatterWeightRaw).trim() !== '') {
+      dryMatterWeight = normalizeNumber(dryMatterWeightRaw);
+      if (isNaN(dryMatterWeight) || dryMatterWeight < 0) {
+        result.errors.push(`Строка ${lineNumber}: Сухое вещество '${dryMatterWeightRaw}' не является числом или меньше 0`);
+        result.success = false;
+        return;
+      }
 
-    // 5. Физика: СВ <= вес
-    if (dryMatterWeight > plannedWeight) {
-      result.errors.push(`Строка ${lineNumber}: Сухое вещество (${dryMatterWeight}) не может быть больше планового веса (${plannedWeight})`);
-      result.success = false;
-      return;
+      // 5. Физика: СВ <= вес
+      if (dryMatterWeight > plannedWeight) {
+        result.errors.push(`Строка ${lineNumber}: Сухое вещество (${dryMatterWeight}) не может быть больше планового веса (${plannedWeight})`);
+        result.success = false;
+        return;
+      }
     }
 
     // 6. Успех — добавляем в результат
@@ -142,7 +142,7 @@ export function calculatePlan(parsedRation, headcount) {
   // 2. Проходим по каждому ингредиенту и считаем замес
   for (const item of parsedRation) {
     const targetWeight = item.plannedWeight * headcount;
-    const targetDryMatter = item.dryMatterWeight * headcount;
+    const targetDryMatter = Number(item.dryMatterWeight || 0) * headcount;
 
     // Суммируем общие показатели
     totalBatchWeight += targetWeight;
@@ -165,14 +165,46 @@ export function calculatePlan(parsedRation, headcount) {
 }
 
 
+function resolveViolationThresholds(thresholdOrOptions = 10, minDeviationKg = 0) {
+  if (thresholdOrOptions && typeof thresholdOrOptions === 'object') {
+    const percentRaw = Number(
+      thresholdOrOptions.percentThreshold
+      ?? thresholdOrOptions.deviationPercentThreshold
+      ?? thresholdOrOptions.threshold
+      ?? 10
+    );
+    const minKgRaw = Number(
+      thresholdOrOptions.minDeviationKg
+      ?? thresholdOrOptions.deviationMinKgThreshold
+      ?? thresholdOrOptions.minKg
+      ?? 0
+    );
+
+    return {
+      percentThreshold: Number.isFinite(percentRaw) && percentRaw > 0 ? percentRaw : 10,
+      minDeviationKg: Number.isFinite(minKgRaw) && minKgRaw > 0 ? minKgRaw : 0
+    };
+  }
+
+  const percentRaw = Number(thresholdOrOptions);
+  const minKgRaw = Number(minDeviationKg);
+
+  return {
+    percentThreshold: Number.isFinite(percentRaw) && percentRaw > 0 ? percentRaw : 10,
+    minDeviationKg: Number.isFinite(minKgRaw) && minKgRaw > 0 ? minKgRaw : 0
+  };
+}
+
 /**
  * Сравнивает идеальный план с тем, что реально насыпал тракторист
  * @param {Array} planArr - Массив ингредиентов из calculatePlan
  * @param {Array} factArr - Массив фактических загрузок
- * @param {number} threshold - Допустимый процент погрешности (по умолчанию 10)
+ * @param {number|object} thresholdOrOptions - Допустимое отклонение (процент или объект настроек)
+ * @param {number} minDeviationKg - Минимальное отклонение в кг (используется только с числовым третьим аргументом)
  * @returns {Object} { matches: [], violations: [] }
  */
-export function checkViolations(planArr, factArr, threshold = 10) {
+export function checkViolations(planArr, factArr, thresholdOrOptions = 10, minDeviationKg = 0) {
+  const { percentThreshold, minDeviationKg: minDeviationKgValue } = resolveViolationThresholds(thresholdOrOptions, minDeviationKg);
   const result = {
     matches: [],
     violations: []
@@ -212,12 +244,14 @@ export function checkViolations(planArr, factArr, threshold = 10) {
     // Формула: ((факт - план) / план) * 100
     const deviationPercent = ((factWeight - planWeight) / planWeight) * 100;
     const absDeviation = Math.abs(deviationPercent);
+    const absDeviationKg = Math.abs(factWeight - planWeight);
+    const allowedDeviationKg = Math.max((planWeight * percentThreshold) / 100, minDeviationKgValue);
     
     // Округляем до 1 знака после запятой
     const roundedDeviation = Math.round(deviationPercent * 10) / 10;
 
     // Проверяем, превышает ли отклонение порог
-    if (absDeviation > threshold) {
+    if (absDeviationKg > allowedDeviationKg) {
       // Определяем тип нарушения
       const deviationType = deviationPercent > 0 ? 'Перевес' : 'Недовес';
       const absRounded = Math.round(absDeviation * 10) / 10;

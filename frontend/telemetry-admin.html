@@ -473,9 +473,24 @@
                                         <input type="number" min="1" step="1" class="form-control" id="telemetryAnomalyConfirmPackets" name="anomalyConfirmPackets" required>
                                         <small class="form-text text-muted">Сколько подряд пакетов нужно, чтобы принять резкий переход как реальный.</small>
                                     </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryDeviationPercentThreshold">Порог отклонения, %</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryDeviationPercentThreshold" name="deviationPercentThreshold" required>
+                                        <small class="form-text text-muted">Процент отклонения от плана. Используется в формуле max(% от плана, минимум кг).</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryDeviationMinKgThreshold">Минимум отклонения, кг</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryDeviationMinKgThreshold" name="deviationMinKgThreshold" required>
+                                        <small class="form-text text-muted">Даже при маленьком плане нарушение сработает только при отклонении выше этого минимума.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryRtkTrackResetTime">Очистка RTK-трека</label>
+                                        <input type="time" step="60" class="form-control" id="telemetryRtkTrackResetTime" name="rtkTrackResetTime" required>
+                                        <small class="form-text text-muted">Фоновая очистка таблицы RTK каждый день по расписанию (часовой пояс сервера).</small>
+                                    </div>
                                 </div>
                                 <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                                    <div class="small text-muted" id="telemetrySettingsState">Настройки влияют на старт замеса, выгрузку, остаток и антишум тензодатчика.</div>
+                                    <div class="small text-muted" id="telemetrySettingsState">Настройки влияют на замес, нарушения, антишум и ежедневную очистку RTK-трека.</div>
                                     <button type="submit" class="btn btn-primary" id="telemetrySettingsSubmitButton">Сохранить настройки</button>
                                 </div>
                             </form>
@@ -614,7 +629,7 @@
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260429d"></script>
-    <script src="js/telemetry.js?v=20260505b"></script>
+    <script src="js/telemetry.js?v=20260505c"></script>
     <script src="js/admin-users.js?v=20260501a"></script>
 
 </body>
