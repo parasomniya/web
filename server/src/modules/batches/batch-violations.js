@@ -1,8 +1,34 @@
 import { calculatePlan, checkViolations, normalizeIngredientName } from '../../../../module-2/rationManager.js';
 import { syncBatchViolationLog } from '../violations/violation-service.js';
+import { getTelemetrySettings } from '../telemetry/telemetry-settings.js';
 
 function round1(value) {
     return Math.round(Number(value || 0) * 10) / 10;
+}
+
+export function resolveDeviationSettings(options = null) {
+    if (typeof options === 'number') {
+        return {
+            percentThreshold: options > 0 ? options : 10,
+            minDeviationKg: 10
+        };
+    }
+
+    const percentRaw = Number(
+        options?.percentThreshold
+        ?? options?.deviationPercentThreshold
+        ?? 10
+    );
+    const minKgRaw = Number(
+        options?.minDeviationKg
+        ?? options?.deviationMinKgThreshold
+        ?? 10
+    );
+
+    return {
+        percentThreshold: Number.isFinite(percentRaw) && percentRaw > 0 ? percentRaw : 10,
+        minDeviationKg: Number.isFinite(minKgRaw) && minKgRaw > 0 ? minKgRaw : 10
+    };
 }
 
 export function toDisplayIngredientName(value) {
@@ -29,15 +55,37 @@ export function aggregateFacts(ingredients) {
     return Array.from(facts.values());
 }
 
+function resolvePlanContext(batch) {
+    const groupHeadcount = Number(batch?.group?.headcount || 0);
+    const batchRationIngredients = Array.isArray(batch?.ration?.ingredients) ? batch.ration.ingredients : [];
+    const groupRationIngredients = Array.isArray(batch?.group?.ration?.ingredients) ? batch.group.ration.ingredients : [];
+
+    if (groupHeadcount <= 0) {
+        return { headcount: 0, ingredients: [] };
+    }
+
+    if (batchRationIngredients.length > 0) {
+        return { headcount: groupHeadcount, ingredients: batchRationIngredients };
+    }
+
+    if (groupRationIngredients.length > 0) {
+        return { headcount: groupHeadcount, ingredients: groupRationIngredients };
+    }
+
+    return { headcount: groupHeadcount, ingredients: [] };
+}
+
 export function getBatchPlan(batch) {
-    if (!batch?.ration?.ingredients || !batch?.group?.headcount) {
+    const context = resolvePlanContext(batch);
+    if (!context.ingredients.length || !context.headcount) {
         return { totalBatchWeight: 0, totalDryMatterWeight: 0, ingredients: [] };
     }
 
-    return calculatePlan(batch.ration.ingredients, batch.group.headcount);
+    return calculatePlan(context.ingredients, context.headcount);
 }
 
-export function buildIngredientSummary(batch, threshold = 10) {
+export function buildIngredientSummary(batch, deviationOptions = null) {
+    const deviationSettings = resolveDeviationSettings(deviationOptions);
     const plan = getBatchPlan(batch);
     const facts = aggregateFacts(batch?.actualIngredients || []);
     const hasPlanContext = plan.ingredients.length > 0;
@@ -54,11 +102,13 @@ export function buildIngredientSummary(batch, threshold = 10) {
         const name = toDisplayIngredientName(nameMap.get(key) || key || 'Unknown');
         const planWeight = planMap.get(key) || 0;
         const factWeight = factMap.get(key) || 0;
+        const deviationKg = factWeight - planWeight;
+        const allowedDeviationKg = Math.max((planWeight * deviationSettings.percentThreshold) / 100, deviationSettings.minDeviationKg);
         const deviationPercent = planWeight > 0
             ? Math.round(((factWeight - planWeight) / planWeight) * 1000) / 10
             : (factWeight > 0 ? 100 : 0);
         const isViolation = planWeight > 0
-            ? Math.abs(deviationPercent) > threshold
+            ? Math.abs(deviationKg) > allowedDeviationKg
             : (hasPlanContext
                 ? factWeight > 0
                 : Boolean(factWeight > 0 || persistedViolationMap.get(key) || key === 'unknown'));
@@ -88,11 +138,19 @@ export function buildUnloadProgress(batch, currentWeight, machineState = {}) {
     };
 }
 
-export async function recalculateBatchViolations(prisma, batchId, threshold = 10) {
+export async function recalculateBatchViolations(prisma, batchId, deviationOptions = null) {
     const batch = await prisma.batch.findUnique({
         where: { id: Number(batchId) },
         include: {
-            group: true,
+            group: {
+                include: {
+                    ration: {
+                        include: {
+                            ingredients: true
+                        }
+                    }
+                }
+            },
             ration: { include: { ingredients: true } },
             actualIngredients: true
         }
@@ -102,7 +160,8 @@ export async function recalculateBatchViolations(prisma, batchId, threshold = 10
         return { status: 'missing', hasViolations: false };
     }
 
-    if (!batch.ration || !batch.group || !batch.group.headcount) {
+    const plan = getBatchPlan(batch);
+    if (!plan.ingredients.length) {
         const facts = aggregateFacts(batch.actualIngredients);
         const syntheticViolations = facts
             .filter((item) => Number(item.actualWeight || 0) > 0)
@@ -140,9 +199,13 @@ export async function recalculateBatchViolations(prisma, batchId, threshold = 10
         };
     }
 
-    const plan = getBatchPlan(batch);
+    const settings = deviationOptions || await getTelemetrySettings(prisma);
+    const deviationSettings = resolveDeviationSettings(settings);
     const facts = aggregateFacts(batch.actualIngredients);
-    const check = checkViolations(plan.ingredients, facts, threshold);
+    const check = checkViolations(plan.ingredients, facts, {
+        percentThreshold: deviationSettings.percentThreshold,
+        minDeviationKg: deviationSettings.minDeviationKg
+    });
     const violationNames = new Set(check.violations.map((item) => normalizeIngredientName(item.ingredient)));
     const planByName = new Map(plan.ingredients.map((item) => [normalizeIngredientName(item.name), item.targetWeight]));
 

@@ -99,13 +99,20 @@ function validateIngredients(ingredients) {
       return { ok: false, error: `Ингредиент "${ingredientName}": plannedWeight должен быть > 0` };
     }
 
-    const dryMatterWeight = parseNumber(row.dryMatterWeight);
-    if (dryMatterWeight === null || dryMatterWeight < 0) {
-      return { ok: false, error: `Ингредиент "${ingredientName}": dryMatterWeight должен быть >= 0` };
-    }
+    const hasDryMatterWeight = row.dryMatterWeight !== undefined
+      && row.dryMatterWeight !== null
+      && String(row.dryMatterWeight).trim() !== '';
+    let dryMatterWeight = 0;
 
-    if (dryMatterWeight > plannedWeight) {
-      return { ok: false, error: `Ингредиент "${ingredientName}": dryMatterWeight не может быть больше plannedWeight` };
+    if (hasDryMatterWeight) {
+      dryMatterWeight = parseNumber(row.dryMatterWeight);
+      if (dryMatterWeight === null || dryMatterWeight < 0) {
+        return { ok: false, error: `Ингредиент "${ingredientName}": dryMatterWeight должен быть >= 0` };
+      }
+
+      if (dryMatterWeight > plannedWeight) {
+        return { ok: false, error: `Ингредиент "${ingredientName}": dryMatterWeight не может быть больше plannedWeight` };
+      }
     }
 
     result.push({

@@ -83,7 +83,21 @@ export async function collectReportData({ fromDate = null, toDate = null, limit 
                 select: {
                     id: true,
                     name: true,
-                    headcount: true
+                    headcount: true,
+                    ration: {
+                        select: {
+                            id: true,
+                            name: true,
+                            ingredients: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    plannedWeight: true,
+                                    dryMatterWeight: true
+                                }
+                            }
+                        }
+                    }
                 }
             },
             ration: {
