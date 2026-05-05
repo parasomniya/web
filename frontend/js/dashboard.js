@@ -1,21 +1,24 @@
 const API_BASE = window.AppAuth?.getApiUrl?.("/api/telemetry/host") || "/api/telemetry/host";
 const RTK_API_BASE = window.AppAuth?.getApiUrl?.("/api/telemetry/rtk") || "/api/telemetry/rtk";
 const ZONES_API = window.AppAuth?.getApiUrl?.("/api/telemetry/zones") || "/api/telemetry/zones";
-const CLEAR_HISTORY_API = `${API_BASE}/admin/truncate`;
+const CLEAR_HOST_HISTORY_API = `${API_BASE}/admin/truncate`;
+const CLEAR_RTK_HISTORY_API = `${RTK_API_BASE}/admin/truncate`;
 const HISTORY_LIMIT = 100000;
 const DEFAULT_COORDS = [54.84, 83.09];
 const LATEST_POLL_INTERVAL_MS = 1000;
 const ZONES_POLL_INTERVAL_MS = 10000;
 const OFFLINE_THRESHOLD_MS = 15000;
-const DEFAULT_MAP_TYPE = "yandex#map";
+const DEFAULT_MAP_TYPE = "yandex#satellite";
 const ZONE_BANNER_DISPLAY_MS = 4500;
 const DEFAULT_ZONE_RADIUS = 20;
 const DEFAULT_SQUARE_SIDE = 40;
-const HOST_TRACK_COLOR = "#1cc88a";
-const RTK_TRACK_COLOR = "#d93636";
+const ZONE_TYPE_BARN = "BARN";
+const HOST_TRACK_COLOR = "#4e73df";
+const RTK_GPS_FIX_COLOR = "#e74a3b";
+const RTK_FIX_COLOR = "#1cc88a";
 const OFFLINE_MARKER_COLOR = "#858796";
-const HOST_MARKER_IMAGE_URL = "img/host-marker-source.png";
-const RTK_MARKER_IMAGE_URL = "img/loader-marker-source.png";
+const HOST_MARKER_IMAGE_URL = "img/host.svg";
+const RTK_MARKER_IMAGE_URL = "img/rtk.svg";
 
 let map;
 let placemark;
@@ -44,6 +47,7 @@ let currentUndoAlert = null;
 let undoAlertTimerId = null;
 let lastTelemetryChangeAt = 0;
 let lastTelemetrySnapshotKey = null;
+let isFetchingHistory = false;
 let isMarkerTrackingEnabled = false;
 let markerTrackingTarget = "all";
 let mapTrackToggleButton = null;
@@ -176,6 +180,36 @@ function escapeHtml(value) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
+}
+
+function buildMapBalloonContent({ title, accentColor, rows }) {
+    const safeAccent = /^#[0-9a-f]{6}$/i.test(accentColor) ? accentColor : "#4e73df";
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const rowMarkup = safeRows
+        .filter((row) => row && row.label)
+        .map((row) => {
+            const value = row.value === null || row.value === undefined || row.value === "" ? "--" : row.value;
+
+            return `
+                <div style="display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;align-items:start;">
+                    <div style="color:#7a8699;font-size:12px;line-height:1.25;">${escapeHtml(row.label)}</div>
+                    <div style="color:#1f2937;font-size:13px;font-weight:600;line-height:1.25;word-break:break-word;">${escapeHtml(value)}</div>
+                </div>
+            `;
+        })
+        .join("");
+
+    return `
+        <div style="min-width:250px;max-width:310px;padding:2px 0 1px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+            <div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid #eef1f6;">
+                <span style="width:10px;height:10px;border-radius:999px;background:${safeAccent};box-shadow:0 0 0 4px ${safeAccent}22;flex:0 0 auto;"></span>
+                <div style="color:#111827;font-size:15px;font-weight:800;line-height:1.2;">${escapeHtml(title)}</div>
+            </div>
+            <div style="display:grid;gap:7px;">
+                ${rowMarkup}
+            </div>
+        </div>
+    `.trim();
 }
 
 const latestFetchState = {
@@ -417,38 +451,42 @@ function setVehicleStatus(isOnline) {
     element.classList.toggle("offline", !isOnline);
 }
 
-function buildMarkerSvg(color, imageUrl) {
+function getMarkerLayout(color, imageUrl) {
     const safeColor = /^#[0-9a-f]{6}$/i.test(color) ? color : OFFLINE_MARKER_COLOR;
-    const safeImageUrl = String(imageUrl || "").replace(/"/g, "%22");
+    const safeImageUrl = String(imageUrl || "").replace(/"/g, "&quot;");
 
-    return `
-        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="50" viewBox="0 0 40 50">
-            <ellipse cx="25" cy="46" rx="9" ry="3" fill="#000" opacity="0.18"/>
-            <path d="M20 49C15.9 41.9 5.5 35.4 5.5 21.4C5.5 11.2 11.9 4.5 20 4.5s14.5 6.7 14.5 16.9C34.5 35.4 24.1 41.9 20 49z" fill="${safeColor}"/>
-            <circle cx="20" cy="20.5" r="12.2" fill="#fff"/>
-            <clipPath id="markerIconClip">
-                <circle cx="20" cy="20.5" r="9.2"/>
-            </clipPath>
-            <image href="${safeImageUrl}" x="9.4" y="12.1" width="21.2" height="16.8" preserveAspectRatio="xMidYMid meet" clip-path="url(#markerIconClip)"/>
-        </svg>
-    `.trim();
+    return ymaps.templateLayoutFactory.createClass(`
+        <div style="position:relative;left:-22px;top:-22px;width:44px;height:44px;">
+            <div style="position:absolute;left:4px;top:5px;width:36px;height:36px;border-radius:8px;background:rgba(0,0,0,0.16);"></div>
+            <div style="position:absolute;left:2px;top:2px;width:36px;height:36px;border-radius:8px;background:${safeColor};display:flex;align-items:center;justify-content:center;">
+                <div style="width:25.6px;height:25.6px;border-radius:5px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+                    <img src="${safeImageUrl}" alt="" style="display:block;width:22px;height:22px;object-fit:contain;">
+                </div>
+            </div>
+        </div>
+    `);
 }
 
-function markerSvgToDataUrl(svg) {
-    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+function getRtkFixColor(data, isOnline = true) {
+    if (!isOnline) {
+        return OFFLINE_MARKER_COLOR;
+    }
+
+    return isRtkFixed(data) ? RTK_FIX_COLOR : RTK_GPS_FIX_COLOR;
 }
 
-function getMarkerOptions(kind, isOnline) {
+function getMarkerOptions(kind, isOnline, data = null) {
     const color = kind === "rtk"
-        ? (isOnline ? RTK_TRACK_COLOR : OFFLINE_MARKER_COLOR)
-        : (isOnline ? HOST_TRACK_COLOR : OFFLINE_MARKER_COLOR);
+        ? getRtkFixColor(data, isOnline)
+        : HOST_TRACK_COLOR;
     const imageUrl = kind === "rtk" ? RTK_MARKER_IMAGE_URL : HOST_MARKER_IMAGE_URL;
 
     return {
-        iconLayout: "default#image",
-        iconImageHref: markerSvgToDataUrl(buildMarkerSvg(color, imageUrl)),
-        iconImageSize: [40, 50],
-        iconImageOffset: [-20, -48],
+        iconLayout: getMarkerLayout(color, imageUrl),
+        iconShape: {
+            type: "Rectangle",
+            coordinates: [[-22, -22], [22, 22]],
+        },
     };
 }
 
@@ -525,6 +563,20 @@ function normalizeShapeType(value) {
     return String(value || "CIRCLE").trim().toUpperCase() === "SQUARE" ? "SQUARE" : "CIRCLE";
 }
 
+function normalizeZoneType(value) {
+    return String(value || "").trim().toUpperCase() === ZONE_TYPE_BARN ? "BARN" : "STORAGE";
+}
+
+function getZoneTypeLabel(zone) {
+    return normalizeZoneType(zone?.zoneType) === "BARN" ? "Коровник" : "Зона хранения";
+}
+
+function getZoneTypeColors(zone) {
+    return normalizeZoneType(zone?.zoneType) === "BARN"
+        ? { fillColor: "#36b9cc44", strokeColor: "#138496" }
+        : { fillColor: "#00c85355", strokeColor: "#1e88e5" };
+}
+
 function parseZoneNumber(value) {
     if (value === "" || value === null || value === undefined) {
         return null;
@@ -583,6 +635,7 @@ function normalizeZone(zone) {
 
     const normalized = {
         ...zone,
+        zoneType: normalizeZoneType(zone?.zoneType),
         shapeType: normalizeShapeType(zone?.shapeType),
         lat: Number(zone?.lat),
         lon: Number(zone?.lon),
@@ -1045,8 +1098,33 @@ function updateMapPosition(data, isOnline) {
     }
 
     const newCoords = [Number(data.lat), Number(data.lon)];
+    const zoneName = getCurrentZoneName(newCoords[0], newCoords[1]) || data?.banner?.zoneName || data?.zone?.name || "Вне зоны";
+    const packetState = isOnline ? "Свежий пакет" : "Нет свежих пакетов";
+    const gpsValid = data?.gpsValid == null ? null : asBoolean(data.gpsValid);
+    const gpsLabel = gpsValid === null
+        ? (data?.gpsQuality != null ? `Q${data.gpsQuality}` : "--")
+        : `${gpsValid ? "GPS fix" : "Нет GPS fix"}${data?.gpsQuality != null ? ` • Q${data.gpsQuality}` : ""}`;
+    const balloonContent = buildMapBalloonContent({
+        title: "Хозяин",
+        accentColor: HOST_TRACK_COLOR,
+        rows: [
+            { label: "Устройство", value: data?.deviceId || "--" },
+            { label: "Статус", value: packetState },
+            { label: "Режим", value: data?.mode || "Ожидание" },
+            { label: "GPS", value: gpsLabel },
+            { label: "Спутники", value: data?.gpsSatellites ?? "--" },
+            { label: "Вес", value: data?.weight != null ? `${formatMetric(data.weight, 1)} кг` : "--" },
+            { label: "Координаты", value: `${newCoords[0].toFixed(6)}, ${newCoords[1].toFixed(6)}` },
+            { label: "Зона", value: zoneName },
+        ],
+    });
+
     ensurePlacemarkVisible();
     updatePlacemarkStatus(isOnline);
+    placemark.properties.set({
+        balloonContent,
+        hintContent: `Хозяин - ${packetState}`,
+    });
     syncMapActionButtons();
 
     if (!hasLiveCoordinates) {
@@ -1074,6 +1152,13 @@ function getRtkQualityLabel(data) {
     return data.qualityLabel || data.rtkQuality || (data.quality != null ? `Q${data.quality}` : "--");
 }
 
+function isRtkFixed(data) {
+    const label = String(data?.qualityLabel || data?.rtkQuality || "").toLowerCase();
+    const quality = Number(data?.quality);
+
+    return label.includes("fixed") || quality >= 4;
+}
+
 function getRtkQualityTone(data) {
     if (!isPacketOnline(data?.timestamp)) {
         return "stale";
@@ -1082,7 +1167,7 @@ function getRtkQualityTone(data) {
     const label = String(data?.qualityLabel || data?.rtkQuality || "").toLowerCase();
     const quality = Number(data?.quality);
 
-    if (label.includes("fixed") || quality >= 4) {
+    if (isRtkFixed(data)) {
         return "fixed";
     }
 
@@ -1139,14 +1224,18 @@ function updateRtkMapPosition(data) {
     const qualityLabel = getRtkQualityLabel(data);
     const zoneName = getCurrentZoneName(coords[0], coords[1]) || data?.zone?.name || "Вне зоны";
     const isOnline = isPacketOnline(data?.timestamp);
-    const balloonContent = `
-        <strong>Погрузчик</strong><br>
-        Устройство: ${escapeHtml(data?.deviceId || "--")}<br>
-        Статус: ${isOnline ? "Свежий пакет" : "Нет свежих пакетов"}<br>
-        Статус качества: ${escapeHtml(qualityLabel)}<br>
-        Координаты: ${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}<br>
-        Зона: ${escapeHtml(zoneName)}
-    `;
+    const packetState = isOnline ? "Свежий пакет" : "Нет свежих пакетов";
+    const balloonContent = buildMapBalloonContent({
+        title: "Погрузчик",
+        accentColor: getRtkFixColor(data, isOnline),
+        rows: [
+            { label: "Устройство", value: data?.deviceId || "--" },
+            { label: "Статус", value: packetState },
+            { label: "Fix", value: qualityLabel },
+            { label: "Координаты", value: `${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}` },
+            { label: "Зона", value: zoneName },
+        ],
+    });
 
     if (!rtkPlacemark) {
         rtkPlacemark = new ymaps.Placemark(
@@ -1156,7 +1245,7 @@ function updateRtkMapPosition(data) {
                 hintContent: `Погрузчик - ${qualityLabel}`,
             },
             {
-                ...getMarkerOptions("rtk", isOnline),
+                ...getMarkerOptions("rtk", isOnline, data),
             }
         );
     } else {
@@ -1165,7 +1254,7 @@ function updateRtkMapPosition(data) {
             balloonContent,
             hintContent: `Погрузчик - ${qualityLabel}`,
         });
-        rtkPlacemark.options.set(getMarkerOptions("rtk", isOnline));
+        rtkPlacemark.options.set(getMarkerOptions("rtk", isOnline, data));
     }
 
     ensureRtkPlacemarkVisible();
@@ -1229,11 +1318,13 @@ function renderZones() {
 
     zoneCircles = storageZones.filter((zone) => Boolean(zone.active)).map((zone) => {
         const shapeLabel = normalizeShapeType(zone.shapeType) === "SQUARE" ? "Квадрат" : "Кружок";
+        const zoneColors = getZoneTypeColors(zone);
         const sizeLabel = normalizeShapeType(zone.shapeType) === "SQUARE"
             ? `${Math.max(1, Math.round(Number(zone.sideMeters || DEFAULT_SQUARE_SIDE)))} м`
             : `${Math.max(1, Math.round(Number(zone.radius || DEFAULT_ZONE_RADIUS)))} м`;
         const balloonContent = `
             <strong>${escapeHtml(getZoneLabel(zone))}</strong><br>
+            Тип: ${getZoneTypeLabel(zone)}<br>
             Форма: ${shapeLabel}<br>
             Lat: ${Number(zone.lat).toFixed(6)}<br>
             Lon: ${Number(zone.lon).toFixed(6)}<br>
@@ -1246,8 +1337,8 @@ function renderZones() {
                 [zone.polygonCoords],
                 { balloonContent },
                 {
-                    fillColor: "#00c85355",
-                    strokeColor: "#1e88e5",
+                    fillColor: zoneColors.fillColor,
+                    strokeColor: zoneColors.strokeColor,
                     strokeOpacity: 0.9,
                     strokeWidth: 2,
                 }
@@ -1258,8 +1349,8 @@ function renderZones() {
             ], {
                 balloonContent,
             }, {
-                fillColor: "#00c85355",
-                strokeColor: "#1e88e5",
+                fillColor: zoneColors.fillColor,
+                strokeColor: zoneColors.strokeColor,
                 strokeOpacity: 0.9,
                 strokeWidth: 2,
             });
@@ -1298,10 +1389,16 @@ function buildRouteCoords(historyRows) {
 function renderRoute(historyRows) {
     if (!map) return;
 
-    clearRoutePolyline();
     const routeCoords = buildRouteCoords(historyRows);
 
     if (routeCoords.length < 2) {
+        clearRoutePolyline();
+        return;
+    }
+
+    if (routePolyline) {
+        routePolyline.geometry.setCoordinates(routeCoords);
+        routePolyline.options.set("strokeColor", HOST_TRACK_COLOR);
         return;
     }
 
@@ -1319,17 +1416,28 @@ function renderRoute(historyRows) {
 function renderRtkRoute(historyRows) {
     if (!map) return;
 
-    clearRtkRoutePolyline();
     const routeCoords = buildRouteCoords(historyRows);
+    const latestRoutePoint = Array.isArray(historyRows)
+        ? historyRows.find((row) => hasValidCoordinates(row?.lat, row?.lon))
+        : null;
 
     if (routeCoords.length < 2) {
+        clearRtkRoutePolyline();
+        return;
+    }
+
+    const routeColor = getRtkFixColor(latestRtkTelemetry || latestRoutePoint, true);
+
+    if (rtkRoutePolyline) {
+        rtkRoutePolyline.geometry.setCoordinates(routeCoords);
+        rtkRoutePolyline.options.set("strokeColor", routeColor);
         return;
     }
 
     rtkRoutePolyline = new ymaps.Polyline(routeCoords, {
         balloonContent: "Маршрут погрузчика",
     }, {
-        strokeColor: RTK_TRACK_COLOR,
+        strokeColor: routeColor,
         strokeWidth: 4,
         strokeOpacity: 0.8,
     });
@@ -1369,6 +1477,12 @@ async function fetchLatest() {
 }
 
 async function fetchHistory() {
+    if (isFetchingHistory) {
+        return;
+    }
+
+    isFetchingHistory = true;
+
     try {
         const [hostResponse, rtkResponse] = await Promise.all([
             fetch(getHistoryApiUrl(), { headers: getHeaders() }),
@@ -1376,8 +1490,6 @@ async function fetchHistory() {
         ]);
 
         if (!hostResponse.ok) {
-            clearRoutePolyline();
-            clearRtkRoutePolyline();
             return;
         }
 
@@ -1387,13 +1499,11 @@ async function fetchHistory() {
         if (rtkResponse && rtkResponse.ok) {
             const rtkHistoryRows = await rtkResponse.json();
             renderRtkRoute(rtkHistoryRows);
-        } else {
-            clearRtkRoutePolyline();
         }
     } catch (error) {
         console.error("Error fetching history:", error);
-        clearRoutePolyline();
-        clearRtkRoutePolyline();
+    } finally {
+        isFetchingHistory = false;
     }
 }
 
@@ -1433,10 +1543,83 @@ function buildTelemetryRestorePayload(row) {
     };
 }
 
-async function fetchTelemetrySnapshot() {
-    const response = await fetch(getHistoryApiUrl(), { headers: getHeaders() });
+function parseRawPayload(value) {
+    if (typeof value !== "string" || !value.trim()) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(value);
+    } catch (error) {
+        return null;
+    }
+}
+
+function buildRtkTelemetryRestorePayload(row) {
+    const rawPayload = parseRawPayload(row.rawPayload) || {};
+
+    return {
+        ...rawPayload,
+        deviceId: row.deviceId || rawPayload.deviceId || rawPayload.device_id || "host_01",
+        timestamp: row.timestamp || rawPayload.timestamp,
+        lat: row.lat == null ? rawPayload.lat : Number(row.lat),
+        lon: row.lon == null ? rawPayload.lon : Number(row.lon),
+        quality: row.quality ?? rawPayload.quality ?? rawPayload.fixQuality ?? null,
+        rtkQuality: row.rtkQuality ?? row.qualityLabel ?? rawPayload.rtkQuality ?? null,
+        rtkAge: row.rtkAge ?? row.corrAgeS ?? rawPayload.rtkAge ?? null,
+        speed: row.speed ?? rawPayload.speed ?? null,
+        course: row.course ?? rawPayload.course ?? null,
+        supplyVoltage: row.supplyVoltage ?? rawPayload.supplyVoltage ?? null,
+        satellites: row.satellites ?? rawPayload.satellites ?? null,
+        fixType: row.fixType ?? rawPayload.fixType ?? null,
+    };
+}
+
+function getTrackConfig(track) {
+    if (track === "rtk") {
+        return {
+            apiBase: RTK_API_BASE,
+            clearApi: CLEAR_RTK_HISTORY_API,
+            historyApi: getRtkHistoryApiUrl(),
+            buttonId: "clearRtkTelemetryButton",
+            label: "Погрузчик",
+            buildRestorePayload: buildRtkTelemetryRestorePayload,
+            afterClear: () => {
+                clearRtkRoutePolyline();
+                latestRtkTelemetry = null;
+                hideRtkPlacemark();
+                updateRtkMapChip(null);
+                syncTelemetryZoneBanners();
+                syncMapActionButtons();
+            },
+        };
+    }
+
+    return {
+        apiBase: API_BASE,
+        clearApi: CLEAR_HOST_HISTORY_API,
+        historyApi: getHistoryApiUrl(),
+        buttonId: "clearHostTelemetryButton",
+        label: "Хозяин",
+        buildRestorePayload: buildTelemetryRestorePayload,
+        afterClear: () => {
+            showBanner(null);
+            clearRoutePolyline();
+            latestTelemetry = null;
+            hidePlacemark();
+            hasLiveCoordinates = false;
+            renderDashboard(null);
+            syncTelemetryZoneBanners();
+            syncMapActionButtons();
+        },
+    };
+}
+
+async function fetchTelemetrySnapshot(track) {
+    const config = getTrackConfig(track);
+    const response = await fetch(config.historyApi, { headers: getHeaders() });
     if (!response.ok) {
-        let errorMessage = "Не удалось получить историю телеметрии перед очисткой";
+        let errorMessage = `Не удалось получить историю трека (${config.label}) перед очисткой`;
 
         try {
             const payload = await response.json();
@@ -1477,22 +1660,23 @@ async function restoreTelemetryHistory(context) {
 
     try {
         const rowsToRestore = Array.isArray(snapshot.rows) ? snapshot.rows.slice().reverse() : [];
+        const config = getTrackConfig(snapshot.track);
 
         if (!rowsToRestore.length) {
             removeUndoAlert();
-            window.AppAuth?.showAlert?.("История уже была пустой", "warning");
+            window.AppAuth?.showAlert?.(`Трек (${config.label}) уже был пустой`, "warning");
             return;
         }
 
         for (const row of rowsToRestore) {
-            const response = await fetch(API_BASE, {
+            const response = await fetch(config.apiBase, {
                 method: "POST",
                 headers: getHeaders(),
-                body: JSON.stringify(buildTelemetryRestorePayload(row)),
+                body: JSON.stringify(config.buildRestorePayload(row)),
             });
 
             if (!response.ok) {
-                let errorMessage = "Не удалось отменить очистку трека";
+                let errorMessage = `Не удалось отменить очистку трека (${config.label})`;
 
                 try {
                     const payload = await response.json();
@@ -1510,7 +1694,7 @@ async function restoreTelemetryHistory(context) {
         removeUndoAlert();
 
         await Promise.all([fetchLatest(), fetchHistory(), fetchZones()]);
-        window.AppAuth?.showAlert?.("Очистка трека отменена", "success");
+        window.AppAuth?.showAlert?.(`Очистка трека (${config.label}) отменена`, "success");
     } catch (error) {
         pendingTelemetryUndo = snapshot;
 
@@ -1546,9 +1730,9 @@ function removeUndoAlert() {
     currentUndoAlert = null;
 }
 
-function showTelemetryUndoAlert() {
+function showTelemetryUndoAlert(trackLabel) {
     removeUndoAlert();
-    const alert = window.AppAuth?.showAlert?.("История телеметрии очищена", "success", {
+    const alert = window.AppAuth?.showAlert?.(`Трек (${trackLabel}) очищен`, "success", {
         actionLabel: "Отменить",
         actionClassName: "btn btn-sm font-weight-bold mt-2 mt-sm-0 px-3 flex-shrink-0",
         onAction: ({ alert: alertElement, button, text }) => {
@@ -1569,27 +1753,28 @@ function showTelemetryUndoAlert() {
     }, 10000);
 }
 
-async function clearTelemetryHistory() {
+async function clearTelemetryHistory(track = "host") {
     if (!hasWriteAccess()) {
         return;
     }
 
+    const config = getTrackConfig(track);
     pendingTelemetryUndo = null;
 
-    const button = document.getElementById("clearTelemetryButton");
+    const button = document.getElementById(config.buttonId);
     if (button) {
         button.disabled = true;
     }
 
     try {
-        const snapshotRows = await fetchTelemetrySnapshot();
-        const response = await fetch(CLEAR_HISTORY_API, {
+        const snapshotRows = await fetchTelemetrySnapshot(track);
+        const response = await fetch(config.clearApi, {
             method: "DELETE",
             headers: getHeaders(),
         });
 
         if (!response.ok) {
-            let errorMessage = "Не удалось очистить телеметрию";
+            let errorMessage = `Не удалось очистить трек (${config.label})`;
 
             try {
                 const payload = await response.json();
@@ -1603,16 +1788,12 @@ async function clearTelemetryHistory() {
             throw new Error(errorMessage);
         }
 
-        showBanner(null);
-        clearRoutePolyline();
-        clearRtkRoutePolyline();
-        latestTelemetry = null;
-        renderDashboard(null);
-        pendingTelemetryUndo = { rows: snapshotRows };
-        showTelemetryUndoAlert();
+        config.afterClear();
+        pendingTelemetryUndo = { rows: snapshotRows, track };
+        showTelemetryUndoAlert(config.label);
     } catch (error) {
         console.error("Error clearing telemetry history:", error);
-        window.AppAuth?.showAlert?.(error.message || "Не удалось очистить телеметрию", "danger");
+        window.AppAuth?.showAlert?.(error.message || `Не удалось очистить трек (${config.label})`, "danger");
     } finally {
         if (button) {
             button.disabled = false;
@@ -1710,12 +1891,12 @@ function ensureBannerStyles() {
             white-space: nowrap;
         }
         .dashboard-zone-banner--host {
-            background-color: #1a6b3d;
-            box-shadow: 0 5px 12px rgba(0, 50, 0, 0.35);
+            background-color: #4e73df;
+            box-shadow: 0 5px 12px rgba(34, 74, 190, 0.35);
         }
         .dashboard-zone-banner--rtk {
-            background-color: #d93636;
-            box-shadow: 0 5px 12px rgba(120, 20, 20, 0.35);
+            background-color: #1cc88a;
+            box-shadow: 0 5px 12px rgba(28, 200, 138, 0.35);
         }
         @media (max-width: 576px) {
             #banner-container {
@@ -2006,9 +2187,14 @@ function init() {
     fetchHistory();
     setInterval(fetchHistory, LATEST_POLL_INTERVAL_MS);
 
-    const clearTelemetryButton = document.getElementById("clearTelemetryButton");
-    if (clearTelemetryButton) {
-        clearTelemetryButton.addEventListener("click", clearTelemetryHistory);
+    const clearHostTelemetryButton = document.getElementById("clearHostTelemetryButton");
+    if (clearHostTelemetryButton) {
+        clearHostTelemetryButton.addEventListener("click", () => clearTelemetryHistory("host"));
+    }
+
+    const clearRtkTelemetryButton = document.getElementById("clearRtkTelemetryButton");
+    if (clearRtkTelemetryButton) {
+        clearRtkTelemetryButton.addEventListener("click", () => clearTelemetryHistory("rtk"));
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);

@@ -5,6 +5,7 @@ import { requireReadAccess, requireWriteAccess } from "../../middleware/auth.js"
 const router = Router()
 const DEFAULT_RADIUS = 20
 const DEFAULT_SIDE_METERS = 40
+const ZONE_TYPES = new Set(['STORAGE', 'BARN'])
 
 function parseId(value) {
   const id = parseInt(value, 10)
@@ -32,6 +33,11 @@ function parseNumberField(value) {
 function normalizeShapeType(value) {
   const normalized = String(value || 'CIRCLE').trim().toUpperCase()
   return normalized === 'SQUARE' ? 'SQUARE' : 'CIRCLE'
+}
+
+function normalizeZoneType(value) {
+  const normalized = String(value || '').trim().toUpperCase()
+  return ZONE_TYPES.has(normalized) ? normalized : null
 }
 
 function normalizeZoneName(value) {
@@ -109,6 +115,16 @@ function normalizeZonePayload(body, options = {}) {
     ? normalizeShapeType(body.shapeType)
     : normalizeShapeType(currentZone?.shapeType)
 
+  if (!partial || body.zoneType !== undefined) {
+    const zoneType = body.zoneType !== undefined
+      ? normalizeZoneType(body.zoneType)
+      : normalizeZoneType(currentZone?.zoneType)
+    if (!zoneType) {
+      return { ok: false, error: 'Выберите тип зоны' }
+    }
+    data.zoneType = zoneType
+  }
+
   if (!partial || body.name !== undefined) {
     const name = normalizeZoneName(body.name)
     if (!name) {
@@ -120,7 +136,7 @@ function normalizeZonePayload(body, options = {}) {
   if (!partial || body.ingredient !== undefined) {
     const ingredient = normalizeZoneName(body.ingredient)
     if (!ingredient) {
-      return { ok: false, error: 'Ингредиент не может быть пустым' }
+      return { ok: false, error: 'Название не может быть пустым' }
     }
     data.ingredient = ingredient
   }
@@ -257,11 +273,23 @@ router.get('/', requireReadAccess, async (req, res) => {
     if (!includeInactive.ok) {
       return res.status(400).json({ error: 'Параметр includeInactive должен быть boolean true/false' })
     }
+    const zoneType = req.query.type !== undefined || req.query.zoneType !== undefined
+      ? normalizeZoneType(req.query.type ?? req.query.zoneType)
+      : null
+    if ((req.query.type !== undefined || req.query.zoneType !== undefined) && !zoneType) {
+      return res.status(400).json({ error: 'Параметр type должен быть STORAGE или BARN' })
+    }
+
+    const where = {
+      ...(includeInactive.value ? {} : { active: true }),
+      ...(zoneType ? { zoneType } : {})
+    }
 
     const zones = await prisma.storageZone.findMany({
-      where: includeInactive.value ? undefined : { active: true },
+      where,
       orderBy: [
         { active: 'desc' },
+        { zoneType: 'asc' },
         { id: 'asc' }
       ]
     })

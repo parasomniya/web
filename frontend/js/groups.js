@@ -27,7 +27,7 @@ $(document).ready(function () {
 
     const GROUPS_API_URL = window.AppAuth?.getApiUrl?.("/api/groups") || "/api/groups";
     const RATIONS_API_URL = window.AppAuth?.getApiUrl?.("/api/rations") || "/api/rations";
-    const STORAGE_ZONES_API_URL = window.AppAuth?.getApiUrl?.("/api/telemetry/zones") || "/api/telemetry/zones";
+    const STORAGE_ZONES_API_URL = window.AppAuth?.getApiUrl?.("/api/telemetry/zones?type=BARN") || "/api/telemetry/zones?type=BARN";
     const canWrite = Boolean(window.AppAuth?.hasWriteAccess?.());
     const numberFormatter = new Intl.NumberFormat("ru-RU", {
         minimumFractionDigits: 0,
@@ -154,6 +154,10 @@ $(document).ready(function () {
         return state.storageZones.find((zone) => Number(zone?.id) === normalizedZoneId) || null;
     }
 
+    function isBarnZone(zone) {
+        return String(zone?.zoneType || "").trim().toUpperCase() === "BARN";
+    }
+
     function normalizeZoneShape(zone) {
         return String(zone?.shapeType || "CIRCLE").trim().toUpperCase() === "SQUARE" ? "SQUARE" : "CIRCLE";
     }
@@ -194,7 +198,8 @@ $(document).ready(function () {
     function getStorageZoneForGroup(group) {
         const storageZoneId = Number(group?.storageZoneId);
         if (Number.isInteger(storageZoneId) && storageZoneId > 0) {
-            return getStorageZoneById(storageZoneId) || group?.storageZone || null;
+            const linkedZone = getStorageZoneById(storageZoneId) || group?.storageZone || null;
+            return isBarnZone(linkedZone) ? linkedZone : null;
         }
 
         return state.storageZones.find((zone) => zonesMatchGroup(zone, group)) || null;
@@ -220,7 +225,7 @@ $(document).ready(function () {
 
         return `
             <div class="groups-zone-cell">
-                <span class="groups-zone-name text-muted">Зона не найдена</span>
+                <span class="groups-zone-name text-muted">Коровник не найден</span>
                 <div class="groups-zone-cell__meta">${escapeHtml(lat)}, ${escapeHtml(lon)}</div>
             </div>
         `;
@@ -339,7 +344,7 @@ $(document).ready(function () {
     }
 
     function buildStorageZoneOptionsMarkup(selectedZoneId) {
-        const options = ['<option value="">Выберите зону</option>'];
+        const options = ['<option value="">Выберите коровник</option>'];
         const normalizedSelectedId = Number.isInteger(Number(selectedZoneId)) && Number(selectedZoneId) > 0
             ? Number(selectedZoneId)
             : null;
@@ -409,15 +414,15 @@ $(document).ready(function () {
                 (!state.rationLookupLoaded && !state.rationLookupError)
                 || (!state.storageZoneLookupLoaded && !state.storageZoneLookupError)
             ) {
-                formMeta.textContent = "Подтягиваем списки рационов и зон хранения...";
+                formMeta.textContent = "Подтягиваем списки рационов и коровников...";
             } else if (state.rationLookupError) {
                 formMeta.textContent = "Список рационов недоступен. Группу можно создать без привязки.";
             } else if (state.storageZoneLookupError) {
-                formMeta.textContent = "Список зон хранения недоступен. Создание группы временно отключено.";
+                formMeta.textContent = "Список коровников недоступен. Создание группы временно отключено.";
             } else if (state.storageZones.length === 0) {
-                formMeta.textContent = "Сначала добавьте хотя бы одну зону хранения.";
+                formMeta.textContent = "Сначала добавьте хотя бы один коровник.";
             } else {
-                formMeta.textContent = `Доступно рационов: ${state.rations.length}, зон хранения: ${state.storageZones.length}`;
+                formMeta.textContent = `Доступно рационов: ${state.rations.length}, коровников: ${state.storageZones.length}`;
             }
         }
     }
@@ -458,7 +463,7 @@ $(document).ready(function () {
             } else if (state.rationLookupError || state.storageZoneLookupError) {
                 editMeta.textContent = "Один из справочников недоступен. Обновите страницу или попробуйте позже.";
             } else {
-                editMeta.textContent = "Можно изменить поголовье, рацион и зону хранения.";
+                editMeta.textContent = "Можно изменить поголовье, рацион и коровник.";
             }
         }
     }
@@ -507,7 +512,7 @@ $(document).ready(function () {
         }
 
         if (!storageZone) {
-            throw new Error("Выберите зону хранения.");
+            throw new Error("Выберите коровник.");
         }
 
         const lat = Number(storageZone.lat);
@@ -515,11 +520,11 @@ $(document).ready(function () {
         const radius = Number(storageZone.radius);
 
         if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
-            throw new Error("У выбранной зоны хранения некорректные координаты.");
+            throw new Error("У выбранного коровника некорректные координаты.");
         }
 
         if (!Number.isFinite(radius) || radius <= 0) {
-            throw new Error("У выбранной зоны хранения некорректный радиус.");
+            throw new Error("У выбранного коровника некорректный радиус.");
         }
 
         return {
@@ -628,7 +633,7 @@ $(document).ready(function () {
                 } else {
                     state.storageZones = [];
                     state.storageZoneLookupLoaded = false;
-                    state.storageZoneLookupError = storageZonesResult.reason?.message || "Не удалось загрузить зоны хранения.";
+                    state.storageZoneLookupError = storageZonesResult.reason?.message || "Не удалось загрузить коровники.";
                     showAlert(state.storageZoneLookupError, "warning");
                 }
 
@@ -659,7 +664,7 @@ $(document).ready(function () {
                 } else {
                     state.storageZones = [];
                     state.storageZoneLookupLoaded = false;
-                    state.storageZoneLookupError = storageZonesResult.reason?.message || "Не удалось загрузить зоны хранения.";
+                    state.storageZoneLookupError = storageZonesResult.reason?.message || "Не удалось загрузить коровники.";
                     showAlert(state.storageZoneLookupError, "warning");
                 }
             }

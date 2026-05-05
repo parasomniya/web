@@ -13,8 +13,10 @@ const DEFAULT_SQUARE_SIDE = 40;
 const DEFAULT_STATUS_MESSAGE = "Готово к работе";
 const DEFAULT_MAP_CENTER = [52.428863, 85.706438];
 const DEFAULT_MAP_ZOOM = 15;
-const DEFAULT_MAP_TYPE = "yandex#map";
+const DEFAULT_MAP_TYPE = "yandex#satellite";
 const TELEMETRY_FRESHNESS_MS = 15000;
+const ZONE_TYPE_STORAGE = "STORAGE";
+const ZONE_TYPE_BARN = "BARN";
 
 let map;
 let deviceMarker = null;
@@ -36,6 +38,7 @@ let previewShape = null;
 let previewCornerMarkers = [];
 
 const shapeTypeInput = document.getElementById("shapeType");
+const zoneTypeInput = document.getElementById("zoneType");
 const circleFields = document.getElementById("circleFields");
 const squareFields = document.getElementById("squareFields");
 const sideMetersInput = document.getElementById("sideMeters");
@@ -110,6 +113,28 @@ function parseNumberValue(value) {
 
 function normalizeShapeType(value) {
     return String(value || "CIRCLE").trim().toUpperCase() === "SQUARE" ? "SQUARE" : "CIRCLE";
+}
+
+function normalizeZoneType(value) {
+    return String(value || "").trim().toUpperCase() === ZONE_TYPE_BARN ? ZONE_TYPE_BARN : ZONE_TYPE_STORAGE;
+}
+
+function getZoneTypeLabel(zoneOrType) {
+    const zoneType = typeof zoneOrType === "string" ? normalizeZoneType(zoneOrType) : normalizeZoneType(zoneOrType?.zoneType);
+    return zoneType === ZONE_TYPE_BARN ? "Коровник" : "Зона хранения";
+}
+
+function getZoneTypeColor(zone, isSelected) {
+    if (isSelected) {
+        return {
+            fillColor: "#f6c23e55",
+            strokeColor: "#d18b00",
+        };
+    }
+
+    return normalizeZoneType(zone?.zoneType) === ZONE_TYPE_BARN
+        ? { fillColor: "#36b9cc44", strokeColor: "#138496" }
+        : { fillColor: "#00c85355", strokeColor: "#1e88e5" };
 }
 
 function isValidLat(value) {
@@ -203,6 +228,7 @@ function normalizeZone(zone) {
 
     const normalized = {
         ...zone,
+        zoneType: normalizeZoneType(zone.zoneType),
         shapeType: normalizeShapeType(zone.shapeType),
         lat: Number(zone.lat),
         lon: Number(zone.lon),
@@ -538,7 +564,7 @@ function bindUI() {
         renderZonePreview();
     });
 
-    ["ingredient", "lat", "lon", "radius", "active"].forEach((id) => {
+    ["zoneType", "ingredient", "lat", "lon", "radius", "active"].forEach((id) => {
         const input = document.getElementById(id);
         input?.addEventListener("input", () => {
             if ((id === "lat" || id === "lon") && getCurrentShapeType() === "SQUARE") {
@@ -779,6 +805,7 @@ function drawZones() {
 
     zones.filter((zone) => Boolean(zone.active)).forEach((zone) => {
         const isSelected = String(zone.id) === String(selectedZoneId);
+        const zoneColors = getZoneTypeColor(zone, isSelected);
 
         const shapeLabel = zone.shapeType === "SQUARE" ? "Квадрат" : "Кружок";
         const sizeLabel = zone.shapeType === "SQUARE"
@@ -793,6 +820,7 @@ function drawZones() {
                 {
                     balloonContent: `
                         <strong>${escapeHtml(getZoneLabel(zone))}</strong><br>
+                        Тип: ${getZoneTypeLabel(zone)}<br>
                         Форма: ${shapeLabel}<br>
                         Lat: ${zone.lat}<br>
                         Lon: ${zone.lon}<br>
@@ -800,8 +828,8 @@ function drawZones() {
                     `,
                 },
                 {
-                    fillColor: isSelected ? "#f6c23e55" : "#00c85355",
-                    strokeColor: isSelected ? "#d18b00" : "#1e88e5",
+                    fillColor: zoneColors.fillColor,
+                    strokeColor: zoneColors.strokeColor,
                     strokeWidth: isSelected ? 4 : 2,
                 }
             )
@@ -810,6 +838,7 @@ function drawZones() {
                 {
                     balloonContent: `
                         <strong>${escapeHtml(getZoneLabel(zone))}</strong><br>
+                        Тип: ${getZoneTypeLabel(zone)}<br>
                         Форма: ${shapeLabel}<br>
                         Lat: ${zone.lat}<br>
                         Lon: ${zone.lon}<br>
@@ -817,8 +846,8 @@ function drawZones() {
                     `,
                 },
                 {
-                    fillColor: isSelected ? "#f6c23e55" : "#00c85355",
-                    strokeColor: isSelected ? "#d18b00" : "#1e88e5",
+                    fillColor: zoneColors.fillColor,
+                    strokeColor: zoneColors.strokeColor,
                     strokeWidth: isSelected ? 4 : 2,
                 }
             );
@@ -834,78 +863,85 @@ function drawZones() {
 }
 
 function renderTable() {
-    const table = document.getElementById("zones-table");
-    if (!table) {
+    const storageTable = document.getElementById("storage-zones-table");
+    const barnTable = document.getElementById("barn-zones-table");
+    if (!storageTable || !barnTable) {
         return;
     }
 
-    table.innerHTML = "";
+    const renderRows = (table, zoneType, emptyMessage) => {
+        const typeZones = zones.filter((zone) => normalizeZoneType(zone.zoneType) === zoneType);
+        table.innerHTML = "";
 
-    if (!zones.length) {
-        table.innerHTML = `
-            <tr>
-                <td colspan="6" class="text-center text-muted">
-                    Зоны пока не добавлены
-                </td>
-            </tr>
-        `;
-        return;
-    }
-
-    const sortedZones = [...zones].sort((left, right) => {
-        if (Boolean(left.active) === Boolean(right.active)) {
-            return 0;
-        }
-
-        return left.active ? -1 : 1;
-    });
-
-    const hasActiveZones = sortedZones.some((zone) => Boolean(zone.active));
-    const hasInactiveZones = sortedZones.some((zone) => !zone.active);
-    let separatorInserted = false;
-
-    sortedZones.forEach((zone) => {
-        if (!zone.active && hasActiveZones && hasInactiveZones && !separatorInserted) {
-            const separatorRow = document.createElement("tr");
-            separatorRow.className = "zones-separator-row";
-            separatorRow.innerHTML = `
-                <td colspan="6" class="zones-separator-cell">
-                    Неактивные зоны
-                </td>
+        if (!typeZones.length) {
+            table.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center text-muted">
+                        ${emptyMessage}
+                    </td>
+                </tr>
             `;
-            table.appendChild(separatorRow);
-            separatorInserted = true;
+            return;
         }
 
-        const row = document.createElement("tr");
-        row.className = "zone-row";
-        row.dataset.zoneId = zone.id;
+        const sortedZones = [...typeZones].sort((left, right) => {
+            if (Boolean(left.active) === Boolean(right.active)) {
+                return 0;
+            }
 
-        if (String(zone.id) === String(selectedZoneId)) {
-            row.classList.add("selected");
-        }
-
-        row.innerHTML = `
-            <td>${escapeHtml(getZoneLabel(zone))}</td>
-            <td>${zone.shapeType === "SQUARE" ? "Квадрат" : "Кружок"}</td>
-            <td>${Number(zone.lat).toFixed(6)}</td>
-            <td>${Number(zone.lon).toFixed(6)}</td>
-            <td>${zone.shapeType === "SQUARE" ? (Math.max(1, Math.round(Number(zone.sideMeters || DEFAULT_SQUARE_SIDE))) + " м") : zone.radius + " м"}</td>
-            <td>
-                <span class="badge-soft ${zone.active ? "active" : "inactive"}">
-                    ${zone.active ? "Да" : "Нет"}
-                </span>
-            </td>
-        `;
-
-        row.addEventListener("click", function (event) {
-            event.preventDefault();
-            event.stopPropagation();
-            selectZone(zone.id, { focusMap: Boolean(zone.active) });
+            return left.active ? -1 : 1;
         });
 
-        table.appendChild(row);
-    });
+        const hasActiveZones = sortedZones.some((zone) => Boolean(zone.active));
+        const hasInactiveZones = sortedZones.some((zone) => !zone.active);
+        let separatorInserted = false;
+
+        sortedZones.forEach((zone) => {
+            if (!zone.active && hasActiveZones && hasInactiveZones && !separatorInserted) {
+                const separatorRow = document.createElement("tr");
+                separatorRow.className = "zones-separator-row";
+                separatorRow.innerHTML = `
+                    <td colspan="6" class="zones-separator-cell">
+                        Неактивные зоны
+                    </td>
+                `;
+                table.appendChild(separatorRow);
+                separatorInserted = true;
+            }
+
+            const row = document.createElement("tr");
+            row.className = "zone-row";
+            row.dataset.zoneId = zone.id;
+
+            if (String(zone.id) === String(selectedZoneId)) {
+                row.classList.add("selected");
+            }
+
+            row.innerHTML = `
+                <td>${escapeHtml(getZoneLabel(zone))}</td>
+                <td>${zone.shapeType === "SQUARE" ? "Квадрат" : "Кружок"}</td>
+                <td>${Number(zone.lat).toFixed(6)}</td>
+                <td>${Number(zone.lon).toFixed(6)}</td>
+                <td>${zone.shapeType === "SQUARE" ? (Math.max(1, Math.round(Number(zone.sideMeters || DEFAULT_SQUARE_SIDE))) + " м") : zone.radius + " м"}</td>
+                <td>
+                    <span class="badge-soft ${zone.active ? "active" : "inactive"}">
+                        ${zone.active ? "Да" : "Нет"}
+                    </span>
+                </td>
+            `;
+
+            row.addEventListener("click", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                selectZone(zone.id, { focusMap: Boolean(zone.active) });
+            });
+
+            table.appendChild(row);
+        });
+    };
+
+    renderRows(storageTable, ZONE_TYPE_STORAGE, "Зоны хранения пока не добавлены");
+    renderRows(barnTable, ZONE_TYPE_BARN, "Коровники пока не добавлены");
 }
 
 function selectZone(zoneId, options = {}) {
@@ -958,12 +994,14 @@ function updateFormMode() {
 }
 
 function fillZoneForm(zone) {
+    const zoneTypeSelect = document.getElementById("zoneType");
     const ingredientInput = document.getElementById("ingredient");
     const latInput = document.getElementById("lat");
     const lonInput = document.getElementById("lon");
     const radiusInput = document.getElementById("radius");
     const activeInput = document.getElementById("active");
 
+    if (zoneTypeSelect) zoneTypeSelect.value = normalizeZoneType(zone.zoneType);
     if (ingredientInput) ingredientInput.value = getZoneLabel(zone);
     if (latInput) latInput.value = Number(zone.lat).toFixed(6);
     if (lonInput) lonInput.value = Number(zone.lon).toFixed(6);
@@ -987,11 +1025,16 @@ function resetZoneFormFields() {
         zoneForm.reset();
     }
 
+    const zoneTypeSelect = document.getElementById("zoneType");
     const ingredientInput = document.getElementById("ingredient");
     const latInput = document.getElementById("lat");
     const lonInput = document.getElementById("lon");
     const radiusInput = document.getElementById("radius");
     const activeInput = document.getElementById("active");
+
+    if (zoneTypeSelect) {
+        zoneTypeSelect.value = "";
+    }
 
     if (ingredientInput) {
         ingredientInput.value = "";
@@ -1063,6 +1106,7 @@ function focusZone(zone) {
 
 function readZoneFormValues() {
     const radiusValue = document.getElementById("radius")?.value.trim() || "";
+    const rawZoneType = document.getElementById("zoneType")?.value.trim() || "";
     const shapeType = getCurrentShapeType();
     const lat = parseNumberValue(document.getElementById("lat")?.value);
     const lon = parseNumberValue(document.getElementById("lon")?.value);
@@ -1072,6 +1116,7 @@ function readZoneFormValues() {
         : null;
 
     return {
+        zoneType: rawZoneType,
         ingredient: document.getElementById("ingredient")?.value.trim() || "",
         shapeType,
         lat: squareMeta?.lat ?? lat,
@@ -1088,6 +1133,10 @@ function readZoneFormValues() {
 }
 
 function validateZoneForm(zoneData) {
+    if (![ZONE_TYPE_STORAGE, ZONE_TYPE_BARN].includes(zoneData.zoneType)) {
+        return false;
+    }
+
     if (!(
         zoneData.ingredient &&
         Number.isFinite(zoneData.lat) &&
@@ -1150,6 +1199,7 @@ async function createZone(zoneData) {
             body: JSON.stringify({
                 name: zoneData.ingredient,
                 ingredient: zoneData.ingredient,
+                zoneType: zoneData.zoneType,
                 shapeType: zoneData.shapeType,
                 lat: zoneData.lat,
                 lon: zoneData.lon,
@@ -1193,6 +1243,7 @@ async function updateZone(zoneData) {
             body: JSON.stringify({
                 name: zoneData.ingredient,
                 ingredient: zoneData.ingredient,
+                zoneType: zoneData.zoneType,
                 shapeType: zoneData.shapeType,
                 lat: zoneData.lat,
                 lon: zoneData.lon,

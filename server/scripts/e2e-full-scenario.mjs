@@ -72,8 +72,71 @@ function buildRationWorkbookBuffer() {
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
 }
 
+function buildDiverseRationWorkbookBuffer() {
+  const rows = [
+    { ingredient: 'Silage', plannedWeight: 90, dryMatterWeight: 35 },
+    { ingredient: 'Hay', plannedWeight: 120, dryMatterWeight: 80 },
+    { ingredient: 'Concentrate', plannedWeight: 150, dryMatterWeight: 120 }
+  ]
+
+  const worksheet = XLSX.utils.json_to_sheet(rows)
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Ration')
+  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
+}
+
 function isoAt(baseTimeMs, offsetSeconds) {
   return new Date(baseTimeMs + offsetSeconds * 1000).toISOString()
+}
+
+function offsetPoint(point, latOffset = 0, lonOffset = 0) {
+  return {
+    lat: point.lat + latOffset,
+    lon: point.lon + lonOffset
+  }
+}
+
+function buildRtkPacket(deviceId, timestamp, point, overrides = {}) {
+  return {
+    deviceId,
+    timestamp,
+    lat: point.lat,
+    lon: point.lon,
+    valid: true,
+    quality: 4,
+    quality_label: 'rtk_fixed',
+    satellites: 18,
+    raw_gga: '$GNGGA,E2E',
+    events_reader_ok: true,
+    wifi_connected: true,
+    wifi_ssid: 'ISRK_Hozyain',
+    wifi_profile: 'primary',
+    rssi_dbm: -61,
+    sd_ready: true,
+    ram_queue_len: 0,
+    free_heap_bytes: 214320,
+    ...overrides
+  }
+}
+
+function buildHostPacket(deviceId, timestamp, point, weight, overrides = {}) {
+  return {
+    deviceId,
+    timestamp,
+    lat: point.lat,
+    lon: point.lon,
+    gpsValid: true,
+    gpsSatellites: 12,
+    weight,
+    weightValid: true,
+    gpsQuality: 4,
+    wifiClients: [],
+    cpuTempC: 56.2,
+    lteRssiDbm: -72,
+    lteAccessTech: 'LTE',
+    eventsReaderOk: true,
+    ...overrides
+  }
 }
 
 async function main() {
@@ -81,6 +144,33 @@ async function main() {
   const runTag = Date.now().toString().slice(-6)
   const userName = `e2e_operator_${runTag}`
   const userEmail = `e2e.operator.${runTag}@example.com`
+  const hostDeviceId = `host_e2e_${runTag}`
+  const loaderDeviceId = `rtk_loader_e2e_${runTag}`
+  const polygonZoneName = `Concentrate polygon E2E ${runTag}`
+  const squareBarnZoneName = `Square barn E2E ${runTag}`
+  const geoSeed = Number(runTag) % 1000
+  const latShift = 0.02 + geoSeed * 0.00002
+  const lonShift = 0.02 + geoSeed * 0.00002
+  const point = (lat, lon) => ({ lat: lat + latShift, lon: lon + lonShift })
+  const scenarioPoints = {
+    yardWest: point(52.5278, 85.1268),
+    circleStorage: point(52.5284, 85.1275),
+    yardBetweenCircleSquare: point(52.5289, 85.12745),
+    squareStorage: point(52.5292, 85.1284),
+    yardBetweenSquarePolygon: point(52.52965, 85.12895),
+    polygonStorage: point(52.52875, 85.12975),
+    serviceLane: point(52.52965, 85.12975),
+    squareBarn: point(52.5308, 85.13015),
+    yardBeforeBarn: point(52.53055, 85.1286),
+    circleBarn: point(52.53, 85.1293),
+    yardEast: point(52.53055, 85.13025),
+    polygonCoords: [
+      point(52.52905, 85.1294),
+      point(52.52905, 85.13005),
+      point(52.52855, 85.13012),
+      point(52.52845, 85.12955)
+    ]
+  }
   const circleZoneName = `Силосная зона E2E ${runTag}`
   const squareZoneName = `Сенная зона E2E ${runTag}`
   const unloadZoneName = `Коровник E2E ${runTag}`
@@ -122,10 +212,11 @@ async function main() {
     token: adminToken,
     json: {
       name: circleZoneName,
-      ingredient: 'Силос',
+      ingredient: 'Silage',
+      zoneType: 'STORAGE',
       shapeType: 'CIRCLE',
-      lat: 52.5284,
-      lon: 85.1275,
+      lat: scenarioPoints.circleStorage.lat,
+      lon: scenarioPoints.circleStorage.lon,
       radius: 40,
       active: true
     }
@@ -136,36 +227,66 @@ async function main() {
     token: adminToken,
     json: {
       name: squareZoneName,
-      ingredient: 'Сено',
+      ingredient: 'Hay',
+      zoneType: 'STORAGE',
       shapeType: 'SQUARE',
-      lat: 52.5292,
-      lon: 85.1284,
+      lat: scenarioPoints.squareStorage.lat,
+      lon: scenarioPoints.squareStorage.lon,
       sideMeters: 60,
       active: true
     }
   })
   pushLog('zone_square_create', { status: 'ok', id: squareZone.id })
 
+  const polygonZone = await request('POST', '/api/telemetry/zones', {
+    token: adminToken,
+    json: {
+      name: polygonZoneName,
+      ingredient: 'Concentrate',
+      zoneType: 'STORAGE',
+      shapeType: 'SQUARE',
+      polygonCoords: scenarioPoints.polygonCoords.map((item) => [item.lat, item.lon]),
+      active: true
+    }
+  })
+  pushLog('zone_polygon_create', { status: 'ok', id: polygonZone.id })
+
   const unloadZone = await request('POST', '/api/telemetry/zones', {
     token: adminToken,
     json: {
       name: unloadZoneName,
       ingredient: 'Коровник',
+      zoneType: 'BARN',
       shapeType: 'CIRCLE',
-      lat: 52.53,
-      lon: 85.1293,
+      lat: scenarioPoints.circleBarn.lat,
+      lon: scenarioPoints.circleBarn.lon,
       radius: 45,
       active: true
     }
   })
   pushLog('zone_unload_create', { status: 'ok', id: unloadZone.id })
 
+  const squareBarnZone = await request('POST', '/api/telemetry/zones', {
+    token: adminToken,
+    json: {
+      name: squareBarnZoneName,
+      ingredient: 'Square barn',
+      zoneType: 'BARN',
+      shapeType: 'SQUARE',
+      lat: scenarioPoints.squareBarn.lat,
+      lon: scenarioPoints.squareBarn.lon,
+      sideMeters: 55,
+      active: true
+    }
+  })
+  pushLog('zone_square_barn_create', { status: 'ok', id: squareBarnZone.id })
+
   const form = new FormData()
   form.append('name', rationName)
   form.append(
     'file',
     new Blob(
-      [buildRationWorkbookBuffer()],
+      [buildDiverseRationWorkbookBuffer()],
       { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
     ),
     'ration-e2e.xlsx'
@@ -204,7 +325,7 @@ async function main() {
     json: {
       name: tempGroupName,
       headcount: 5,
-      storageZoneId: circleZone.id
+      storageZoneId: squareBarnZone.id
     }
   })
   pushLog('group_temp_create', { status: 'ok', id: tempGroup.id })
@@ -216,7 +337,7 @@ async function main() {
 
   const deviceEvent = await request('POST', '/api/events', {
     json: {
-      device_id: 'host_01',
+      device_id: hostDeviceId,
       type: 'sms',
       timestamp: new Date().toISOString(),
       from: '+79990000000',
@@ -248,73 +369,55 @@ async function main() {
   pushLog('digest_get', { status: 'ok', recipients: digestLoaded.recipients?.length || 0 })
 
   const baseTime = Date.now()
-  const hostPackets = [
-    { time: isoAt(baseTime, 1), lat: 52.5284, lon: 85.1275, weight: 100.0 },
-    { time: isoAt(baseTime, 3), lat: 52.5292, lon: 85.1284, weight: 620.0 },
-    { time: isoAt(baseTime, 5), lat: 52.5300, lon: 85.1293, weight: 720.0 },
-    { time: isoAt(baseTime, 7), lat: 52.5300, lon: 85.1293, weight: 300.0 },
-    { time: isoAt(baseTime, 9), lat: 52.5300, lon: 85.1293, weight: 40.0 }
-  ]
-  const rtkPackets = [
-    { time: isoAt(baseTime, 0), lat: 52.5284, lon: 85.1275 },
-    { time: isoAt(baseTime, 2), lat: 52.5292, lon: 85.1284 },
-    { time: isoAt(baseTime, 4), lat: 52.5300, lon: 85.1293 },
-    { time: isoAt(baseTime, 6), lat: 52.5300, lon: 85.1293 },
-    { time: isoAt(baseTime, 8), lat: 52.5300, lon: 85.1293 }
+  const routePoints = scenarioPoints
+  const driveSteps = [
+    { offset: 0, label: 'outside_start', point: routePoints.yardWest, weight: 80 },
+    { offset: 2, label: 'enter_circle_storage', point: routePoints.circleStorage, weight: 82 },
+    { offset: 4, label: 'load_circle_storage', point: routePoints.circleStorage, weight: 170 },
+    { offset: 6, label: 'exit_circle_storage', point: routePoints.yardBetweenCircleSquare, weight: 170 },
+    { offset: 8, label: 'enter_square_storage', point: routePoints.squareStorage, weight: 172 },
+    { offset: 10, label: 'load_square_storage', point: routePoints.squareStorage, weight: 290 },
+    { offset: 12, label: 'exit_square_storage', point: routePoints.yardBetweenSquarePolygon, weight: 290 },
+    { offset: 14, label: 'enter_polygon_storage', point: routePoints.polygonStorage, weight: 292 },
+    { offset: 16, label: 'load_polygon_storage', point: routePoints.polygonStorage, weight: 440 },
+    { offset: 18, label: 'exit_polygon_storage', point: routePoints.serviceLane, weight: 440 },
+    { offset: 20, label: 'enter_square_barn', point: routePoints.squareBarn, weight: 438 },
+    { offset: 22, label: 'exit_square_barn', point: routePoints.yardBeforeBarn, weight: 438 },
+    { offset: 24, label: 'enter_circle_barn', point: routePoints.circleBarn, weight: 250 },
+    { offset: 26, label: 'start_unload_circle_barn', point: routePoints.circleBarn, weight: 230 },
+    { offset: 28, label: 'continue_unload_circle_barn', point: routePoints.circleBarn, weight: 140 },
+    { offset: 30, label: 'finish_unload_circle_barn', point: routePoints.circleBarn, weight: 35 },
+    { offset: 32, label: 'exit_circle_barn_empty', point: routePoints.yardEast, weight: 35 }
   ]
 
-  for (let index = 0; index < hostPackets.length; index += 1) {
-    const rtkPacket = rtkPackets[index]
-    if (rtkPacket) {
-      await request('POST', '/api/telemetry/rtk', {
-        json: {
-          deviceId: 'rtk_loader_01',
-          timestamp: rtkPacket.time,
-          lat: rtkPacket.lat,
-          lon: rtkPacket.lon,
-          valid: true,
-          quality: 4,
-          quality_label: 'rtk_fixed',
-          satellites: 18,
-          raw_gga: '$GNGGA,E2E',
-          events_reader_ok: true,
-          wifi_connected: true,
-          wifi_ssid: 'ISRK_Hozyain',
-          wifi_profile: 'primary',
-          rssi_dbm: -61,
-          sd_ready: true,
-          ram_queue_len: 0,
-          free_heap_bytes: 214320
-        }
+  for (const step of driveSteps) {
+    const timestamp = isoAt(baseTime, step.offset)
+    const loaderPoint = offsetPoint(step.point, 0.000015, -0.000015)
+    const hostPoint = offsetPoint(step.point, -0.000012, 0.000012)
+
+    await request('POST', '/api/telemetry/rtk', {
+      json: buildRtkPacket(loaderDeviceId, timestamp, loaderPoint, {
+        speed: step.label.includes('load') || step.label.includes('unload') ? 0.2 : 6.5,
+        course: 45
       })
-    }
+    })
 
-    const hostPacket = hostPackets[index]
     await request('POST', '/api/telemetry/host', {
-      json: {
-        deviceId: 'host_01',
-        timestamp: hostPacket.time,
-        lat: hostPacket.lat,
-        lon: hostPacket.lon,
-        gpsValid: true,
-        gpsSatellites: 12,
-        weight: hostPacket.weight,
-        weightValid: true,
-        gpsQuality: 4,
-        wifiClients: [],
-        cpuTempC: 56.2,
-        lteRssiDbm: -72,
-        lteAccessTech: 'LTE',
-        eventsReaderOk: true
-      }
+      json: buildHostPacket(hostDeviceId, timestamp, hostPoint, step.weight)
     })
   }
-  pushLog('telemetry_flow', { status: 'ok', hostPackets: hostPackets.length, rtkPackets: rtkPackets.length })
+  pushLog('telemetry_flow', {
+    status: 'ok',
+    hostDeviceId,
+    loaderDeviceId,
+    steps: driveSteps.length,
+    route: driveSteps.map((step) => step.label)
+  })
 
-  const hostCurrent = await request('GET', '/api/telemetry/host/current', {
+  const hostCurrent = await request('GET', `/api/telemetry/host/current?deviceId=${encodeURIComponent(hostDeviceId)}`, {
     token: adminToken
   })
-  const rtkCurrent = await request('GET', '/api/telemetry/rtk/current', {
+  const rtkCurrent = await request('GET', `/api/telemetry/rtk/current?deviceId=${encodeURIComponent(loaderDeviceId)}`, {
     token: adminToken
   })
   pushLog('telemetry_current', {
@@ -323,10 +426,31 @@ async function main() {
     rtkQuality: rtkCurrent.qualityLabel || rtkCurrent.rtkQuality || null
   })
 
+  const zoneVisitChecks = [
+    ['circle_storage', circleZone.id],
+    ['square_storage', squareZone.id],
+    ['polygon_storage', polygonZone.id],
+    ['circle_barn', unloadZone.id],
+    ['square_barn', squareBarnZone.id]
+  ]
+  for (const [zoneKey, zoneId] of zoneVisitChecks) {
+    const zoneVisit = await request(
+      'GET',
+      `/api/telemetry/rtk/zone/latest?zoneId=${zoneId}&seconds=120&deviceId=${encodeURIComponent(loaderDeviceId)}`,
+      { token: adminToken }
+    )
+    if (!zoneVisit.found) {
+      throw new Error(`Loader RTK did not visit expected zone: ${zoneKey}`)
+    }
+    pushLog('rtk_zone_visit', { status: 'ok', zoneKey, zoneId })
+  }
+
   const batches = await request('GET', '/api/batches', {
     token: adminToken
   })
-  const latestBatch = Array.isArray(batches) && batches.length > 0 ? batches[0] : null
+  const latestBatch = Array.isArray(batches)
+    ? batches.find((batch) => batch.deviceId === hostDeviceId)
+    : null
   if (!latestBatch?.id) {
     throw new Error('После телеметрии не найден ни один замес')
   }
@@ -338,9 +462,13 @@ async function main() {
   if (batchDetails.groupId !== mainGroup.id || batchDetails.rationId !== ration.id) {
     throw new Error(`Автопривязка batch не сработала: groupId=${batchDetails.groupId}, rationId=${batchDetails.rationId}`)
   }
+  if ((batchDetails.actualIngredients?.length || 0) < 3) {
+    throw new Error(`Diverse drive did not record all storage-zone loads: actualIngredients=${batchDetails.actualIngredients?.length || 0}`)
+  }
   pushLog('batch_details', {
     status: 'ok',
     ingredients: batchDetails.ingredients?.length || 0,
+    actualIngredients: batchDetails.actualIngredients?.length || 0,
     unloadingBarn: batchDetails.unloadingInfo?.barnName || null
   })
   pushLog('batch_auto_binding', {
@@ -401,13 +529,19 @@ async function main() {
     finishedAt: new Date().toISOString(),
     created: {
       runTag,
+      hostDeviceId,
+      loaderDeviceId,
+      latShift,
+      lonShift,
       userId: createdUser.id,
       userName,
       rationId: ration.id,
       groupId: mainGroup.id,
       circleZoneId: circleZone.id,
       squareZoneId: squareZone.id,
+      polygonZoneId: polygonZone.id,
       unloadZoneId: unloadZone.id,
+      squareBarnZoneId: squareBarnZone.id,
       latestBatchId: latestBatch.id
     },
     credentials: {
@@ -420,6 +554,16 @@ async function main() {
       violations: reports.violations?.length || 0,
       violationItems: Array.isArray(violations) ? violations.length : 0,
       warnings: warnings.items?.length || 0
+    },
+    drive: {
+      hostDeviceId,
+      loaderDeviceId,
+      steps: driveSteps.map((step) => ({
+        label: step.label,
+        weight: step.weight,
+        lat: step.point.lat,
+        lon: step.point.lon
+      }))
     },
     steps: scenarioLog
   }

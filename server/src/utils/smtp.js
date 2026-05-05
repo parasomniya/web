@@ -35,10 +35,10 @@ export function createTransporter() {
     });
 }
 
-export function buildSenderEnvelope(preferredEmail, fallbackName = 'Кормление КРС') {
+export function buildSenderEnvelope(preferredEmail, fallbackName = 'KOROVKI') {
     const smtpUser = getSmtpUser();
     const normalizedPreferred = String(preferredEmail || '').trim().toLowerCase();
-    const safeName = String(fallbackName || '').trim() || 'Кормление КРС';
+    const safeName = String(fallbackName || '').trim() || 'KOROVKI';
 
     if (!smtpUser) {
         return {
