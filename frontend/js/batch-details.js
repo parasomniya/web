@@ -193,10 +193,11 @@ $(document).ready(function () {
         return `${prefix}${weightFormatter.format(numericValue)}%`;
     }
 
-    function renderViolationBadge(value) {
+    function renderViolationBadge(value, customLabel) {
+        const label = customLabel || (value ? "Да" : "Нет");
         return `
             <span class="dashboard-bool-badge ${value ? "is-yes" : "is-no"}">
-                ${value ? "Да" : "Нет"}
+                ${label}
             </span>
         `;
     }
@@ -209,6 +210,11 @@ $(document).ready(function () {
     function getIngredientDisplayName(value) {
         const raw = String(value ?? "").trim();
         return isUnknownIngredientName(raw) ? "Неизвестный" : raw;
+    }
+
+    function normalizeIngredientKey(value) {
+        const displayName = getIngredientDisplayName(value);
+        return displayName.trim().toLowerCase().replace(/\s+/g, " ");
     }
 
     function getReplacementIngredientOptions() {
@@ -333,15 +339,39 @@ $(document).ready(function () {
         const replacementOptions = getReplacementIngredientOptions();
         const hasReplacementOptions = replacementOptions.length > 0;
         const hasRation = Boolean(normalizeNullableId(state.batch?.rationId) || normalizeNullableId(state.batch?.ration?.id));
+        const summaryRows = Array.isArray(state.batch?.ingredients) ? state.batch.ingredients : [];
+        const componentViolationByKey = new Map(
+            summaryRows.map((item) => [
+                normalizeIngredientKey(item?.name),
+                asBoolean(item?.isViolation ?? item?.is_violation)
+            ])
+        );
+        const seenComponentViolationBadge = new Set();
 
         ingredientListBody.innerHTML = rows.map((row) => `
             <tr>
                 <td>${escapeHtml(formatTime(row?.time))}</td>
                 <td>${renderIngredientCell(row, hasRation, hasReplacementOptions, replacementOptions)}</td>
                 <td>${escapeHtml(formatWeight(row?.fact ?? row?.actualWeight))}</td>
-                <td>${renderViolationBadge(asBoolean(row?.isViolation ?? row?.is_violation))}</td>
+                <td>${renderIngredientViolationCell(row, componentViolationByKey, seenComponentViolationBadge)}</td>
             </tr>
         `).join("");
+    }
+
+    function renderIngredientViolationCell(row, componentViolationByKey, seenComponentViolationBadge) {
+        const key = normalizeIngredientKey(row?.name);
+        const isComponentViolation = asBoolean(componentViolationByKey.get(key));
+
+        if (!isComponentViolation) {
+            return renderViolationBadge(false);
+        }
+
+        if (seenComponentViolationBadge.has(key)) {
+            return '<span class="text-muted small">По сумме компонента</span>';
+        }
+
+        seenComponentViolationBadge.add(key);
+        return renderViolationBadge(true, "Да (итог)");
     }
 
     function renderIngredientCell(row, hasRation, hasReplacementOptions, replacementOptions) {

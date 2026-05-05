@@ -1,5 +1,7 @@
 (function () {
     const API_URL = window.AppAuth?.getApiUrl?.("/api/reports") || "/api/reports";
+    const BATCHES_RESET_API_URL = window.AppAuth?.getApiUrl?.("/api/batches/admin/truncate") || "/api/batches/admin/truncate";
+    const CAN_ADMIN_RESET = window.AppAuth?.isAdmin?.() === true;
     const DEFAULT_LIMIT = 1000;
 
     const state = {
@@ -26,6 +28,7 @@
         fromDate: document.getElementById("reportsFromDate"),
         toDate: document.getElementById("reportsToDate"),
         reloadButton: document.getElementById("reportsReloadButton"),
+        resetButton: document.getElementById("reportsResetButton"),
         exportButton: document.getElementById("reportsExportButton"),
         sourceBanner: document.getElementById("reportsSourceBanner"),
         sourceBadge: document.getElementById("reportsSourceBadge"),
@@ -71,6 +74,25 @@
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#39;");
+    }
+
+    async function readErrorMessage(response) {
+        const contentType = response.headers.get("content-type") || "";
+
+        if (contentType.includes("application/json")) {
+            try {
+                const payload = await response.json();
+                return payload?.error || payload?.message || "";
+            } catch (error) {
+                return "";
+            }
+        }
+
+        try {
+            return (await response.text()).trim();
+        } catch (error) {
+            return "";
+        }
     }
 
     function toNumber(value) {
@@ -473,6 +495,42 @@
         }
     }
 
+    async function handleResetBatches() {
+        if (!CAN_ADMIN_RESET || !elements.resetButton) {
+            return;
+        }
+
+        const confirmed = window.confirm("Очистить все замесы и связанные нарушения? Рационы и группы останутся.");
+        if (!confirmed) {
+            return;
+        }
+
+        elements.resetButton.disabled = true;
+        const previousLabel = elements.resetButton.innerHTML;
+        elements.resetButton.innerHTML = '<span class="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>Очищаем...';
+
+        try {
+            const response = await fetch(BATCHES_RESET_API_URL, {
+                method: "DELETE",
+                headers: window.AppAuth?.getAuthHeaders?.() || {},
+                credentials: "same-origin",
+            });
+
+            if (!response.ok) {
+                const message = await readErrorMessage(response);
+                throw new Error(message || "Не удалось очистить замесы");
+            }
+
+            window.AppAuth?.showAlert?.("Замесы и связанные нарушения очищены", "success");
+            await loadReports();
+        } catch (error) {
+            window.AppAuth?.showAlert?.(error.message || "Не удалось очистить замесы", "danger");
+        } finally {
+            elements.resetButton.disabled = false;
+            elements.resetButton.innerHTML = previousLabel;
+        }
+    }
+
     function buildExportRows() {
         const summary = [
             ["Показатель", "Значение"],
@@ -594,10 +652,15 @@
         elements.fromDate?.addEventListener("change", handleDateChange);
         elements.toDate?.addEventListener("change", handleDateChange);
         elements.reloadButton?.addEventListener("click", loadReports);
+        elements.resetButton?.addEventListener("click", handleResetBatches);
         elements.exportButton?.addEventListener("click", exportToExcel);
     }
 
     function init() {
+        if (elements.resetButton) {
+            elements.resetButton.hidden = !CAN_ADMIN_RESET;
+        }
+
         setDefaultPeriod();
         syncFilterInputs();
         bindEvents();

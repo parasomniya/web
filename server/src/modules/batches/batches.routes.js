@@ -1,15 +1,46 @@
 import { Router } from 'express';
 import prisma from "../../database.js";
-import { authenticate, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js";
+import { authenticate, requireAdmin, requireReadAccess, requireWriteAccess } from "../../middleware/auth.js";
 import { buildIngredientSummary, buildUnloadProgress, recalculateBatchViolations, toDisplayIngredientName } from './batch-violations.js';
 import { normalizeIngredientName } from '../../../../module-2/rationManager.js';
 import { getTelemetrySettings } from '../telemetry/telemetry-settings.js';
+import telemetryProcessor from '../../../../module-3/telemetryProcessor.js';
 
 const router = Router();
 
 function round1(value) {
     return Math.round(Number(value || 0) * 10) / 10;
 }
+
+// ============================================================================
+// ADMIN: очистка замесов и связанных ошибок (без удаления рационов и групп)
+// ============================================================================
+router.delete('/admin/truncate', authenticate, requireAdmin, requireWriteAccess, async (req, res) => {
+    try {
+        const result = await prisma.$transaction(async (tx) => {
+            const deletedViolations = await tx.violation.deleteMany({});
+            const deletedIngredients = await tx.batchIngredient.deleteMany({});
+            const deletedBatches = await tx.batch.deleteMany({});
+
+            return {
+                deletedViolations: deletedViolations.count,
+                deletedIngredients: deletedIngredients.count,
+                deletedBatches: deletedBatches.count,
+            };
+        });
+
+        telemetryProcessor.clearStates();
+
+        res.json({
+            status: 'ok',
+            message: 'Замесы и связанные нарушения очищены',
+            ...result
+        });
+    } catch (error) {
+        console.error('[Ошибка DELETE /batches/admin/truncate]:', error);
+        res.status(500).json({ error: 'Не удалось очистить замесы и нарушения' });
+    }
+});
 
 async function getBatchWeightContext(batch) {
     const telemetryWhere = {

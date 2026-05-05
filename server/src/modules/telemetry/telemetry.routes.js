@@ -12,6 +12,26 @@ const AUTO_CLOSE_ZERO_WEIGHT_KG = 10
 const AUTO_CLOSE_EMPTY_STREAK = 5
 const AUTO_CLOSE_NEGATIVE_STREAK = 3
 
+function normalizeZoneType(value) {
+  if (!value) return ''
+  return String(value).trim().toUpperCase()
+}
+
+function isBarnZone(zone, linkedBarnZoneIds = new Set()) {
+  if (!zone) return false
+  const zoneType = normalizeZoneType(zone.zoneType)
+  if (linkedBarnZoneIds.has(Number(zone.id))) return true
+  return zoneType === 'BARN' || zoneType === 'LIVESTOCK' || zoneType === 'COWSHED' || zoneType === 'GROUP'
+}
+
+function isLoadingZone(zone, linkedBarnZoneIds = new Set()) {
+  if (!zone) return false
+  if (isBarnZone(zone, linkedBarnZoneIds)) return false
+  const zoneType = normalizeZoneType(zone.zoneType)
+  if (!zoneType) return true
+  return zoneType === 'STORAGE' || zoneType === 'FEED' || zoneType === 'LOADING'
+}
+
 function parseBoolean(value) {
   if (typeof value === 'boolean') return value
   if (typeof value === 'number') return value !== 0
@@ -143,10 +163,20 @@ router.post('/', async (req, res) => {
     const deviceId = packet.deviceId;
 
     // 1. Достаем геозоны из базы
-    const [activeZones, telemetrySettings] = await Promise.all([
-      prisma.storageZone.findMany({ where: { active: true, zoneType: 'STORAGE' } }),
+    const [activeZones, groupsWithZones, telemetrySettings] = await Promise.all([
+      prisma.storageZone.findMany({ where: { active: true } }),
+      prisma.livestockGroup.findMany({
+        where: { storageZoneId: { not: null } },
+        select: { storageZoneId: true }
+      }),
       getTelemetrySettings(prisma)
     ]);
+    const linkedBarnZoneIds = new Set(
+      groupsWithZones
+        .map((group) => Number(group.storageZoneId))
+        .filter((zoneId) => Number.isInteger(zoneId) && zoneId > 0)
+    )
+    const loadingZones = activeZones.filter((zone) => isLoadingZone(zone, linkedBarnZoneIds))
     const effectivePosition = await resolveEffectiveCoordinates(prisma, packet, {
       deviceId,
       referenceTime: packet.timestamp
@@ -157,9 +187,13 @@ router.post('/', async (req, res) => {
       lon: effectivePosition.lon
     };
     const resolvedGroup = await resolveGroupByCoordinates(prisma, effectivePosition.lat, effectivePosition.lon);
+    const currentZone = getZoneByCoordinates(effectivePosition.lat, effectivePosition.lon, activeZones)
+    const suppressLoading = isBarnZone(currentZone, linkedBarnZoneIds)
 
     // Вся валидация координат, смена зон и расчет дельт
-    const result = telemetryProcessor.processPacket(processorPacket, activeZones, telemetrySettings);
+    const result = telemetryProcessor.processPacket(processorPacket, loadingZones, telemetrySettings, {
+      suppressLoading
+    });
 
     if (!result.isValid) {
       console.warn(`[Фильтр] Отброшен невалидный пакет от ${deviceId}:`, result.error);

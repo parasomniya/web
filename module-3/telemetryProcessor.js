@@ -70,6 +70,12 @@ export class TelemetryProcessor {
   }
 
   _flushCurrentSegment(state, currentWeight, thresholds, result, options = {}) {
+    // Если сейчас запрещено считать загрузку и сегмент "вне зоны",
+    // не превращаем этот рост веса в ингредиент/Unknown.
+    if (options.suppressLoading && !state.currentZone) {
+      return false;
+    }
+
     const segmentEndWeight = Number(options.segmentEndWeight ?? currentWeight);
     const delta = segmentEndWeight - Number(state.zoneStartWeight || 0);
 
@@ -98,7 +104,7 @@ export class TelemetryProcessor {
     return true;
   }
 
-  processPacket(packet, zonesConfig, settings = {}) {
+  processPacket(packet, zonesConfig, settings = {}, options = {}) {
     const result = {
       isValid: true,
       error: null,
@@ -114,6 +120,7 @@ export class TelemetryProcessor {
       ? Math.max(0, currentWeightRaw)
       : 0;
     const thresholds = this._resolveThresholds(settings);
+    const suppressLoading = Boolean(options.suppressLoading);
 
     if (!isValidLocation(lat, lon)) {
       result.isValid = false;
@@ -180,7 +187,7 @@ export class TelemetryProcessor {
 
     // ===== ШАГ 4: Детекция загрузки =====
     if ((state.currentZone?.name || null) !== activeZoneName) {
-      this._flushCurrentSegment(state, currentWeight, thresholds, result);
+      this._flushCurrentSegment(state, currentWeight, thresholds, result, { suppressLoading });
 
       state.currentZone = activeZone ? { ...activeZone, ingredient: activeIngredientName } : null;
       state.zoneStartWeight = currentWeight;
@@ -193,6 +200,7 @@ export class TelemetryProcessor {
     // ===== ЯВНАЯ ДЕТЕКЦИЯ UNKNOWN ВНЕ ЗОН =====
     if (
       !activeZone &&
+      !suppressLoading &&
       !state.isUnloading &&
       !state.isBatchStarted &&
       (currentWeight - Number(state.zoneStartWeight || 0)) > thresholds.batchStartThresholdKg
@@ -235,7 +243,10 @@ export class TelemetryProcessor {
     // ===== ШАГ 7: Детекция выгрузки =====
     if (
       !state.isUnloading &&
-      (state.isMixing || (currentWeight - Number(state.zoneStartWeight || 0)) > thresholds.batchStartThresholdKg) &&
+      (
+        state.isMixing ||
+        (!suppressLoading && (currentWeight - Number(state.zoneStartWeight || 0)) > thresholds.batchStartThresholdKg)
+      ) &&
       state.peakWeight > thresholds.unloadMinPeakKg &&
       currentWeight < state.peakWeight - thresholds.unloadDropThresholdKg
     ) {
