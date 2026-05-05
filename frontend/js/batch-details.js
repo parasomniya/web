@@ -180,6 +180,10 @@ $(document).ready(function () {
     }
 
     function formatSignedPercent(value) {
+        if (value === null || value === undefined || value === "") {
+            return "--";
+        }
+
         const numericValue = Number(value);
         if (!Number.isFinite(numericValue)) {
             return "--";
@@ -358,7 +362,7 @@ $(document).ready(function () {
             `;
         }
 
-        const isDisabled = state.isBatchLoading || state.isSaving;
+        const isDisabled = state.isBatchLoading || state.isSaving || state.stopBatchInFlight;
         const canPickReplacement = !isDisabled && hasRation && hasReplacementOptions;
         const disabledAttribute = canPickReplacement ? "" : " disabled";
         const optionsMarkup = replacementOptions
@@ -1065,6 +1069,9 @@ $(document).ready(function () {
         } finally {
             if (requestId === state.loadRequestId) {
                 state.isBatchLoading = false;
+                if (state.batch) {
+                    renderIngredientList(Array.isArray(state.batch.actualIngredients) ? state.batch.actualIngredients : []);
+                }
                 renderBatchEditor(state.batch);
             }
         }
