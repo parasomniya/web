@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import prisma from "../../database.js" // Проверь правильность пути к database.js
-import { authenticate, requireAdmin } from "../../middleware/auth.js"
+import { authenticate, requireAdmin, requireWriteAccess } from "../../middleware/auth.js"
 
 const router = Router()
 
@@ -43,6 +43,21 @@ router.get('/', authenticate, requireAdmin, async (req, res) => {
     })
     res.json(events)
   } catch (error) {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// DELETE: Очистка журнала событий (только админ)
+router.delete('/admin/truncate', authenticate, requireAdmin, requireWriteAccess, async (req, res) => {
+  try {
+    const deleted = await prisma.deviceEvent.deleteMany({})
+    res.json({
+      status: 'ok',
+      message: 'Журнал событий очищен',
+      count: deleted.count
+    })
+  } catch (error) {
+    console.error('[Ошибка DELETE /api/events/admin/truncate]:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

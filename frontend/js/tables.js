@@ -1,6 +1,9 @@
 $(document).ready(function () {
     const dateInput = document.getElementById("batchesDateFilter");
     const filterMeta = document.getElementById("batchesFilterMeta");
+    const resetButton = document.getElementById("batchesResetButton");
+    const BATCHES_RESET_API_URL = window.AppAuth?.getApiUrl?.("/api/batches/admin/truncate") || "/api/batches/admin/truncate";
+    const CAN_ADMIN_RESET = window.AppAuth?.isAdmin?.() === true;
 
     const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
         day: "2-digit",
@@ -333,6 +336,43 @@ $(document).ready(function () {
         }
     }
 
+    async function resetBatches() {
+        if (!CAN_ADMIN_RESET || !resetButton) {
+            return;
+        }
+
+        const confirmed = window.confirm("Очистить все замесы и связанные нарушения? Рационы и группы не будут удалены.");
+        if (!confirmed) {
+            return;
+        }
+
+        resetButton.disabled = true;
+        const previousLabel = resetButton.innerHTML;
+        resetButton.innerHTML = '<span class="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>Очищаем...';
+
+        try {
+            const response = await fetch(BATCHES_RESET_API_URL, {
+                method: "DELETE",
+                headers: window.AppAuth?.getAuthHeaders?.() || {},
+            });
+
+            if (!response.ok) {
+                const message = await readErrorMessage(response);
+                throw new Error(message || "Не удалось очистить замесы");
+            }
+
+            lastSnapshotKey = "";
+            await loadBatches({ force: true });
+            window.AppAuth?.showAlert?.("Замесы и связанные нарушения очищены", "success");
+        } catch (error) {
+            console.error("Ошибка очистки замесов:", error);
+            window.AppAuth?.showAlert?.(error.message || "Не удалось очистить замесы", "danger");
+        } finally {
+            resetButton.disabled = false;
+            resetButton.innerHTML = previousLabel;
+        }
+    }
+
     function showLoadError(message, dateValue) {
         const alertKey = `${dateValue}|${message}`;
         if (alertKey === lastAlertKey) {
@@ -434,6 +474,13 @@ $(document).ready(function () {
             lastSnapshotKey = "";
             loadBatches({ force: true });
         });
+    }
+
+    if (resetButton) {
+        resetButton.hidden = !CAN_ADMIN_RESET;
+        if (CAN_ADMIN_RESET) {
+            resetButton.addEventListener("click", resetBatches);
+        }
     }
 
     loadBatches({ force: true });

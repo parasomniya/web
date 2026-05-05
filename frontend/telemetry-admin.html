@@ -207,7 +207,13 @@
                                 <div>
                                     <h6 class="m-0 font-weight-bold text-primary">Поток «Хозяин»</h6>
                                 </div>
-                                <div class="telemetry-panel-status mt-3 mt-sm-0" id="hostPanelStatus">Подключение...</div>
+                                <div class="d-flex align-items-center mt-3 mt-sm-0">
+                                    <button id="hostClearButton" type="button" class="btn btn-outline-danger btn-sm mr-2" data-requires-admin hidden>
+                                        <i class="fas fa-trash-alt mr-1"></i>
+                                        Очистить
+                                    </button>
+                                    <div class="telemetry-panel-status" id="hostPanelStatus">Подключение...</div>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="table-responsive telemetry-table-wrap">
@@ -245,7 +251,13 @@
                                 <div>
                                     <h6 class="m-0 font-weight-bold text-primary">SMS и входящие звонки за месяц</h6>
                                 </div>
-                                <div class="telemetry-panel-status mt-3 mt-sm-0" id="eventsPanelStatus">Загрузка событий...</div>
+                                <div class="d-flex align-items-center mt-3 mt-sm-0">
+                                    <button id="eventsClearButton" type="button" class="btn btn-outline-danger btn-sm mr-2" data-requires-admin hidden>
+                                        <i class="fas fa-trash-alt mr-1"></i>
+                                        Очистить
+                                    </button>
+                                    <div class="telemetry-panel-status" id="eventsPanelStatus">Загрузка событий...</div>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="table-responsive telemetry-table-wrap">
@@ -382,7 +394,13 @@
                                 <div>
                                     <h6 class="m-0 font-weight-bold text-primary">Поток «Погрузчик»</h6>
                                 </div>
-                                <div class="telemetry-panel-status mt-3 mt-sm-0" id="rtkPanelStatus">Ожидание ответа API...</div>
+                                <div class="d-flex align-items-center mt-3 mt-sm-0">
+                                    <button id="rtkClearButton" type="button" class="btn btn-outline-danger btn-sm mr-2" data-requires-admin hidden>
+                                        <i class="fas fa-trash-alt mr-1"></i>
+                                        Очистить
+                                    </button>
+                                    <div class="telemetry-panel-status" id="rtkPanelStatus">Ожидание ответа API...</div>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="table-responsive telemetry-table-wrap">
@@ -623,7 +641,7 @@
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260429d"></script>
-    <script src="js/telemetry.js?v=20260505c"></script>
+    <script src="js/telemetry.js?v=20260506a"></script>
     <script src="js/admin-users.js?v=20260501a"></script>
 
 </body>

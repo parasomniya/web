@@ -18,18 +18,23 @@ const endpoints = {
     host: {
         latest: window.AppAuth?.getApiUrl?.("/api/telemetry/host/admin/latest") || "/api/telemetry/host/admin/latest",
         history: window.AppAuth?.getApiUrl?.(`/api/telemetry/host/admin/history?limit=${HISTORY_LIMIT}`) || `/api/telemetry/host/admin/history?limit=${HISTORY_LIMIT}`,
+        truncate: window.AppAuth?.getApiUrl?.("/api/telemetry/host/admin/truncate") || "/api/telemetry/host/admin/truncate",
     },
     events: {
         history: window.AppAuth?.getApiUrl?.("/api/events?limit=500") || "/api/events?limit=500",
+        truncate: window.AppAuth?.getApiUrl?.("/api/events/admin/truncate") || "/api/events/admin/truncate",
     },
     rtk: {
         latest: window.AppAuth?.getApiUrl?.("/api/telemetry/rtk/admin/latest") || "/api/telemetry/rtk/admin/latest",
         history: window.AppAuth?.getApiUrl?.(`/api/telemetry/rtk/admin/history?limit=${HISTORY_LIMIT}`) || `/api/telemetry/rtk/admin/history?limit=${HISTORY_LIMIT}`,
+        truncate: window.AppAuth?.getApiUrl?.("/api/telemetry/rtk/admin/truncate") || "/api/telemetry/rtk/admin/truncate",
     },
     settings: {
         current: window.AppAuth?.getApiUrl?.("/api/telemetry/settings") || "/api/telemetry/settings",
     },
 };
+
+const CAN_ADMIN_RESET = window.AppAuth?.isAdmin?.() === true;
 
 function getHeaders() {
     return window.AppAuth?.getAuthHeaders?.() || {};
@@ -183,6 +188,60 @@ async function readErrorMessage(response) {
         return (await response.text()).trim();
     } catch (error) {
         return "";
+    }
+}
+
+function setClearButtonsVisibility() {
+    ["hostClearButton", "rtkClearButton", "eventsClearButton"].forEach((id) => {
+        const button = document.getElementById(id);
+        if (button) {
+            button.hidden = !CAN_ADMIN_RESET;
+        }
+    });
+}
+
+async function clearAdminData(options) {
+    const settings = options || {};
+    const button = document.getElementById(settings.buttonId);
+    const endpoint = settings.endpoint;
+    const confirmMessage = settings.confirmMessage || "Очистить данные?";
+    const successMessage = settings.successMessage || "Данные очищены";
+    const refreshFn = typeof settings.refreshFn === "function" ? settings.refreshFn : null;
+
+    if (!CAN_ADMIN_RESET || !button || !endpoint) {
+        return;
+    }
+
+    const confirmed = window.confirm(confirmMessage);
+    if (!confirmed) {
+        return;
+    }
+
+    button.disabled = true;
+    const previousHtml = button.innerHTML;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>Очищаем...';
+
+    try {
+        const response = await fetch(endpoint, {
+            method: "DELETE",
+            headers: getHeaders(),
+            credentials: "same-origin",
+        });
+
+        if (!response.ok) {
+            const message = await readErrorMessage(response);
+            throw new Error(message || "Не удалось очистить данные");
+        }
+
+        window.AppAuth?.showAlert?.(successMessage, "success");
+        if (refreshFn) {
+            await refreshFn();
+        }
+    } catch (error) {
+        window.AppAuth?.showAlert?.(error.message || "Не удалось очистить данные", "danger");
+    } finally {
+        button.disabled = false;
+        button.innerHTML = previousHtml;
     }
 }
 
@@ -536,6 +595,38 @@ async function refreshTelemetry() {
 }
 
 bindTabs();
+setClearButtonsVisibility();
+
+document.getElementById("hostClearButton")?.addEventListener("click", function () {
+    clearAdminData({
+        buttonId: "hostClearButton",
+        endpoint: endpoints.host.truncate,
+        confirmMessage: "Очистить историю потока «Хозяин»?",
+        successMessage: "История «Хозяина» очищена",
+        refreshFn: loadHost,
+    });
+});
+
+document.getElementById("rtkClearButton")?.addEventListener("click", function () {
+    clearAdminData({
+        buttonId: "rtkClearButton",
+        endpoint: endpoints.rtk.truncate,
+        confirmMessage: "Очистить историю потока «Погрузчик»?",
+        successMessage: "История «Погрузчика» очищена",
+        refreshFn: loadRtk,
+    });
+});
+
+document.getElementById("eventsClearButton")?.addEventListener("click", function () {
+    clearAdminData({
+        buttonId: "eventsClearButton",
+        endpoint: endpoints.events.truncate,
+        confirmMessage: "Очистить SMS и входящие звонки?",
+        successMessage: "Журнал событий очищен",
+        refreshFn: loadEvents,
+    });
+});
+
 refreshTelemetry();
 setInterval(refreshTelemetry, POLL_INTERVAL_MS);
 
