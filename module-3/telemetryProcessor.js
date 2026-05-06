@@ -10,7 +10,8 @@ import {
   EMPTY_VEHICLE_THRESHOLD_KG,
   ANOMALY_THRESHOLD_KG,
   ANOMALY_CONFIRM_DELTA_KG,
-  ANOMALY_CONFIRM_PACKETS
+  ANOMALY_CONFIRM_PACKETS,
+  LOADING_ZONE_STICKY_SECONDS
 } from './config.js';
 
 export class TelemetryProcessor {
@@ -31,7 +32,9 @@ export class TelemetryProcessor {
       isBatchStarted: false,
       lastAcceptedWeight: null,
       anomalyCandidateWeight: null,
-      anomalyCandidateCount: 0
+      anomalyCandidateCount: 0,
+      lastLoadingZone: null,
+      lastLoadingZoneAtMs: null
     };
   }
 
@@ -50,8 +53,32 @@ export class TelemetryProcessor {
       unloadUpdateDeltaKg: Number(settings.unloadUpdateDeltaKg) > 0 ? Number(settings.unloadUpdateDeltaKg) : UNLOAD_UPDATE_DELTA_KG,
       anomalyThresholdKg: Number(settings.anomalyThresholdKg) > 0 ? Number(settings.anomalyThresholdKg) : ANOMALY_THRESHOLD_KG,
       anomalyConfirmDeltaKg: Number(settings.anomalyConfirmDeltaKg) > 0 ? Number(settings.anomalyConfirmDeltaKg) : ANOMALY_CONFIRM_DELTA_KG,
-      anomalyConfirmPackets: Number(settings.anomalyConfirmPackets) > 0 ? Number(settings.anomalyConfirmPackets) : ANOMALY_CONFIRM_PACKETS
+      anomalyConfirmPackets: Number(settings.anomalyConfirmPackets) > 0 ? Number(settings.anomalyConfirmPackets) : ANOMALY_CONFIRM_PACKETS,
+      loadingZoneStickySeconds: Number(settings.loadingZoneStickySeconds) > 0 ? Number(settings.loadingZoneStickySeconds) : LOADING_ZONE_STICKY_SECONDS
     };
+  }
+
+  _parsePacketTimestampMs(packet) {
+    const raw = packet?.timestamp;
+    if (raw instanceof Date) {
+      const ts = raw.getTime();
+      return Number.isFinite(ts) ? ts : Date.now();
+    }
+
+    const ts = new Date(raw || Date.now()).getTime();
+    return Number.isFinite(ts) ? ts : Date.now();
+  }
+
+  _hasActiveStickyZone(state, thresholds, packetTimeMs) {
+    if (!state?.lastLoadingZone) return false;
+    if (!Number.isFinite(Number(state.lastLoadingZoneAtMs))) return false;
+    const ttlMs = Number(thresholds.loadingZoneStickySeconds || LOADING_ZONE_STICKY_SECONDS) * 1000;
+    const ageMs = packetTimeMs - Number(state.lastLoadingZoneAtMs);
+    return ageMs >= 0 && ageMs <= ttlMs;
+  }
+
+  _resolveStickyIngredient(state) {
+    return state?.lastLoadingZone?.ingredient || state?.lastLoadingZone?.name || null;
   }
 
   _buildSkippedResult(deviceId) {
@@ -65,8 +92,21 @@ export class TelemetryProcessor {
     };
   }
 
-  _resolveSegmentIngredient(state) {
-    return state?.currentZone?.ingredient || state?.currentZone?.name || 'Unknown';
+  _resolveSegmentIngredient(state, thresholds, options = {}) {
+    const directIngredient = state?.currentZone?.ingredient || state?.currentZone?.name;
+    if (directIngredient) {
+      return directIngredient;
+    }
+
+    const packetTimeMs = Number(options.packetTimeMs || Date.now());
+    if (this._hasActiveStickyZone(state, thresholds, packetTimeMs)) {
+      const stickyIngredient = this._resolveStickyIngredient(state);
+      if (stickyIngredient) {
+        return stickyIngredient;
+      }
+    }
+
+    return 'Unknown';
   }
 
   _flushCurrentSegment(state, currentWeight, thresholds, result, options = {}) {
@@ -91,7 +131,9 @@ export class TelemetryProcessor {
       });
     }
 
-    const ingredientName = this._resolveSegmentIngredient(state);
+    const ingredientName = this._resolveSegmentIngredient(state, thresholds, {
+      packetTimeMs: options.packetTimeMs
+    });
     state.isMixing = true;
     state.lastIngredientName = ingredientName;
 
@@ -121,6 +163,7 @@ export class TelemetryProcessor {
       : 0;
     const thresholds = this._resolveThresholds(settings);
     const suppressLoading = Boolean(options.suppressLoading);
+    const packetTimeMs = this._parsePacketTimestampMs(packet);
 
     if (!isValidLocation(lat, lon)) {
       result.isValid = false;
@@ -187,10 +230,20 @@ export class TelemetryProcessor {
 
     // ===== ШАГ 4: Детекция загрузки =====
     if ((state.currentZone?.name || null) !== activeZoneName) {
-      this._flushCurrentSegment(state, currentWeight, thresholds, result, { suppressLoading });
+      this._flushCurrentSegment(state, currentWeight, thresholds, result, {
+        suppressLoading,
+        packetTimeMs
+      });
 
       state.currentZone = activeZone ? { ...activeZone, ingredient: activeIngredientName } : null;
       state.zoneStartWeight = currentWeight;
+    }
+
+    // Запоминаем последнюю зону загрузки после обработки смены зоны,
+    // чтобы при входе в новую зону не перетереть предыдущий компонент до flush.
+    if (activeZoneName) {
+      state.lastLoadingZone = { ...activeZone, ingredient: activeIngredientName };
+      state.lastLoadingZoneAtMs = packetTimeMs;
     }
 
     if (currentWeight > state.peakWeight) {
@@ -251,7 +304,8 @@ export class TelemetryProcessor {
       currentWeight < state.peakWeight - thresholds.unloadDropThresholdKg
     ) {
       this._flushCurrentSegment(state, currentWeight, thresholds, result, {
-        segmentEndWeight: state.peakWeight
+        segmentEndWeight: state.peakWeight,
+        packetTimeMs
       });
       state.isUnloading = true;
       state.lastUnloadWeight = currentWeight;

@@ -9,3 +9,6 @@ export const EMPTY_VEHICLE_THRESHOLD_KG = 50;
 export const ANOMALY_THRESHOLD_KG = 200;
 export const ANOMALY_CONFIRM_DELTA_KG = 40;
 export const ANOMALY_CONFIRM_PACKETS = 3;
+// После выезда из зоны загрузки разрешаем короткую "липкую" привязку
+// к последнему компоненту, чтобы не терять его на границе зон.
+export const LOADING_ZONE_STICKY_SECONDS = 180;
