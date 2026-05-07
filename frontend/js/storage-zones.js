@@ -17,10 +17,10 @@ const DEFAULT_MAP_TYPE = "yandex#satellite";
 const TELEMETRY_FRESHNESS_MS = 15000;
 const ZONE_TYPE_STORAGE = "STORAGE";
 const ZONE_TYPE_BARN = "BARN";
-const HOST_TRACK_COLOR = "#4e73df";
-const RTK_GPS_FIX_COLOR = "#e74a3b";
-const RTK_FIX_COLOR = "#1cc88a";
-const OFFLINE_MARKER_COLOR = "#858796";
+const HOST_TRACK_COLOR = "#3F6FAE";
+const RTK_GPS_FIX_COLOR = "#B65F55";
+const RTK_FIX_COLOR = "#5F8A6B";
+const OFFLINE_MARKER_COLOR = "#8A8F93";
 const HOST_MARKER_IMAGE_URL = "img/host.svg";
 const RTK_MARKER_IMAGE_URL = "img/rtk.svg";
 
@@ -136,14 +136,14 @@ function getZoneTypeLabel(zoneOrType) {
 function getZoneTypeColor(zone, isSelected) {
     if (isSelected) {
         return {
-            fillColor: "#f6c23e55",
-            strokeColor: "#d18b00",
+            fillColor: "rgba(232,185,0,0.40)",
+            strokeColor: "#F3C21D",
         };
     }
 
     return normalizeZoneType(zone?.zoneType) === ZONE_TYPE_BARN
-        ? { fillColor: "#36b9cc44", strokeColor: "#138496" }
-        : { fillColor: "#00c85355", strokeColor: "#1e88e5" };
+        ? { fillColor: "rgba(63,111,174,0.34)", strokeColor: "#3F6FAE" }
+        : { fillColor: "rgba(47,159,85,0.36)", strokeColor: "#18B35B" };
 }
 
 function getMarkerLayout(color, imageUrl) {
@@ -855,9 +855,9 @@ function renderZonePreview() {
             [polygonCoords],
             {},
             {
-                fillColor: "#1cc88a22",
-                strokeColor: "#1cc88a",
-                strokeWidth: 2,
+                fillColor: "rgba(232,185,0,0.40)",
+                strokeColor: "#F3C21D",
+                strokeWidth: 4,
                 strokeStyle: "dash",
             }
         );
@@ -866,7 +866,8 @@ function renderZonePreview() {
 
         polygonCoords.forEach((coords, index) => {
             const marker = new ymaps.Placemark(coords, {}, {
-                preset: "islands#greenCircleDotIcon",
+                preset: "islands#circleDotIcon",
+                iconColor: "#F3C21D",
                 draggable: true,
             });
 
@@ -890,9 +891,9 @@ function renderZonePreview() {
         [[Number(zoneData.lat), Number(zoneData.lon)], Number(zoneData.radius)],
         {},
         {
-            fillColor: "#4e73df22",
-            strokeColor: "#4e73df",
-            strokeWidth: 2,
+            fillColor: "rgba(232,185,0,0.40)",
+            strokeColor: "#F3C21D",
+            strokeWidth: 4,
             strokeStyle: "dash",
         }
     );
@@ -903,7 +904,8 @@ function renderZonePreview() {
     const radiusHandleCoords = getCircleRadiusHandleCoords(centerCoords, Number(zoneData.radius));
 
     previewCircleCenterMarker = new ymaps.Placemark(centerCoords, {}, {
-        preset: "islands#blueCircleDotIcon",
+        preset: "islands#circleDotIcon",
+        iconColor: "#F3C21D",
         draggable: true,
     });
 
@@ -1020,7 +1022,7 @@ function drawZones() {
                 {
                     fillColor: zoneColors.fillColor,
                     strokeColor: zoneColors.strokeColor,
-                    strokeWidth: isSelected ? 4 : 2,
+                    strokeWidth: isSelected ? 5 : 4,
                 }
             )
             : new ymaps.Circle(
@@ -1038,7 +1040,7 @@ function drawZones() {
                 {
                     fillColor: zoneColors.fillColor,
                     strokeColor: zoneColors.strokeColor,
-                    strokeWidth: isSelected ? 4 : 2,
+                    strokeWidth: isSelected ? 5 : 4,
                 }
             );
 
