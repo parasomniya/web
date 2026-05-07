@@ -6,6 +6,7 @@ import { buildIngredientSummary, buildUnloadProgress, recalculateBatchViolations
 import { getZoneByCoordinates, resolveEffectiveCoordinates, resolveGroupByCoordinates } from './telemetry-helpers.js'
 import { DEFAULT_TELEMETRY_SETTINGS, getTelemetrySettings } from './telemetry-settings.js'
 import { recordLeftoverViolation } from '../violations/violation-service.js'
+import { getHostTrackClearSince, setHostTrackClearSince } from './track-state-store.js'
 
 const router = Router()
 
@@ -683,7 +684,14 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
 router.get('/recent', authenticate, requireReadAccess, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 5;
+    const requestedDeviceId = getRequestedDeviceId(req)
+    const clearSince = await getHostTrackClearSince(prisma)
+    const where = {
+      ...(requestedDeviceId ? { deviceId: requestedDeviceId } : {}),
+      ...(clearSince ? { timestamp: { gt: clearSince } } : {})
+    }
     const data = await prisma.telemetry.findMany({ 
+      where: Object.keys(where).length ? where : undefined,
       orderBy: { timestamp: 'desc' }, take: limit,
       select: { id: true, timestamp: true, lat: true, lon: true, weight: true, weightValid: true, gpsValid: true, deviceId: true }
     });
@@ -710,7 +718,17 @@ router.get('/admin/latest', authenticate, requireAdmin, async (req, res) => {
 router.get('/admin/history', authenticate, requireAdmin, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
-    const data = await prisma.telemetry.findMany({ orderBy: { timestamp: 'desc' }, take: limit });
+    const requestedDeviceId = getRequestedDeviceId(req)
+    const clearSince = await getHostTrackClearSince(prisma)
+    const where = {
+      ...(requestedDeviceId ? { deviceId: requestedDeviceId } : {}),
+      ...(clearSince ? { timestamp: { gt: clearSince } } : {})
+    }
+    const data = await prisma.telemetry.findMany({
+      where: Object.keys(where).length ? where : undefined,
+      orderBy: { timestamp: 'desc' },
+      take: limit
+    });
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
@@ -737,8 +755,13 @@ router.post('/admin/seed', authenticate, requireAdmin, async (req, res) => {
 
 router.delete('/admin/truncate', authenticate, requireWriteAccess, async (req, res) => {
   try {
-    const deleted = await prisma.telemetry.deleteMany({});
-    res.json({ status: 'ok', message: 'Таблица чиста', count: deleted.count });
+    const clearSince = await setHostTrackClearSince(prisma, new Date());
+    res.json({
+      status: 'ok',
+      message: 'Трек скрыт до новых пакетов',
+      clearSince: clearSince.toISOString(),
+      persisted: true
+    });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
   }

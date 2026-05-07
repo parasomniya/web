@@ -1,4 +1,5 @@
 import { DEFAULT_TELEMETRY_SETTINGS, getTelemetrySettings } from './telemetry-settings.js'
+import { setHostTrackClearSince } from './track-state-store.js'
 
 const CHECK_INTERVAL_MS = 60 * 1000
 const DEFAULT_TIMEZONE = process.env.TELEMETRY_TIMEZONE || process.env.APP_TIMEZONE || 'Asia/Novosibirsk'
@@ -53,10 +54,8 @@ async function runRtkTrackCleanupTick(prisma) {
     const telemetrySettings = await getTelemetrySettings(prisma)
     const resetTime = normalizeResetTime(telemetrySettings.rtkTrackResetTime)
     const now = formatNowInTimezone(new Date(), DEFAULT_TIMEZONE)
-    const [resetHour, resetMinute] = resetTime.split(':').map((value) => Number(value))
-    const resetMinutes = (resetHour * 60) + resetMinute
 
-    if (now.minutesFromStartOfDay < resetMinutes) {
+    if (now.timeKey !== resetTime) {
       return
     }
 
@@ -64,15 +63,15 @@ async function runRtkTrackCleanupTick(prisma) {
       return
     }
 
-    const [hostDeleted, rtkDeleted] = await prisma.$transaction([
-      prisma.telemetry.deleteMany({}),
-      prisma.rtkTelemetry.deleteMany({})
+    const [rtkDeleted] = await Promise.all([
+      prisma.rtkTelemetry.deleteMany({}),
+      setHostTrackClearSince(prisma, new Date())
     ])
     lastClearedDayKey = now.dayKey
 
     console.log(
       `[TRACK] Ежедневная очистка треков (${resetTime}, ${DEFAULT_TIMEZONE}), ` +
-      `host=${hostDeleted.count}, rtk=${rtkDeleted.count}`
+      `rtk=${rtkDeleted.count}`
     )
   } catch (error) {
     console.error('[TRACK] Ошибка фоновой очистки треков:', error)

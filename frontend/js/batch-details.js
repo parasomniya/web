@@ -884,10 +884,11 @@ $(document).ready(function () {
                 });
             }
 
+            const activeZonesCount = (Array.isArray(state.storageZones) ? state.storageZones : [])
+                .filter((zone) => zone?.active)
+                .length;
+
             if (trackMeta) {
-                const activeZonesCount = (Array.isArray(state.storageZones) ? state.storageZones : [])
-                    .filter((zone) => zone?.active)
-                    .length;
                 setText(
                     trackMeta,
                     activeZonesCount > 0
@@ -896,7 +897,11 @@ $(document).ready(function () {
                 );
             }
             if (trackEmpty) {
-                trackEmpty.classList.remove("d-none");
+                if (activeZonesCount > 0) {
+                    trackEmpty.classList.add("d-none");
+                } else {
+                    trackEmpty.classList.remove("d-none");
+                }
             }
             return;
         }

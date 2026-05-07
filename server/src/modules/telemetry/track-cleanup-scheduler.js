@@ -1,6 +1,7 @@
 const CHECK_INTERVAL_MS = 60 * 1000
 const TRACK_CLEANUP_OFFSET_MINUTES = 7 * 60
 const TRACK_CLEANUP_TIME = '03:00'
+import { setHostTrackClearSince } from './track-state-store.js'
 
 let cleanupTimer = null
 let isCleanupRunning = false
@@ -24,15 +25,14 @@ function formatInFixedOffset(date, offsetMinutes) {
 }
 
 export async function clearTelemetryTrack(prisma) {
-  const [hostDeleted, rtkDeleted] = await prisma.$transaction([
-    prisma.telemetry.deleteMany({}),
-    prisma.rtkTelemetry.deleteMany({})
+  const [rtkDeleted] = await Promise.all([
+    prisma.rtkTelemetry.deleteMany({}),
+    setHostTrackClearSince(prisma, new Date())
   ])
 
   return {
-    hostCount: hostDeleted.count,
     rtkCount: rtkDeleted.count,
-    totalCount: hostDeleted.count + rtkDeleted.count
+    totalCount: rtkDeleted.count
   }
 }
 
@@ -51,7 +51,7 @@ export async function runTrackCleanupTick(prisma, now = new Date()) {
     lastCleanupDayKey = zonedNow.dayKey
     console.log(
       `[TRACK CLEANUP] Track cleared for ${zonedNow.dayKey} ${TRACK_CLEANUP_TIME} UTC+7: ` +
-      `host=${result.hostCount}, rtk=${result.rtkCount}`
+      `rtk=${result.rtkCount}`
     )
     return result
   } catch (error) {
