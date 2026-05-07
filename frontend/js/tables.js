@@ -4,6 +4,7 @@ $(document).ready(function () {
     const resetButton = document.getElementById("batchesResetButton");
     const BATCHES_RESET_API_URL = window.AppAuth?.getApiUrl?.("/api/batches/admin/truncate") || "/api/batches/admin/truncate";
     const CAN_ADMIN_RESET = window.AppAuth?.isAdmin?.() === true;
+    const CAN_WRITE = window.AppAuth?.hasWriteAccess?.() === true;
 
     const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
         day: "2-digit",
@@ -114,6 +115,33 @@ $(document).ready(function () {
                     }
 
                     return renderIngredients(ingredients);
+                },
+            },
+            {
+                data: null,
+                className: "align-middle text-center",
+                orderable: false,
+                render: function (data, type, row) {
+                    if (type !== "display") {
+                        return "";
+                    }
+
+                    const id = Number(row?.id);
+                    if (!CAN_WRITE || !Number.isInteger(id)) {
+                        return '<span class="text-muted small">--</span>';
+                    }
+
+                    return `
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-outline-danger"
+                            data-role="delete-batch"
+                            data-batch-id="${id}"
+                            title="Удалить замес #${id}"
+                        >
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    `;
                 },
             },
         ],
@@ -373,6 +401,37 @@ $(document).ready(function () {
         }
     }
 
+    async function deleteBatch(batchId) {
+        if (!CAN_WRITE || !Number.isInteger(batchId)) {
+            return;
+        }
+
+        const confirmed = window.confirm(`Удалить замес #${batchId}? Это действие нельзя отменить.`);
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            const deleteUrl = window.AppAuth?.getApiUrl?.(`/api/batches/${batchId}`) || `/api/batches/${batchId}`;
+            const response = await fetch(deleteUrl, {
+                method: "DELETE",
+                headers: window.AppAuth?.getAuthHeaders?.() || {},
+            });
+
+            if (!response.ok) {
+                const message = await readErrorMessage(response);
+                throw new Error(message || "Не удалось удалить замес");
+            }
+
+            lastSnapshotKey = "";
+            await loadBatches({ force: true });
+            window.AppAuth?.showAlert?.(`Замес #${batchId} удалён`, "success");
+        } catch (error) {
+            console.error("Ошибка удаления замеса:", error);
+            window.AppAuth?.showAlert?.(error.message || "Не удалось удалить замес", "danger");
+        }
+    }
+
     function showLoadError(message, dateValue) {
         const alertKey = `${dateValue}|${message}`;
         if (alertKey === lastAlertKey) {
@@ -466,6 +525,18 @@ $(document).ready(function () {
         event.preventDefault();
         const rowData = table.row(this).data();
         openBatchDetails(rowData?.id);
+    });
+
+    $("#batchesTable tbody").on("click", "button[data-role='delete-batch']", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const rawId = Number.parseInt(this.dataset.batchId, 10);
+        if (!Number.isInteger(rawId)) {
+            return;
+        }
+
+        deleteBatch(rawId);
     });
 
     if (dateInput) {

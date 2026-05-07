@@ -4,13 +4,10 @@ import { authenticate, requireAdmin, requireReadAccess, requireWriteAccess } fro
 import telemetryProcessor from '../../../../module-3/telemetryProcessor.js'
 import { buildIngredientSummary, buildUnloadProgress, recalculateBatchViolations } from '../batches/batch-violations.js'
 import { getZoneByCoordinates, resolveEffectiveCoordinates, resolveGroupByCoordinates } from './telemetry-helpers.js'
-import { getTelemetrySettings } from './telemetry-settings.js'
+import { DEFAULT_TELEMETRY_SETTINGS, getTelemetrySettings } from './telemetry-settings.js'
 import { recordLeftoverViolation } from '../violations/violation-service.js'
 
 const router = Router()
-const AUTO_CLOSE_ZERO_WEIGHT_KG = 10
-const AUTO_CLOSE_EMPTY_STREAK = 5
-const AUTO_CLOSE_NEGATIVE_STREAK = 3
 
 function normalizeZoneType(value) {
   if (!value) return ''
@@ -82,8 +79,21 @@ function getRequestedDeviceId(req) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-async function inferMachineStateFromDatabase(deviceId, latestTelemetry, activeBatch, memoryState = {}, options = {}) {
+async function inferMachineStateFromDatabase(
+  deviceId,
+  latestTelemetry,
+  activeBatch,
+  memoryState = {},
+  telemetrySettings = {},
+  options = {}
+) {
   const currentZone = memoryState?.currentZone || options.currentZone || null
+  const modeUnloadDropHintKg = Number(telemetrySettings.modeUnloadDropHintKg) > 0
+    ? Number(telemetrySettings.modeUnloadDropHintKg)
+    : DEFAULT_TELEMETRY_SETTINGS.modeUnloadDropHintKg
+  const modeLoadingDeltaHintKg = Number(telemetrySettings.modeLoadingDeltaHintKg) > 0
+    ? Number(telemetrySettings.modeLoadingDeltaHintKg)
+    : DEFAULT_TELEMETRY_SETTINGS.modeLoadingDeltaHintKg
 
   if (!latestTelemetry) {
     return {
@@ -138,9 +148,9 @@ async function inferMachineStateFromDatabase(deviceId, latestTelemetry, activeBa
     mode = 'Выгрузка'
   } else if (memoryState?.isMixing) {
     mode = 'Загрузка'
-  } else if (dropFromPeak > 30) {
+  } else if (dropFromPeak > modeUnloadDropHintKg) {
     mode = 'Выгрузка'
-  } else if (recentDelta > 5 || (activeBatch.actualIngredients || []).length > 0) {
+  } else if (recentDelta > modeLoadingDeltaHintKg || (activeBatch.actualIngredients || []).length > 0) {
     mode = 'Загрузка'
   }
 
@@ -176,6 +186,15 @@ router.post('/', async (req, res) => {
         .map((group) => Number(group.storageZoneId))
         .filter((zoneId) => Number.isInteger(zoneId) && zoneId > 0)
     )
+    const autoCloseZeroWeightKg = Number(telemetrySettings.autoCloseZeroWeightKg) > 0
+      ? Number(telemetrySettings.autoCloseZeroWeightKg)
+      : DEFAULT_TELEMETRY_SETTINGS.autoCloseZeroWeightKg
+    const autoCloseEmptyStreak = Number(telemetrySettings.autoCloseEmptyStreak) > 0
+      ? Number(telemetrySettings.autoCloseEmptyStreak)
+      : DEFAULT_TELEMETRY_SETTINGS.autoCloseEmptyStreak
+    const autoCloseNegativeStreak = Number(telemetrySettings.autoCloseNegativeStreak) > 0
+      ? Number(telemetrySettings.autoCloseNegativeStreak)
+      : DEFAULT_TELEMETRY_SETTINGS.autoCloseNegativeStreak
     const loadingZones = activeZones.filter((zone) => isLoadingZone(zone, linkedBarnZoneIds))
     const effectivePosition = await resolveEffectiveCoordinates(prisma, packet, {
       deviceId,
@@ -417,7 +436,7 @@ router.post('/', async (req, res) => {
             tx.telemetry.findMany({
               where: { deviceId },
               orderBy: { timestamp: 'desc' },
-              take: AUTO_CLOSE_EMPTY_STREAK,
+              take: autoCloseEmptyStreak,
               select: { weight: true }
             }),
             tx.batchIngredient.count({
@@ -427,10 +446,10 @@ router.post('/', async (req, res) => {
 
           if (ingredientCount > 0) {
             const negativeCount = recentTelemetry.filter((item) => Number(item.weight || 0) < 0).length
-            const nearZeroCount = recentTelemetry.filter((item) => Math.max(0, Number(item.weight || 0)) <= AUTO_CLOSE_ZERO_WEIGHT_KG).length
+            const nearZeroCount = recentTelemetry.filter((item) => Math.max(0, Number(item.weight || 0)) <= autoCloseZeroWeightKg).length
 
-            const shouldAutoCloseByNegative = recentTelemetry.length >= AUTO_CLOSE_NEGATIVE_STREAK && negativeCount >= AUTO_CLOSE_NEGATIVE_STREAK
-            const shouldAutoCloseByEmpty = recentTelemetry.length >= AUTO_CLOSE_EMPTY_STREAK && nearZeroCount >= AUTO_CLOSE_EMPTY_STREAK
+            const shouldAutoCloseByNegative = recentTelemetry.length >= autoCloseNegativeStreak && negativeCount >= autoCloseNegativeStreak
+            const shouldAutoCloseByEmpty = recentTelemetry.length >= autoCloseEmptyStreak && nearZeroCount >= autoCloseEmptyStreak
 
             if (shouldAutoCloseByNegative || shouldAutoCloseByEmpty) {
               const closedBatchId = activeBatch.id
@@ -587,9 +606,16 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
     ]);
     const detectedZone = getZoneByCoordinates(effectivePosition.lat, effectivePosition.lon, activeZones);
 
-    const machineState = await inferMachineStateFromDatabase(data.deviceId, data, activeBatch, memoryState, {
-      currentZone: detectedZone?.name || null
-    });
+    const machineState = await inferMachineStateFromDatabase(
+      data.deviceId,
+      data,
+      activeBatch,
+      memoryState,
+      telemetrySettings,
+      {
+        currentZone: detectedZone?.name || null
+      }
+    );
 
     let mode = 'Ожидание';
     let unload_progress = null;

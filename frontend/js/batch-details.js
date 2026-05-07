@@ -30,9 +30,11 @@ $(document).ready(function () {
     const editGroupHint = document.getElementById("batchEditGroupHint");
     const editSubmitButton = document.getElementById("batchEditSubmitButton");
     const stopButton = document.getElementById("batchStopButton");
+    const deleteButton = document.getElementById("batchDeleteButton");
 
     const batchUrl = window.AppAuth?.getApiUrl?.(`/api/batches/${batchId}`) || `/api/batches/${batchId}`;
     const telemetryUrl = window.AppAuth?.getApiUrl?.(`/api/batches/${batchId}/telemetry`) || `/api/batches/${batchId}/telemetry`;
+    const batchDeleteUrl = window.AppAuth?.getApiUrl?.(`/api/batches/${batchId}`) || `/api/batches/${batchId}`;
     const stopBatchUrl = window.AppAuth?.getApiUrl?.("/api/telemetry/host/manual-stop") || "/api/telemetry/host/manual-stop";
     const rationsUrl = window.AppAuth?.getApiUrl?.("/api/rations") || "/api/rations";
     const groupsUrl = window.AppAuth?.getApiUrl?.("/api/groups") || "/api/groups";
@@ -63,6 +65,7 @@ $(document).ready(function () {
         isSaving: false,
         ingredientUpdateId: null,
         stopBatchInFlight: false,
+        deleteBatchInFlight: false,
         batchError: "",
         editorMessage: null,
         rations: [],
@@ -293,6 +296,7 @@ $(document).ready(function () {
         setText(remainingWeight, formatWeight(batch?.unloadingInfo?.remainingWeight));
         renderUnloadProgress(batch?.unloadingInfo?.progress || null);
         updateStopButtonState(batch);
+        updateDeleteButtonState(batch);
     }
 
     function renderUnloadProgress(progress) {
@@ -378,40 +382,63 @@ $(document).ready(function () {
         const ingredientId = normalizeNullableId(row?.id);
         const ingredientName = getIngredientDisplayName(row?.name);
         const isUnknown = isUnknownIngredientName(ingredientName);
+        const isDisabled = state.isBatchLoading || state.isSaving || state.stopBatchInFlight || state.deleteBatchInFlight;
+        const canEditFromRation = canWrite && ingredientId !== null && !isDisabled && hasReplacementOptions;
+        const canEditManual = canWrite && ingredientId !== null && !isDisabled && !hasRation;
+        const disabledAttribute = canEditFromRation ? "" : " disabled";
+        const optionsMarkup = replacementOptions
+            .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+            .join("");
 
-        if (!isUnknown || !canWrite || ingredientId === null) {
+        if (!canWrite || ingredientId === null) {
             return `<strong>${escapeHtml(ingredientName || "Без названия")}</strong>`;
         }
 
         if (state.ingredientUpdateId === ingredientId) {
             return `
                 <div class="batch-ingredient-editor">
-                    <strong class="d-block text-warning">Неизвестный</strong>
+                    <strong class="d-block ${isUnknown ? "text-warning" : ""}">${escapeHtml(ingredientName || "Без названия")}</strong>
                     <small class="text-muted d-block mt-1">Сохраняем выбранный корм...</small>
                 </div>
             `;
         }
 
-        const isDisabled = state.isBatchLoading || state.isSaving || state.stopBatchInFlight;
-        const canPickReplacement = !isDisabled && hasRation && hasReplacementOptions;
-        const disabledAttribute = canPickReplacement ? "" : " disabled";
-        const optionsMarkup = replacementOptions
-            .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
-            .join("");
+        let hint = isUnknown
+            ? "Выберите корм вместо «Неизвестного»."
+            : "Можно заменить компонент вручную.";
 
-        let hint = "Выберите корм вместо «Неизвестного».";
         if (!hasRation) {
-            hint = "Сначала привяжите рацион к замесу.";
+            hint = "Рацион не назначен: доступно ручное переименование компонента.";
         } else if (!hasReplacementOptions) {
             hint = "В привязанном рационе нет ингредиентов для выбора.";
         } else if (isDisabled) {
             hint = "Подождите завершения текущего сохранения/загрузки.";
         }
 
-        if (!canPickReplacement) {
+        if (canEditManual) {
             return `
                 <div class="batch-ingredient-editor">
-                    <strong>${escapeHtml(ingredientName || "Неизвестный")}</strong>
+                    <div class="batch-ingredient-editor__controls">
+                        <span class="batch-ingredient-editor__trigger ${isUnknown ? "text-warning" : ""}">${escapeHtml(ingredientName || "Без названия")}</span>
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-outline-primary"
+                            data-role="ingredient-rename"
+                            data-ingredient-id="${ingredientId}"
+                            data-current-name="${escapeHtml(ingredientName || "")}"
+                        >
+                            Переименовать
+                        </button>
+                    </div>
+                    <small class="text-muted d-block mt-1">${escapeHtml(hint)}</small>
+                </div>
+            `;
+        }
+
+        if (!canEditFromRation) {
+            return `
+                <div class="batch-ingredient-editor">
+                    <strong class="${isUnknown ? "text-warning" : ""}">${escapeHtml(ingredientName || "Без названия")}</strong>
                     <small class="text-muted d-block mt-1">${escapeHtml(hint)}</small>
                 </div>
             `;
@@ -421,7 +448,7 @@ $(document).ready(function () {
             <div class="batch-ingredient-editor">
                 <div class="batch-ingredient-editor__controls">
                 <label class="sr-only" for="batchIngredientSelect${ingredientId}">Выбор корма</label>
-                <span class="batch-ingredient-editor__trigger">${escapeHtml(ingredientName || "Неизвестный")}</span>
+                <span class="batch-ingredient-editor__trigger ${isUnknown ? "text-warning" : ""}">${escapeHtml(ingredientName || "Без названия")}</span>
                 <select
                     id="batchIngredientSelect${ingredientId}"
                     class="form-control form-control-sm batch-ingredient-editor__select"
@@ -768,10 +795,12 @@ $(document).ready(function () {
             || Boolean(state.batchError)
             || state.isBatchLoading
             || state.isSaving
-            || state.stopBatchInFlight;
+            || state.stopBatchInFlight
+            || state.deleteBatchInFlight;
 
         editSubmitButton.textContent = state.isSaving ? "Сохраняем..." : "Пересчитать";
         updateStopButtonState(state.batch);
+        updateDeleteButtonState(state.batch);
     }
 
     function renderBatchEditor(batch) {
@@ -909,6 +938,12 @@ $(document).ready(function () {
         });
     }
 
+    async function deleteJson(url) {
+        return requestJson(url, {
+            method: "DELETE",
+        });
+    }
+
     async function handleIngredientReplacementChange(event) {
         const selectElement = event?.target;
         if (!(selectElement instanceof HTMLSelectElement) || selectElement.dataset.role !== "ingredient-replacement") {
@@ -956,13 +991,31 @@ $(document).ready(function () {
         }
 
         stopButton.classList.remove("d-none");
-        stopButton.disabled = state.stopBatchInFlight || state.isBatchLoading || state.isSaving;
+        stopButton.disabled = state.stopBatchInFlight || state.deleteBatchInFlight || state.isBatchLoading || state.isSaving;
         stopButton.textContent = state.stopBatchInFlight ? "Останавливаем..." : "Остановить замес";
+    }
+
+    function updateDeleteButtonState(batch) {
+        if (!deleteButton) {
+            return;
+        }
+
+        const canShow = canWrite && normalizeNullableId(batch?.id) !== null;
+        if (!canShow) {
+            deleteButton.classList.add("d-none");
+            deleteButton.disabled = true;
+            deleteButton.textContent = "Удалить замес";
+            return;
+        }
+
+        deleteButton.classList.remove("d-none");
+        deleteButton.disabled = state.stopBatchInFlight || state.deleteBatchInFlight || state.isBatchLoading || state.isSaving;
+        deleteButton.textContent = state.deleteBatchInFlight ? "Удаляем..." : "Удалить замес";
     }
 
     async function handleStopBatchClick() {
         const currentBatchId = normalizeNullableId(state.batch?.id);
-        if (!canWrite || !currentBatchId || state.stopBatchInFlight) {
+        if (!canWrite || !currentBatchId || state.stopBatchInFlight || state.deleteBatchInFlight) {
             return;
         }
 
@@ -986,6 +1039,79 @@ $(document).ready(function () {
         } finally {
             state.stopBatchInFlight = false;
             updateStopButtonState(state.batch);
+            updateDeleteButtonState(state.batch);
+        }
+    }
+
+    async function handleIngredientRenameClick(event) {
+        const button = event?.target?.closest?.("[data-role='ingredient-rename']");
+        if (!(button instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        if (state.ingredientUpdateId !== null || state.isBatchLoading || state.isSaving || state.stopBatchInFlight || state.deleteBatchInFlight) {
+            return;
+        }
+
+        const ingredientId = normalizeNullableId(button.dataset.ingredientId);
+        if (ingredientId === null) {
+            return;
+        }
+
+        const currentName = getIngredientDisplayName(button.dataset.currentName || "");
+        const nextNameRaw = window.prompt("Введите новое название компонента", currentName);
+        if (nextNameRaw === null) {
+            return;
+        }
+
+        const nextName = String(nextNameRaw).trim().replace(/\s+/g, " ");
+        if (!nextName) {
+            window.AppAuth?.showAlert?.("Название компонента не может быть пустым", "warning");
+            return;
+        }
+
+        state.ingredientUpdateId = ingredientId;
+        renderIngredientList(Array.isArray(state.batch?.actualIngredients) ? state.batch.actualIngredients : []);
+
+        try {
+            await patchJson(`${batchUrl}/ingredients/${ingredientId}`, { ingredientName: nextName });
+            const didReload = await loadBatchDetails();
+            if (didReload) {
+                window.AppAuth?.showAlert?.("Ингредиент обновлен", "success");
+            }
+        } catch (error) {
+            window.AppAuth?.showAlert?.(error.message || "Не удалось обновить ингредиент", "danger");
+        } finally {
+            state.ingredientUpdateId = null;
+            renderIngredientList(Array.isArray(state.batch?.actualIngredients) ? state.batch.actualIngredients : []);
+        }
+    }
+
+    async function handleDeleteBatchClick() {
+        const currentBatchId = normalizeNullableId(state.batch?.id);
+        if (!canWrite || !currentBatchId || state.deleteBatchInFlight || state.stopBatchInFlight) {
+            return;
+        }
+
+        const approved = window.confirm(`Удалить замес #${currentBatchId}? Это действие нельзя отменить.`);
+        if (!approved) {
+            return;
+        }
+
+        state.deleteBatchInFlight = true;
+        updateStopButtonState(state.batch);
+        updateDeleteButtonState(state.batch);
+
+        try {
+            await deleteJson(batchDeleteUrl);
+            window.AppAuth?.showAlert?.(`Замес #${currentBatchId} удалён`, "success");
+            window.location.href = buildBackLink();
+        } catch (error) {
+            window.AppAuth?.showAlert?.(error.message || "Не удалось удалить замес", "danger");
+        } finally {
+            state.deleteBatchInFlight = false;
+            updateStopButtonState(state.batch);
+            updateDeleteButtonState(state.batch);
         }
     }
 
@@ -1171,10 +1297,15 @@ $(document).ready(function () {
 
     if (ingredientListBody) {
         ingredientListBody.addEventListener("change", handleIngredientReplacementChange);
+        ingredientListBody.addEventListener("click", handleIngredientRenameClick);
     }
 
     if (stopButton) {
         stopButton.addEventListener("click", handleStopBatchClick);
+    }
+
+    if (deleteButton) {
+        deleteButton.addEventListener("click", handleDeleteBatchClick);
     }
 
     if (canWrite) {

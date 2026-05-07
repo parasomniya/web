@@ -351,7 +351,62 @@ router.patch('/:id', authenticate, requireWriteAccess, async (req, res) => {
 });
 
 // ============================================================================
-// 5. PATCH /:batchId/ingredients/:ingredientId - Замена "Unknown" компонента
+// DELETE /:id - Точечное удаление замеса
+// ============================================================================
+router.delete('/:id', authenticate, requireWriteAccess, async (req, res) => {
+    try {
+        const batchId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(batchId)) {
+            return res.status(400).json({ error: 'Некорректный ID замеса' });
+        }
+
+        const batch = await prisma.batch.findUnique({
+            where: { id: batchId },
+            select: {
+                id: true,
+                deviceId: true,
+                endTime: true,
+            }
+        });
+
+        if (!batch) {
+            return res.status(404).json({ error: 'Замес не найден' });
+        }
+
+        const deletion = await prisma.$transaction(async (tx) => {
+            const deletedViolations = await tx.violation.deleteMany({
+                where: { batchId }
+            });
+            await tx.batch.delete({
+                where: { id: batchId }
+            });
+
+            return {
+                deletedViolations: deletedViolations.count
+            };
+        });
+
+        // Если удалили активный замес — очищаем in-memory FSM, чтобы не "воскрешался".
+        if (!batch.endTime && batch.deviceId) {
+            telemetryProcessor.clearDeviceState(batch.deviceId);
+        }
+
+        return res.json({
+            status: 'ok',
+            message: `Замес #${batchId} удалён`,
+            ...deletion
+        });
+    } catch (error) {
+        console.error('[Ошибка DELETE /batches/:id]:', error);
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Замес не найден' });
+        }
+        return res.status(500).json({ error: 'Не удалось удалить замес' });
+    }
+});
+
+// ============================================================================
+// 5. PATCH /:batchId/ingredients/:ingredientId - Изменение компонента в замесе
 // ============================================================================
 router.patch('/:batchId/ingredients/:ingredientId', authenticate, requireWriteAccess, async (req, res) => {
     try {
@@ -389,25 +444,26 @@ router.patch('/:batchId/ingredients/:ingredientId', authenticate, requireWriteAc
             return res.status(404).json({ error: 'Ингредиент замеса не найден' });
         }
 
-        if (!batch.ration) {
-            return res.status(400).json({ error: 'Нельзя заменить Unknown: у замеса не назначен рацион' });
-        }
+        let canonicalIngredientName = nextIngredientName;
+        if (batch.ration) {
+            const matchedRationIngredient = batch.ration.ingredients.find((item) =>
+                normalizeIngredientName(item.name) === normalizeIngredientName(nextIngredientName)
+            );
 
-        const matchedRationIngredient = batch.ration.ingredients.find((item) =>
-            normalizeIngredientName(item.name) === normalizeIngredientName(nextIngredientName)
-        );
+            if (!matchedRationIngredient) {
+                return res.status(400).json({
+                    error: 'Корм не входит в рацион этого замеса',
+                    allowedIngredients: batch.ration.ingredients.map((item) => item.name)
+                });
+            }
 
-        if (!matchedRationIngredient) {
-            return res.status(400).json({
-                error: 'Корм не входит в рацион этого замеса',
-                allowedIngredients: batch.ration.ingredients.map((item) => item.name)
-            });
+            canonicalIngredientName = matchedRationIngredient.name;
         }
 
         // Обновляем имя компонента в базе
         const updatedIngredient = await prisma.batchIngredient.update({
             where: { id: ingredientId },
-            data: { ingredientName: matchedRationIngredient.name }
+            data: { ingredientName: canonicalIngredientName }
         });
 
         const recalculation = await recalculateBatchViolations(prisma, batchId);

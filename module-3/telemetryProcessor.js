@@ -12,7 +12,7 @@ import {
   ANOMALY_CONFIRM_DELTA_KG,
   ANOMALY_CONFIRM_PACKETS,
   LOADING_ZONE_STICKY_SECONDS,
-  DEFAULT_ZONE_DEBOUNCE_MS
+  DEFAULT_ZONE_DEBOUNCE_MS,
   ZONE_CHANGE_CONFIRM_PACKETS
 } from './config.js';
 
@@ -40,9 +40,7 @@ export class TelemetryProcessor {
       lastLoadingZoneAtMs: null,
       // Дебаунс смены зоны
       pendingZoneName: null,
-      pendingZoneEnteredAtMs: null
-      pendingZone: null,
-      pendingZoneKey: null,
+      pendingZoneEnteredAtMs: null,
       pendingZoneCount: 0
     };
   }
@@ -60,11 +58,13 @@ export class TelemetryProcessor {
       unloadDropThresholdKg: Number(settings.unloadDropThresholdKg) > 0 ? Number(settings.unloadDropThresholdKg) : UNLOAD_DROP_THRESHOLD_KG,
       unloadMinPeakKg: Number(settings.unloadMinPeakKg) > 0 ? Number(settings.unloadMinPeakKg) : UNLOAD_MIN_PEAK_KG,
       unloadUpdateDeltaKg: Number(settings.unloadUpdateDeltaKg) > 0 ? Number(settings.unloadUpdateDeltaKg) : UNLOAD_UPDATE_DELTA_KG,
+      unloadWeightBufferKg: Number(settings.unloadWeightBufferKg) > 0 ? Number(settings.unloadWeightBufferKg) : UNLOAD_WEIGHT_BUFFER_KG,
+      emptyVehicleThresholdKg: Number(settings.emptyVehicleThresholdKg) > 0 ? Number(settings.emptyVehicleThresholdKg) : EMPTY_VEHICLE_THRESHOLD_KG,
       anomalyThresholdKg: Number(settings.anomalyThresholdKg) > 0 ? Number(settings.anomalyThresholdKg) : ANOMALY_THRESHOLD_KG,
       anomalyConfirmDeltaKg: Number(settings.anomalyConfirmDeltaKg) > 0 ? Number(settings.anomalyConfirmDeltaKg) : ANOMALY_CONFIRM_DELTA_KG,
       anomalyConfirmPackets: Number(settings.anomalyConfirmPackets) > 0 ? Number(settings.anomalyConfirmPackets) : ANOMALY_CONFIRM_PACKETS,
       loadingZoneStickySeconds: Number(settings.loadingZoneStickySeconds) > 0 ? Number(settings.loadingZoneStickySeconds) : LOADING_ZONE_STICKY_SECONDS,
-      zoneChangeDebounceMs: Number(settings.zoneChangeDebounceMs) > 0 ? Number(settings.zoneChangeDebounceMs) : DEFAULT_ZONE_DEBOUNCE_MS
+      zoneChangeDebounceMs: Number(settings.zoneChangeDebounceMs) > 0 ? Number(settings.zoneChangeDebounceMs) : DEFAULT_ZONE_DEBOUNCE_MS,
       zoneChangeConfirmPackets: Number(settings.zoneChangeConfirmPackets) > 0 ? Number(settings.zoneChangeConfirmPackets) : ZONE_CHANGE_CONFIRM_PACKETS
     };
   }
@@ -77,62 +77,6 @@ export class TelemetryProcessor {
     }
     const ts = new Date(raw || Date.now()).getTime();
     return Number.isFinite(ts) ? ts : Date.now();
-  }
-
-  _zoneKey(zone) {
-    if (!zone) return null;
-    if (Number.isFinite(Number(zone.id))) return `id:${Number(zone.id)}`;
-    if (zone.name) return `name:${String(zone.name).trim().toLowerCase()}`;
-    return null;
-  }
-
-  _getZoneTransitionConfirmPackets(currentZone, nextZone, thresholds) {
-    // Вход в зону фиксируем сразу, иначе можно пропускать короткие реальные заезды.
-    if (!currentZone && nextZone) return 1;
-    // Выход из зоны и переход зона->зона подтверждаем несколькими пакетами,
-    // чтобы убрать дребезг на границах.
-    return Number(thresholds.zoneChangeConfirmPackets || ZONE_CHANGE_CONFIRM_PACKETS);
-  }
-
-  _resolveStableZone(state, detectedZone, thresholds) {
-    const currentKey = this._zoneKey(state.currentZone);
-    const detectedKey = this._zoneKey(detectedZone);
-
-    if (currentKey === detectedKey) {
-      state.pendingZone = null;
-      state.pendingZoneKey = null;
-      state.pendingZoneCount = 0;
-      return {
-        changed: false,
-        zone: state.currentZone
-      };
-    }
-
-    if (state.pendingZoneKey !== detectedKey) {
-      state.pendingZone = detectedZone ? { ...detectedZone } : null;
-      state.pendingZoneKey = detectedKey;
-      state.pendingZoneCount = 1;
-    } else {
-      state.pendingZoneCount += 1;
-    }
-
-    const confirmPackets = this._getZoneTransitionConfirmPackets(state.currentZone, detectedZone, thresholds);
-    if (state.pendingZoneCount < confirmPackets) {
-      return {
-        changed: false,
-        zone: state.currentZone
-      };
-    }
-
-    const nextZone = state.pendingZone ? { ...state.pendingZone } : null;
-    state.pendingZone = null;
-    state.pendingZoneKey = null;
-    state.pendingZoneCount = 0;
-
-    return {
-      changed: true,
-      zone: nextZone
-    };
   }
 
   _hasActiveStickyZone(state, thresholds, packetTimeMs) {
@@ -281,7 +225,7 @@ export class TelemetryProcessor {
     const activeZone = detectZoneObject(lat, lon, zonesConfig);
     const activeZoneName = activeZone?.name || null;
     const activeIngredientName = activeZone?.ingredient || activeZoneName;
-    
+
     // БАННЕР: показываем сразу при первом детектировании (для отзывчивости UI)
     if (activeZoneName && activeZoneName !== state.lastZoneName) {
       result.banner = {
@@ -290,39 +234,41 @@ export class TelemetryProcessor {
       };
       state.lastZoneName = activeZoneName;
     }
-    const detectedZone = detectZoneObject(lat, lon, zonesConfig);
-    const zoneResolution = this._resolveStableZone(state, detectedZone, thresholds);
-    const currentResolvedZone = zoneResolution.changed ? zoneResolution.zone : state.currentZone;
-    const activeZoneName = currentResolvedZone?.name || null;
-    const activeIngredientName = currentResolvedZone?.ingredient || activeZoneName;
 
-    // ДЕБАУНС СМЕНЫ ЗОНЫ (бизнес-логика)
+    // ДЕБАУНС/ПОДТВЕРЖДЕНИЕ смены зоны (бизнес-логика)
     const confirmedZoneName = state.confirmedZoneName || null;
-    
     if (activeZoneName !== confirmedZoneName) {
       if (activeZoneName === state.pendingZoneName) {
-        const timeInPending = packetTimeMs - state.pendingZoneEnteredAtMs;
-        if (timeInPending >= thresholds.zoneChangeDebounceMs) {
+        state.pendingZoneCount = Number(state.pendingZoneCount || 0) + 1;
+        const timeInPending = packetTimeMs - Number(state.pendingZoneEnteredAtMs || packetTimeMs);
+
+        if (
+          state.pendingZoneCount >= thresholds.zoneChangeConfirmPackets &&
+          timeInPending >= thresholds.zoneChangeDebounceMs
+        ) {
           this._confirmZoneChange(
-            state, 
-            activeZoneName, 
-            activeZone, 
-            activeIngredientName, 
-            currentWeight, 
-            thresholds, 
-            result, 
+            state,
+            activeZoneName,
+            activeZone,
+            activeIngredientName,
+            currentWeight,
+            thresholds,
+            result,
             { suppressLoading, packetTimeMs }
           );
           state.pendingZoneName = null;
           state.pendingZoneEnteredAtMs = null;
+          state.pendingZoneCount = 0;
         }
       } else {
         state.pendingZoneName = activeZoneName;
         state.pendingZoneEnteredAtMs = packetTimeMs;
+        state.pendingZoneCount = 1;
       }
     } else {
       state.pendingZoneName = null;
       state.pendingZoneEnteredAtMs = null;
+      state.pendingZoneCount = 0;
     }
 
     // Sticky-зона: обновляется на КАЖДОМ пакете с активной зоной, независимо от дебаунса
@@ -336,40 +282,6 @@ export class TelemetryProcessor {
       if (currentWeight < state.zoneStartWeight) {
         state.zoneStartWeight = currentWeight;
       }
-    }
-
-    // Пиковый вес
-    // ===== ШАГ 4: Детекция загрузки =====
-    if (zoneResolution.changed) {
-      this._flushCurrentSegment(state, currentWeight, thresholds, result, {
-        suppressLoading,
-        packetTimeMs
-      });
-
-      state.currentZone = currentResolvedZone
-        ? { ...currentResolvedZone, ingredient: activeIngredientName }
-        : null;
-      state.zoneStartWeight = currentWeight;
-    }
-
-    // Запоминаем последнюю зону загрузки после обработки смены зоны,
-    // чтобы при входе в новую зону не перетереть предыдущий компонент до flush.
-    if (state.currentZone?.name) {
-      state.lastLoadingZone = {
-        ...state.currentZone,
-        ingredient: state.currentZone.ingredient || state.currentZone.name
-      };
-      state.lastLoadingZoneAtMs = packetTimeMs;
-    }
-
-    if (activeZoneName !== state.lastZoneName) {
-      if (activeZoneName) {
-        result.banner = {
-          type: 'zone_enter',
-          message: `Въезд в зону ${activeZoneName}`
-        };
-      }
-      state.lastZoneName = activeZoneName;
     }
 
     if (currentWeight > state.peakWeight) {
@@ -386,7 +298,7 @@ export class TelemetryProcessor {
     ) {
       state.isBatchStarted = true;
       state.isMixing = true;
-      state.lastIngredientName = 'Unknown';
+      state.lastIngredientName = this._resolveSegmentIngredient(state, thresholds, { packetTimeMs });
 
       result.dbActions.push({
         type: 'START_BATCH',
@@ -395,7 +307,11 @@ export class TelemetryProcessor {
     }
 
     // Защита от недовыгрузки
-    if (state.isUnloading && Number.isFinite(state.lastUnloadWeight) && currentWeight > state.lastUnloadWeight + UNLOAD_WEIGHT_BUFFER_KG) {
+    if (
+      state.isUnloading &&
+      Number.isFinite(state.lastUnloadWeight) &&
+      currentWeight > state.lastUnloadWeight + thresholds.unloadWeightBufferKg
+    ) {
       const leftoverWeight = state.lastUnloadWeight;
   
       if (leftoverWeight > thresholds.leftoverThresholdKg) {
@@ -459,7 +375,7 @@ export class TelemetryProcessor {
     }
 
     // Окончание: если кузов пуст
-    if (state.isUnloading && currentWeight < EMPTY_VEHICLE_THRESHOLD_KG) {
+    if (state.isUnloading && currentWeight < thresholds.emptyVehicleThresholdKg) {
       result.dbActions.push({
         type: 'COMPLETE_BATCH',
         endWeight: Math.round(currentWeight)

@@ -471,6 +471,41 @@
                                         <small class="form-text text-muted">Минимальное изменение веса для обновления прогресса выгрузки.</small>
                                     </div>
                                     <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryUnloadWeightBufferKg">Буфер недовыгрузки, кг</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryUnloadWeightBufferKg" name="unloadWeightBufferKg" required>
+                                        <small class="form-text text-muted">Рост веса во время выгрузки выше этого буфера закрывает замес как недовыгруженный.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryEmptyVehicleThresholdKg">Пустой кузов, кг</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryEmptyVehicleThresholdKg" name="emptyVehicleThresholdKg" required>
+                                        <small class="form-text text-muted">Если вес ниже порога, выгрузка считается завершённой.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryAutoCloseZeroWeightKg">Автозакрытие: пустой вес, кг</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryAutoCloseZeroWeightKg" name="autoCloseZeroWeightKg" required>
+                                        <small class="form-text text-muted">Fallback-автозакрытие активного замеса: вес считается пустым, если он ниже этого порога.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryAutoCloseEmptyStreak">Автозакрытие: пустых пакетов подряд</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryAutoCloseEmptyStreak" name="autoCloseEmptyStreak" required>
+                                        <small class="form-text text-muted">Сколько подряд “пустых” пакетов нужно, чтобы закрыть зависший замес.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryAutoCloseNegativeStreak">Автозакрытие: отрицательных пакетов</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryAutoCloseNegativeStreak" name="autoCloseNegativeStreak" required>
+                                        <small class="form-text text-muted">Сколько подряд пакетов с отрицательным весом считаются аварийной серией и закрывают замес.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryModeUnloadDropHintKg">Режим “Выгрузка”: падение от пика, кг</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryModeUnloadDropHintKg" name="modeUnloadDropHintKg" required>
+                                        <small class="form-text text-muted">Порог для отображения режима “Выгрузка” в API current/admin, если FSM ещё не выставил флаг.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryModeLoadingDeltaHintKg">Режим “Загрузка”: дельта, кг</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryModeLoadingDeltaHintKg" name="modeLoadingDeltaHintKg" required>
+                                        <small class="form-text text-muted">Порог прироста между соседними пакетами для подсказки режима “Загрузка”.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
                                         <label class="small font-weight-bold text-primary text-uppercase" for="telemetryAnomalyThresholdKg">Скачок аномалии, кг</label>
                                         <input type="number" min="1" step="1" class="form-control" id="telemetryAnomalyThresholdKg" name="anomalyThresholdKg" required>
                                         <small class="form-text text-muted">Если скачок между пакетами выше порога, пакет не принимается сразу.</small>
@@ -484,6 +519,16 @@
                                         <label class="small font-weight-bold text-primary text-uppercase" for="telemetryAnomalyConfirmPackets">Пакетов для подтверждения</label>
                                         <input type="number" min="1" step="1" class="form-control" id="telemetryAnomalyConfirmPackets" name="anomalyConfirmPackets" required>
                                         <small class="form-text text-muted">Сколько подряд пакетов нужно, чтобы принять резкий переход как реальный.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryLoadingZoneStickySeconds">Sticky после зоны, сек</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryLoadingZoneStickySeconds" name="loadingZoneStickySeconds" required>
+                                        <small class="form-text text-muted">Как долго после выезда из зоны относить набор веса к последнему компоненту.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryZoneChangeDebounceMs">Дебаунс смены зоны, мс</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryZoneChangeDebounceMs" name="zoneChangeDebounceMs" required>
+                                        <small class="form-text text-muted">Минимальная длительность нового положения перед сменой подтверждённой зоны.</small>
                                     </div>
                                     <div class="col-xl-4 col-md-6 mb-3">
                                         <label class="small font-weight-bold text-primary text-uppercase" for="telemetryZoneChangeConfirmPackets">Подтверждение смены зоны, пакетов</label>
@@ -646,7 +691,7 @@
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260429d"></script>
-    <script src="js/telemetry.js?v=20260506b"></script>
+    <script src="js/telemetry.js?v=20260507b"></script>
     <script src="js/admin-users.js?v=20260501a"></script>
 
 </body>
