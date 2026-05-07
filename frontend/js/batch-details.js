@@ -41,6 +41,7 @@ $(document).ready(function () {
     const stopBatchUrl = window.AppAuth?.getApiUrl?.("/api/telemetry/host/manual-stop") || "/api/telemetry/host/manual-stop";
     const rationsUrl = window.AppAuth?.getApiUrl?.("/api/rations") || "/api/rations";
     const groupsUrl = window.AppAuth?.getApiUrl?.("/api/groups") || "/api/groups";
+    const zonesUrl = window.AppAuth?.getApiUrl?.("/api/telemetry/zones") || "/api/telemetry/zones";
 
     const dateTimeFormatter = new Intl.DateTimeFormat("ru-RU", {
         day: "2-digit",
@@ -74,6 +75,7 @@ $(document).ready(function () {
         editorMessage: null,
         rations: [],
         groups: [],
+        storageZones: [],
         lookupStatus: {
             rations: {
                 loading: false,
@@ -93,6 +95,10 @@ $(document).ready(function () {
     let telemetryChart = null;
     let batchTrackMap = null;
     let ymapsReadyPromise = null;
+    let batchTrackZoneObjects = [];
+    const DEFAULT_ZONE_RADIUS = 20;
+    const DEFAULT_SQUARE_SIDE = 40;
+    const ZONE_TYPE_BARN = "BARN";
 
     function parsePositiveInteger(value) {
         const parsed = Number.parseInt(value, 10);
@@ -202,6 +208,129 @@ $(document).ready(function () {
     function parseTimestampMs(value) {
         const timestamp = new Date(value).getTime();
         return Number.isFinite(timestamp) ? timestamp : null;
+    }
+
+    function normalizeShapeType(value) {
+        return String(value || "CIRCLE").trim().toUpperCase() === "SQUARE" ? "SQUARE" : "CIRCLE";
+    }
+
+    function normalizeZoneType(value) {
+        return String(value || "").trim().toUpperCase() === ZONE_TYPE_BARN ? "BARN" : "STORAGE";
+    }
+
+    function getZoneTypeLabel(zone) {
+        return normalizeZoneType(zone?.zoneType) === "BARN" ? "Коровник" : "Зона хранения";
+    }
+
+    function getZoneTypeColors(zone) {
+        return normalizeZoneType(zone?.zoneType) === "BARN"
+            ? { fillColor: "#36b9cc44", strokeColor: "#138496" }
+            : { fillColor: "#00c85355", strokeColor: "#1e88e5" };
+    }
+
+    function parseZoneNumber(value) {
+        if (value === "" || value === null || value === undefined) {
+            return null;
+        }
+
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function metersPerLonDegree(lat) {
+        return Math.max(Math.cos(lat * Math.PI / 180) * 111320, 1);
+    }
+
+    function buildSquarePolygonFromBounds(minLat, minLon, maxLat, maxLon) {
+        const normalizedMinLat = Math.min(minLat, maxLat);
+        const normalizedMaxLat = Math.max(minLat, maxLat);
+        const normalizedMinLon = Math.min(minLon, maxLon);
+        const normalizedMaxLon = Math.max(minLon, maxLon);
+
+        return [
+            [normalizedMaxLat, normalizedMinLon],
+            [normalizedMaxLat, normalizedMaxLon],
+            [normalizedMinLat, normalizedMaxLon],
+            [normalizedMinLat, normalizedMinLon],
+        ];
+    }
+
+    function buildSquarePolygonFromCenter(lat, lon, sideMeters) {
+        const halfSideMeters = sideMeters / 2;
+        const latDelta = halfSideMeters / 111320;
+        const lonDelta = halfSideMeters / metersPerLonDegree(lat);
+
+        return buildSquarePolygonFromBounds(
+            lat - latDelta,
+            lon - lonDelta,
+            lat + latDelta,
+            lon + lonDelta
+        );
+    }
+
+    function getZoneLabel(zone) {
+        const ingredient = String(zone?.ingredient || "").trim();
+        const name = String(zone?.name || "").trim();
+        return ingredient || name || "Без названия";
+    }
+
+    function normalizeZone(zone) {
+        let polygonCoords = null;
+
+        if (zone?.polygonCoords) {
+            try {
+                const parsed = typeof zone.polygonCoords === "string"
+                    ? JSON.parse(zone.polygonCoords)
+                    : zone.polygonCoords;
+                if (Array.isArray(parsed) && parsed.length >= 4) {
+                    polygonCoords = parsed
+                        .map((point) => [Number(point[0]), Number(point[1])])
+                        .filter((point) => Number.isFinite(point[0]) && Number.isFinite(point[1]));
+                }
+            } catch {
+                polygonCoords = null;
+            }
+        }
+
+        const normalized = {
+            ...zone,
+            active: Boolean(zone?.active),
+            zoneType: normalizeZoneType(zone?.zoneType),
+            shapeType: normalizeShapeType(zone?.shapeType),
+            lat: Number(zone?.lat),
+            lon: Number(zone?.lon),
+            radius: Number(zone?.radius ?? DEFAULT_ZONE_RADIUS),
+            sideMeters: parseZoneNumber(zone?.sideMeters),
+            squareMinLat: parseZoneNumber(zone?.squareMinLat),
+            squareMinLon: parseZoneNumber(zone?.squareMinLon),
+            squareMaxLat: parseZoneNumber(zone?.squareMaxLat),
+            squareMaxLon: parseZoneNumber(zone?.squareMaxLon),
+            polygonCoords,
+        };
+
+        if (normalized.shapeType === "SQUARE" && (!normalized.polygonCoords || normalized.polygonCoords.length < 4)) {
+            const hasBounds = Number.isFinite(normalized.squareMinLat)
+                && Number.isFinite(normalized.squareMinLon)
+                && Number.isFinite(normalized.squareMaxLat)
+                && Number.isFinite(normalized.squareMaxLon);
+
+            if (hasBounds) {
+                normalized.polygonCoords = buildSquarePolygonFromBounds(
+                    normalized.squareMinLat,
+                    normalized.squareMinLon,
+                    normalized.squareMaxLat,
+                    normalized.squareMaxLon
+                );
+            } else if (Number.isFinite(normalized.lat) && Number.isFinite(normalized.lon)) {
+                normalized.polygonCoords = buildSquarePolygonFromCenter(
+                    normalized.lat,
+                    normalized.lon,
+                    normalized.sideMeters || DEFAULT_SQUARE_SIDE
+                );
+            }
+        }
+
+        return normalized;
     }
 
     function formatSignedPercent(value) {
@@ -408,7 +537,8 @@ $(document).ready(function () {
         }
 
         const disabled = state.isBatchLoading || state.isSaving || state.stopBatchInFlight || state.deleteBatchInFlight;
-        const disabledAttr = disabled ? " disabled" : "";
+        const isBusy = disabled || state.ingredientUpdateId !== null || state.ingredientDeleteId !== null;
+        const disabledAttr = isBusy ? " disabled" : "";
 
         return `
             <button
@@ -644,26 +774,83 @@ $(document).ready(function () {
         return batchTrackMap;
     }
 
+    function clearBatchTrackZones(map) {
+        if (!map) {
+            return;
+        }
+
+        batchTrackZoneObjects.forEach((zoneObject) => {
+            map.geoObjects.remove(zoneObject);
+        });
+        batchTrackZoneObjects = [];
+    }
+
+    function renderBatchTrackZones(map, zones) {
+        if (!map) {
+            return;
+        }
+
+        clearBatchTrackZones(map);
+
+        batchTrackZoneObjects = (Array.isArray(zones) ? zones : [])
+            .filter((zone) => zone?.active)
+            .map((zone) => {
+                const shapeLabel = normalizeShapeType(zone.shapeType) === "SQUARE" ? "Квадрат" : "Круг";
+                const zoneColors = getZoneTypeColors(zone);
+                const sizeLabel = normalizeShapeType(zone.shapeType) === "SQUARE"
+                    ? `${Math.max(1, Math.round(Number(zone.sideMeters || DEFAULT_SQUARE_SIDE)))} м`
+                    : `${Math.max(1, Math.round(Number(zone.radius || DEFAULT_ZONE_RADIUS)))} м`;
+
+                const latLabel = Number.isFinite(zone.lat) ? zone.lat.toFixed(6) : "--";
+                const lonLabel = Number.isFinite(zone.lon) ? zone.lon.toFixed(6) : "--";
+                const balloonContent = `
+                    <strong>${escapeHtml(getZoneLabel(zone))}</strong><br>
+                    Тип: ${escapeHtml(getZoneTypeLabel(zone))}<br>
+                    Форма: ${escapeHtml(shapeLabel)}<br>
+                    Центр: ${escapeHtml(latLabel)}, ${escapeHtml(lonLabel)}<br>
+                    Размер: ${escapeHtml(sizeLabel)}
+                `;
+
+                const zoneObject = normalizeShapeType(zone.shapeType) === "SQUARE"
+                    && Array.isArray(zone.polygonCoords)
+                    && zone.polygonCoords.length >= 4
+                    ? new window.ymaps.Polygon(
+                        [zone.polygonCoords],
+                        { balloonContent },
+                        {
+                            fillColor: zoneColors.fillColor,
+                            strokeColor: zoneColors.strokeColor,
+                            strokeOpacity: 0.85,
+                            strokeWidth: 2,
+                        }
+                    )
+                    : new window.ymaps.Circle(
+                        [
+                            [Number(zone.lat), Number(zone.lon)],
+                            Number(zone.radius) || DEFAULT_ZONE_RADIUS,
+                        ],
+                        { balloonContent },
+                        {
+                            fillColor: zoneColors.fillColor,
+                            strokeColor: zoneColors.strokeColor,
+                            strokeOpacity: 0.85,
+                            strokeWidth: 2,
+                        }
+                    );
+
+                map.geoObjects.add(zoneObject);
+                return zoneObject;
+            });
+    }
+
     async function renderBatchTrack(points, ingredientRows) {
         if (!trackMapElement) {
             return;
         }
 
         const trackPoints = normalizeTrackPoints(points);
-        if (!trackPoints.length) {
-            if (batchTrackMap) {
-                batchTrackMap.geoObjects.removeAll();
-            }
-            if (trackMeta) {
-                setText(trackMeta, "Нет координат в телеметрии этого замеса");
-            }
-            if (trackEmpty) {
-                trackEmpty.classList.remove("d-none");
-            }
-            return;
-        }
-
         let map;
+
         try {
             map = await ensureBatchTrackMap();
         } catch (error) {
@@ -680,7 +867,42 @@ $(document).ready(function () {
             return;
         }
 
+        if (!trackPoints.length) {
+            map.geoObjects.removeAll();
+            renderBatchTrackZones(map, state.storageZones);
+            if (map.container && typeof map.container.fitToViewport === "function") {
+                map.container.fitToViewport();
+            }
+            const zoneBounds = typeof map.geoObjects.getBounds === "function"
+                ? map.geoObjects.getBounds()
+                : null;
+            if (zoneBounds) {
+                map.setBounds(zoneBounds, {
+                    checkZoomRange: true,
+                    zoomMargin: 24,
+                    duration: 120,
+                });
+            }
+
+            if (trackMeta) {
+                const activeZonesCount = (Array.isArray(state.storageZones) ? state.storageZones : [])
+                    .filter((zone) => zone?.active)
+                    .length;
+                setText(
+                    trackMeta,
+                    activeZonesCount > 0
+                        ? `Нет координат трека. Показаны активные зоны: ${activeZonesCount}`
+                        : "Нет координат в телеметрии этого замеса"
+                );
+            }
+            if (trackEmpty) {
+                trackEmpty.classList.remove("d-none");
+            }
+            return;
+        }
+
         map.geoObjects.removeAll();
+        renderBatchTrackZones(map, state.storageZones);
         if (trackEmpty) {
             trackEmpty.classList.add("d-none");
         }
@@ -1380,10 +1602,23 @@ $(document).ready(function () {
         renderIngredientList(Array.isArray(state.batch?.actualIngredients) ? state.batch.actualIngredients : []);
 
         try {
-            await deleteJson(`${batchUrl}/ingredients/${ingredientId}`);
-            const didReload = await loadBatchDetails();
-            if (didReload) {
+            const payload = await deleteJson(`${batchUrl}/ingredients/${ingredientId}`);
+            const updatedBatch = payload && typeof payload === "object" ? payload.batch : null;
+
+            if (updatedBatch && typeof updatedBatch === "object") {
+                state.batch = updatedBatch;
+                const actualRows = Array.isArray(updatedBatch.actualIngredients) ? updatedBatch.actualIngredients : [];
+                const summaryRows = Array.isArray(updatedBatch.ingredients) ? updatedBatch.ingredients : [];
+                renderBatchSummary(updatedBatch);
+                renderIngredientList(actualRows);
+                renderPlanFact(summaryRows);
+                renderBatchEditor(updatedBatch);
                 window.AppAuth?.showAlert?.("Компонент удалён", "success");
+            } else {
+                const didReload = await loadBatchDetails();
+                if (didReload) {
+                    window.AppAuth?.showAlert?.("Компонент удалён", "success");
+                }
             }
         } catch (error) {
             window.AppAuth?.showAlert?.(error.message || "Не удалось удалить компонент", "danger");
@@ -1488,10 +1723,25 @@ $(document).ready(function () {
         renderBatchEditor(state.batch);
 
         try {
-            const [batch, telemetry] = await Promise.all([
+            const [batchResult, telemetryResult, zonesResult] = await Promise.allSettled([
                 fetchJson(batchUrl),
                 fetchJson(telemetryUrl),
+                fetchJson(zonesUrl),
             ]);
+
+            if (batchResult.status !== "fulfilled") {
+                throw batchResult.reason || new Error("Не удалось загрузить замес");
+            }
+
+            if (telemetryResult.status !== "fulfilled") {
+                throw telemetryResult.reason || new Error("Не удалось загрузить телеметрию замеса");
+            }
+
+            const batch = batchResult.value;
+            const telemetry = telemetryResult.value;
+            state.storageZones = zonesResult.status === "fulfilled"
+                ? (Array.isArray(zonesResult.value) ? zonesResult.value : []).map(normalizeZone)
+                : [];
 
             if (requestId !== state.loadRequestId) {
                 return false;
