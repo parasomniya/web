@@ -12,3 +12,4 @@ export const ANOMALY_CONFIRM_PACKETS = 3;
 // После выезда из зоны загрузки разрешаем короткую "липкую" привязку
 // к последнему компоненту, чтобы не терять его на границе зон.
 export const LOADING_ZONE_STICKY_SECONDS = 180;
+export const DEFAULT_ZONE_DEBOUNCE_MS = 3000;
