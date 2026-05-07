@@ -10,6 +10,7 @@ const TELEMETRY_SETTINGS_NUMERIC_FIELDS = [
     "anomalyThresholdKg",
     "anomalyConfirmDeltaKg",
     "anomalyConfirmPackets",
+    "zoneChangeConfirmPackets",
     "deviationPercentThreshold",
     "deviationMinKgThreshold",
 ];

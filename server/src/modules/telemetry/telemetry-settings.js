@@ -11,6 +11,7 @@ export const DEFAULT_TELEMETRY_SETTINGS = {
   anomalyThresholdKg: 200,
   anomalyConfirmDeltaKg: 40,
   anomalyConfirmPackets: 3,
+  zoneChangeConfirmPackets: 2,
   deviationPercentThreshold: 10,
   deviationMinKgThreshold: 10,
   rtkTrackResetTime: '03:00'
@@ -48,6 +49,7 @@ export function coerceTelemetrySettings(row = {}) {
     anomalyThresholdKg: toPositiveInteger(row.anomalyThresholdKg, DEFAULT_TELEMETRY_SETTINGS.anomalyThresholdKg),
     anomalyConfirmDeltaKg: toPositiveInteger(row.anomalyConfirmDeltaKg, DEFAULT_TELEMETRY_SETTINGS.anomalyConfirmDeltaKg),
     anomalyConfirmPackets: toPositiveInteger(row.anomalyConfirmPackets, DEFAULT_TELEMETRY_SETTINGS.anomalyConfirmPackets),
+    zoneChangeConfirmPackets: toPositiveInteger(row.zoneChangeConfirmPackets, DEFAULT_TELEMETRY_SETTINGS.zoneChangeConfirmPackets),
     deviationPercentThreshold: toPositiveInteger(row.deviationPercentThreshold, DEFAULT_TELEMETRY_SETTINGS.deviationPercentThreshold),
     deviationMinKgThreshold: toPositiveInteger(row.deviationMinKgThreshold, DEFAULT_TELEMETRY_SETTINGS.deviationMinKgThreshold),
     rtkTrackResetTime: normalizeTime(row.rtkTrackResetTime, DEFAULT_TELEMETRY_SETTINGS.rtkTrackResetTime),
@@ -78,6 +80,7 @@ export function validateTelemetrySettingsInput(payload = {}, { partial = false }
     'anomalyThresholdKg',
     'anomalyConfirmDeltaKg',
     'anomalyConfirmPackets',
+    'zoneChangeConfirmPackets',
     'deviationPercentThreshold',
     'deviationMinKgThreshold'
   ]
