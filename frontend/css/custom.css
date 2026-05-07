@@ -734,6 +734,25 @@
     height: 320px !important;
 }
 
+.batch-track-map-wrap {
+    border-radius: 0.9rem;
+    overflow: hidden;
+    border: 1px solid #e3e6f0;
+}
+
+.batch-track-map {
+    height: 360px;
+}
+
+.batch-track-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.9);
+}
+
 .batch-detail-empty {
     padding: 1rem !important;
     text-align: center;

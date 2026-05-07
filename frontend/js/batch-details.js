@@ -21,6 +21,9 @@ $(document).ready(function () {
     const deviationTotal = document.getElementById("batchDeviationTotal");
     const telemetryEmpty = document.getElementById("batchTelemetryEmpty");
     const telemetryCanvas = document.getElementById("batchTelemetryChart");
+    const trackMapElement = document.getElementById("batchTrackMap");
+    const trackEmpty = document.getElementById("batchTrackEmpty");
+    const trackMeta = document.getElementById("batchTrackMeta");
     const editCard = document.getElementById("batchEditCard");
     const editMeta = document.getElementById("batchEditMeta");
     const editState = document.getElementById("batchEditState");
@@ -64,6 +67,7 @@ $(document).ready(function () {
         isBatchLoading: false,
         isSaving: false,
         ingredientUpdateId: null,
+        ingredientDeleteId: null,
         stopBatchInFlight: false,
         deleteBatchInFlight: false,
         batchError: "",
@@ -87,6 +91,8 @@ $(document).ready(function () {
     };
 
     let telemetryChart = null;
+    let batchTrackMap = null;
+    let ymapsReadyPromise = null;
 
     function parsePositiveInteger(value) {
         const parsed = Number.parseInt(value, 10);
@@ -182,6 +188,22 @@ $(document).ready(function () {
         return `${weightFormatter.format(numericValue)} кг`;
     }
 
+    function hasValidCoordinates(lat, lon) {
+        const numericLat = Number(lat);
+        const numericLon = Number(lon);
+
+        return Number.isFinite(numericLat)
+            && Number.isFinite(numericLon)
+            && Math.abs(numericLat) <= 90
+            && Math.abs(numericLon) <= 180
+            && !(numericLat === 0 && numericLon === 0);
+    }
+
+    function parseTimestampMs(value) {
+        const timestamp = new Date(value).getTime();
+        return Number.isFinite(timestamp) ? timestamp : null;
+    }
+
     function formatSignedPercent(value) {
         if (value === null || value === undefined || value === "") {
             return "--";
@@ -275,11 +297,19 @@ $(document).ready(function () {
         }
 
         if (ingredientListBody) {
-            ingredientListBody.innerHTML = '<tr><td colspan="4" class="batch-detail-empty">Загрузка...</td></tr>';
+            ingredientListBody.innerHTML = '<tr><td colspan="5" class="batch-detail-empty">Загрузка...</td></tr>';
         }
 
         if (planFactBody) {
             planFactBody.innerHTML = '<tr><td colspan="5" class="dashboard-mini-table-empty">Загрузка...</td></tr>';
+        }
+
+        if (trackMeta) {
+            setText(trackMeta, "Загрузка трека...");
+        }
+
+        if (trackEmpty) {
+            trackEmpty.classList.add("d-none");
         }
     }
 
@@ -336,7 +366,7 @@ $(document).ready(function () {
         }
 
         if (!rows.length) {
-            ingredientListBody.innerHTML = '<tr><td colspan="4" class="batch-detail-empty">По этому замесу нет загруженных ингредиентов</td></tr>';
+            ingredientListBody.innerHTML = '<tr><td colspan="5" class="batch-detail-empty">По этому замесу нет загруженных ингредиентов</td></tr>';
             return;
         }
 
@@ -358,8 +388,39 @@ $(document).ready(function () {
                 <td>${renderIngredientCell(row, hasRation, hasReplacementOptions, replacementOptions)}</td>
                 <td>${escapeHtml(formatWeight(row?.fact ?? row?.actualWeight))}</td>
                 <td>${renderIngredientViolationCell(row, componentViolationByKey, seenComponentViolationBadge)}</td>
+                <td class="text-center">${renderIngredientActionsCell(row)}</td>
             </tr>
         `).join("");
+    }
+
+    function renderIngredientActionsCell(row) {
+        const ingredientId = normalizeNullableId(row?.id);
+        if (!canWrite || ingredientId === null) {
+            return '<span class="text-muted small">--</span>';
+        }
+
+        if (state.ingredientDeleteId === ingredientId) {
+            return '<span class="text-muted small">Удаляем...</span>';
+        }
+
+        if (state.ingredientUpdateId === ingredientId) {
+            return '<span class="text-muted small">Сохраняем...</span>';
+        }
+
+        const disabled = state.isBatchLoading || state.isSaving || state.stopBatchInFlight || state.deleteBatchInFlight;
+        const disabledAttr = disabled ? " disabled" : "";
+
+        return `
+            <button
+                type="button"
+                class="btn btn-sm btn-outline-danger"
+                data-role="ingredient-delete"
+                data-ingredient-id="${ingredientId}"${disabledAttr}
+                title="Удалить компонент из замеса"
+            >
+                <i class="fas fa-trash-alt"></i>
+            </button>
+        `;
     }
 
     function renderIngredientViolationCell(row, componentViolationByKey, seenComponentViolationBadge) {
@@ -382,7 +443,11 @@ $(document).ready(function () {
         const ingredientId = normalizeNullableId(row?.id);
         const ingredientName = getIngredientDisplayName(row?.name);
         const isUnknown = isUnknownIngredientName(ingredientName);
-        const isDisabled = state.isBatchLoading || state.isSaving || state.stopBatchInFlight || state.deleteBatchInFlight;
+        const isDisabled = state.isBatchLoading
+            || state.isSaving
+            || state.stopBatchInFlight
+            || state.deleteBatchInFlight
+            || state.ingredientDeleteId !== null;
         const canEditFromRation = canWrite && ingredientId !== null && !isDisabled && hasReplacementOptions;
         const canEditManual = canWrite && ingredientId !== null && !isDisabled && !hasRation;
         const disabledAttribute = canEditFromRation ? "" : " disabled";
@@ -509,6 +574,210 @@ $(document).ready(function () {
 
         telemetryChart.destroy();
         telemetryChart = null;
+    }
+
+    function normalizeTrackPoints(points) {
+        return (Array.isArray(points) ? points : [])
+            .map((point) => ({
+                lat: Number(point?.lat),
+                lon: Number(point?.lon),
+                timestamp: point?.timestamp || null,
+                weight: Number(point?.weight),
+                timestampMs: parseTimestampMs(point?.timestamp),
+            }))
+            .filter((point) => hasValidCoordinates(point.lat, point.lon) && point.timestampMs !== null)
+            .sort((left, right) => left.timestampMs - right.timestampMs);
+    }
+
+    function findClosestTrackPointByTime(targetTimestampMs, trackPoints) {
+        if (!Number.isFinite(targetTimestampMs) || !Array.isArray(trackPoints) || !trackPoints.length) {
+            return null;
+        }
+
+        let bestPoint = trackPoints[0];
+        let bestDelta = Math.abs(trackPoints[0].timestampMs - targetTimestampMs);
+
+        for (let index = 1; index < trackPoints.length; index += 1) {
+            const currentPoint = trackPoints[index];
+            const currentDelta = Math.abs(currentPoint.timestampMs - targetTimestampMs);
+            if (currentDelta < bestDelta) {
+                bestPoint = currentPoint;
+                bestDelta = currentDelta;
+            }
+        }
+
+        return { point: bestPoint, deltaMs: bestDelta };
+    }
+
+    function ensureYmapsReady() {
+        if (!window.ymaps || typeof window.ymaps.ready !== "function") {
+            return Promise.reject(new Error("Yandex Maps API недоступен"));
+        }
+
+        if (!ymapsReadyPromise) {
+            ymapsReadyPromise = new Promise((resolve) => {
+                window.ymaps.ready(resolve);
+            });
+        }
+
+        return ymapsReadyPromise;
+    }
+
+    async function ensureBatchTrackMap() {
+        if (!trackMapElement) {
+            return null;
+        }
+
+        await ensureYmapsReady();
+
+        if (!batchTrackMap) {
+            batchTrackMap = new window.ymaps.Map("batchTrackMap", {
+                center: [55.1064, 82.8100],
+                zoom: 12,
+                controls: ["zoomControl", "typeSelector", "fullscreenControl"],
+                type: "yandex#satellite",
+            }, {
+                suppressMapOpenBlock: true,
+            });
+        }
+
+        return batchTrackMap;
+    }
+
+    async function renderBatchTrack(points, ingredientRows) {
+        if (!trackMapElement) {
+            return;
+        }
+
+        const trackPoints = normalizeTrackPoints(points);
+        if (!trackPoints.length) {
+            if (batchTrackMap) {
+                batchTrackMap.geoObjects.removeAll();
+            }
+            if (trackMeta) {
+                setText(trackMeta, "Нет координат в телеметрии этого замеса");
+            }
+            if (trackEmpty) {
+                trackEmpty.classList.remove("d-none");
+            }
+            return;
+        }
+
+        let map;
+        try {
+            map = await ensureBatchTrackMap();
+        } catch (error) {
+            if (trackMeta) {
+                setText(trackMeta, "Карта недоступна (не загрузился API Yandex Maps)");
+            }
+            if (trackEmpty) {
+                trackEmpty.classList.remove("d-none");
+            }
+            return;
+        }
+
+        if (!map) {
+            return;
+        }
+
+        map.geoObjects.removeAll();
+        if (trackEmpty) {
+            trackEmpty.classList.add("d-none");
+        }
+        if (map.container && typeof map.container.fitToViewport === "function") {
+            map.container.fitToViewport();
+        }
+
+        const coordinates = trackPoints.map((point) => [point.lat, point.lon]);
+        const polyline = new window.ymaps.Polyline(
+            coordinates,
+            {
+                balloonContent: "Трек движения за время замеса",
+            },
+            {
+                strokeColor: "#1cc88a",
+                strokeWidth: 4,
+                strokeOpacity: 0.92,
+            }
+        );
+        map.geoObjects.add(polyline);
+
+        const firstPoint = trackPoints[0];
+        const lastPoint = trackPoints[trackPoints.length - 1];
+
+        const startPlacemark = new window.ymaps.Placemark(
+            [firstPoint.lat, firstPoint.lon],
+            {
+                hintContent: `Старт трека (${formatTime(firstPoint.timestamp)})`,
+                balloonContent: `Старт: ${formatDateTime(firstPoint.timestamp)}<br>Вес: ${formatWeight(firstPoint.weight)}`,
+            },
+            {
+                preset: "islands#greenCircleDotIcon",
+            }
+        );
+
+        const endPlacemark = new window.ymaps.Placemark(
+            [lastPoint.lat, lastPoint.lon],
+            {
+                hintContent: `Финиш трека (${formatTime(lastPoint.timestamp)})`,
+                balloonContent: `Финиш: ${formatDateTime(lastPoint.timestamp)}<br>Вес: ${formatWeight(lastPoint.weight)}`,
+            },
+            {
+                preset: "islands#redCircleDotIcon",
+            }
+        );
+
+        map.geoObjects.add(startPlacemark);
+        map.geoObjects.add(endPlacemark);
+
+        const rows = Array.isArray(ingredientRows) ? ingredientRows : [];
+        let linkedIngredients = 0;
+
+        rows.forEach((row) => {
+            const ingredientTimestampMs = parseTimestampMs(row?.time);
+            const closest = findClosestTrackPointByTime(ingredientTimestampMs, trackPoints);
+            if (!closest?.point || closest.deltaMs > (2 * 60 * 1000)) {
+                return;
+            }
+
+            linkedIngredients += 1;
+            const marker = new window.ymaps.Placemark(
+                [closest.point.lat, closest.point.lon],
+                {
+                    hintContent: `${getIngredientDisplayName(row?.name)} (${formatTime(row?.time)})`,
+                    balloonContent: `
+                        <strong>${escapeHtml(getIngredientDisplayName(row?.name))}</strong><br>
+                        Время добавления: ${escapeHtml(formatDateTime(row?.time))}<br>
+                        Факт: ${escapeHtml(formatWeight(row?.fact ?? row?.actualWeight))}<br>
+                        Координаты: ${closest.point.lat.toFixed(5)}, ${closest.point.lon.toFixed(5)}
+                    `,
+                },
+                {
+                    preset: "islands#blueCircleDotIcon",
+                }
+            );
+
+            map.geoObjects.add(marker);
+        });
+
+        if (coordinates.length === 1) {
+            map.setCenter(coordinates[0], 17, { duration: 120 });
+        } else {
+            map.setBounds(polyline.geometry.getBounds(), {
+                checkZoomRange: true,
+                zoomMargin: 24,
+                duration: 120,
+            });
+        }
+
+        if (trackMeta) {
+            const startLabel = formatDateTime(firstPoint.timestamp);
+            const endLabel = formatDateTime(lastPoint.timestamp);
+            setText(
+                trackMeta,
+                `${trackPoints.length} точек • ${linkedIngredients} меток компонентов • ${startLabel} — ${endLabel}`
+            );
+        }
     }
 
     function renderTelemetry(points) {
@@ -953,7 +1222,7 @@ $(document).ready(function () {
         const ingredientId = normalizeNullableId(selectElement.dataset.ingredientId);
         const ingredientName = getIngredientDisplayName(selectElement.value);
 
-        if (ingredientId === null || !ingredientName || state.ingredientUpdateId !== null) {
+        if (ingredientId === null || !ingredientName || state.ingredientUpdateId !== null || state.ingredientDeleteId !== null) {
             if (!ingredientName) {
                 selectElement.value = "";
             }
@@ -1049,7 +1318,7 @@ $(document).ready(function () {
             return;
         }
 
-        if (state.ingredientUpdateId !== null || state.isBatchLoading || state.isSaving || state.stopBatchInFlight || state.deleteBatchInFlight) {
+        if (state.ingredientUpdateId !== null || state.ingredientDeleteId !== null || state.isBatchLoading || state.isSaving || state.stopBatchInFlight || state.deleteBatchInFlight) {
             return;
         }
 
@@ -1083,6 +1352,43 @@ $(document).ready(function () {
             window.AppAuth?.showAlert?.(error.message || "Не удалось обновить ингредиент", "danger");
         } finally {
             state.ingredientUpdateId = null;
+            renderIngredientList(Array.isArray(state.batch?.actualIngredients) ? state.batch.actualIngredients : []);
+        }
+    }
+
+    async function handleIngredientDeleteClick(event) {
+        const button = event?.target?.closest?.("[data-role='ingredient-delete']");
+        if (!(button instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        if (state.ingredientDeleteId !== null || state.ingredientUpdateId !== null || state.isBatchLoading || state.isSaving) {
+            return;
+        }
+
+        const ingredientId = normalizeNullableId(button.dataset.ingredientId);
+        if (ingredientId === null) {
+            return;
+        }
+
+        const approved = window.confirm("Удалить этот компонент из замеса?");
+        if (!approved) {
+            return;
+        }
+
+        state.ingredientDeleteId = ingredientId;
+        renderIngredientList(Array.isArray(state.batch?.actualIngredients) ? state.batch.actualIngredients : []);
+
+        try {
+            await deleteJson(`${batchUrl}/ingredients/${ingredientId}`);
+            const didReload = await loadBatchDetails();
+            if (didReload) {
+                window.AppAuth?.showAlert?.("Компонент удалён", "success");
+            }
+        } catch (error) {
+            window.AppAuth?.showAlert?.(error.message || "Не удалось удалить компонент", "danger");
+        } finally {
+            state.ingredientDeleteId = null;
             renderIngredientList(Array.isArray(state.batch?.actualIngredients) ? state.batch.actualIngredients : []);
         }
     }
@@ -1174,6 +1480,8 @@ $(document).ready(function () {
 
         const requestId = ++state.loadRequestId;
         state.isBatchLoading = true;
+        state.ingredientUpdateId = null;
+        state.ingredientDeleteId = null;
         state.batchError = "";
         state.editorMessage = null;
         setLoadingState();
@@ -1198,6 +1506,7 @@ $(document).ready(function () {
             renderIngredientList(actualRows);
             renderPlanFact(summaryRows);
             renderTelemetry(telemetry);
+            await renderBatchTrack(telemetry, actualRows);
             renderBatchEditor(batch);
             return true;
         } catch (error) {
@@ -1212,7 +1521,7 @@ $(document).ready(function () {
             window.AppAuth?.showAlert?.(state.batchError, "danger");
 
             if (ingredientListBody) {
-                ingredientListBody.innerHTML = '<tr><td colspan="4" class="batch-detail-empty">Не удалось загрузить данные</td></tr>';
+                ingredientListBody.innerHTML = '<tr><td colspan="5" class="batch-detail-empty">Не удалось загрузить данные</td></tr>';
             }
 
             if (planFactBody) {
@@ -1220,6 +1529,7 @@ $(document).ready(function () {
             }
 
             renderTelemetry([]);
+            await renderBatchTrack([], []);
             renderBatchEditor(state.batch);
             return false;
         } finally {
@@ -1298,6 +1608,7 @@ $(document).ready(function () {
     if (ingredientListBody) {
         ingredientListBody.addEventListener("change", handleIngredientReplacementChange);
         ingredientListBody.addEventListener("click", handleIngredientRenameClick);
+        ingredientListBody.addEventListener("click", handleIngredientDeleteClick);
     }
 
     if (stopButton) {

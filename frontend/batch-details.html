@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <link href="css/sb-admin-2.min.css" rel="stylesheet">
-    <link href="css/custom.css?v=20260506e" rel="stylesheet">
+    <link href="css/custom.css?v=20260507f" rel="stylesheet">
     <script src="js/app-auth.js?v=20260419a"></script>
 
 </head>
@@ -226,6 +226,19 @@
                     </div>
 
                     <div class="card shadow mb-4">
+                        <div class="card-header py-3 d-flex flex-column flex-md-row align-items-md-center justify-content-between">
+                            <h6 class="m-0 font-weight-bold text-primary">Трек замеса на карте</h6>
+                            <div id="batchTrackMeta" class="small text-muted mt-2 mt-md-0">Загрузка трека...</div>
+                        </div>
+                        <div class="card-body">
+                            <div class="dashboard-map-wrap batch-track-map-wrap">
+                                <div id="batchTrackMap" class="dashboard-map batch-track-map"></div>
+                                <div id="batchTrackEmpty" class="batch-detail-empty batch-track-empty d-none">Нет координат для отображения трека</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow mb-4">
                         <div class="card-header py-3">
                             <h6 class="m-0 font-weight-bold text-primary">Загруженные ингредиенты</h6>
                         </div>
@@ -238,11 +251,12 @@
                                             <th>Компонент</th>
                                             <th>Факт</th>
                                             <th>Нарушение</th>
+                                            <th class="text-center">Действия</th>
                                         </tr>
                                     </thead>
                                     <tbody id="batchIngredientsTableBody">
                                         <tr>
-                                            <td colspan="4" class="batch-detail-empty">Загрузка...</td>
+                                            <td colspan="5" class="batch-detail-empty">Загрузка...</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -324,7 +338,8 @@
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260429d"></script>
     <script src="vendor/chart.js/Chart.min.js"></script>
-    <script src="js/batch-details.js?v=20260507b"></script>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=3c050799-23a3-4bd9-a14a-b7eaf2e05511&lang=ru_RU"></script>
+    <script src="js/batch-details.js?v=20260507c"></script>
 
 </body>
 
