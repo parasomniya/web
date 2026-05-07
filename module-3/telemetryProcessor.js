@@ -13,6 +13,7 @@ import {
   ANOMALY_CONFIRM_PACKETS,
   LOADING_ZONE_STICKY_SECONDS,
   DEFAULT_ZONE_DEBOUNCE_MS
+  ZONE_CHANGE_CONFIRM_PACKETS
 } from './config.js';
 
 export class TelemetryProcessor {
@@ -40,6 +41,9 @@ export class TelemetryProcessor {
       // Дебаунс смены зоны
       pendingZoneName: null,
       pendingZoneEnteredAtMs: null
+      pendingZone: null,
+      pendingZoneKey: null,
+      pendingZoneCount: 0
     };
   }
 
@@ -61,6 +65,7 @@ export class TelemetryProcessor {
       anomalyConfirmPackets: Number(settings.anomalyConfirmPackets) > 0 ? Number(settings.anomalyConfirmPackets) : ANOMALY_CONFIRM_PACKETS,
       loadingZoneStickySeconds: Number(settings.loadingZoneStickySeconds) > 0 ? Number(settings.loadingZoneStickySeconds) : LOADING_ZONE_STICKY_SECONDS,
       zoneChangeDebounceMs: Number(settings.zoneChangeDebounceMs) > 0 ? Number(settings.zoneChangeDebounceMs) : DEFAULT_ZONE_DEBOUNCE_MS
+      zoneChangeConfirmPackets: Number(settings.zoneChangeConfirmPackets) > 0 ? Number(settings.zoneChangeConfirmPackets) : ZONE_CHANGE_CONFIRM_PACKETS
     };
   }
 
@@ -72,6 +77,62 @@ export class TelemetryProcessor {
     }
     const ts = new Date(raw || Date.now()).getTime();
     return Number.isFinite(ts) ? ts : Date.now();
+  }
+
+  _zoneKey(zone) {
+    if (!zone) return null;
+    if (Number.isFinite(Number(zone.id))) return `id:${Number(zone.id)}`;
+    if (zone.name) return `name:${String(zone.name).trim().toLowerCase()}`;
+    return null;
+  }
+
+  _getZoneTransitionConfirmPackets(currentZone, nextZone, thresholds) {
+    // Вход в зону фиксируем сразу, иначе можно пропускать короткие реальные заезды.
+    if (!currentZone && nextZone) return 1;
+    // Выход из зоны и переход зона->зона подтверждаем несколькими пакетами,
+    // чтобы убрать дребезг на границах.
+    return Number(thresholds.zoneChangeConfirmPackets || ZONE_CHANGE_CONFIRM_PACKETS);
+  }
+
+  _resolveStableZone(state, detectedZone, thresholds) {
+    const currentKey = this._zoneKey(state.currentZone);
+    const detectedKey = this._zoneKey(detectedZone);
+
+    if (currentKey === detectedKey) {
+      state.pendingZone = null;
+      state.pendingZoneKey = null;
+      state.pendingZoneCount = 0;
+      return {
+        changed: false,
+        zone: state.currentZone
+      };
+    }
+
+    if (state.pendingZoneKey !== detectedKey) {
+      state.pendingZone = detectedZone ? { ...detectedZone } : null;
+      state.pendingZoneKey = detectedKey;
+      state.pendingZoneCount = 1;
+    } else {
+      state.pendingZoneCount += 1;
+    }
+
+    const confirmPackets = this._getZoneTransitionConfirmPackets(state.currentZone, detectedZone, thresholds);
+    if (state.pendingZoneCount < confirmPackets) {
+      return {
+        changed: false,
+        zone: state.currentZone
+      };
+    }
+
+    const nextZone = state.pendingZone ? { ...state.pendingZone } : null;
+    state.pendingZone = null;
+    state.pendingZoneKey = null;
+    state.pendingZoneCount = 0;
+
+    return {
+      changed: true,
+      zone: nextZone
+    };
   }
 
   _hasActiveStickyZone(state, thresholds, packetTimeMs) {
@@ -229,6 +290,11 @@ export class TelemetryProcessor {
       };
       state.lastZoneName = activeZoneName;
     }
+    const detectedZone = detectZoneObject(lat, lon, zonesConfig);
+    const zoneResolution = this._resolveStableZone(state, detectedZone, thresholds);
+    const currentResolvedZone = zoneResolution.changed ? zoneResolution.zone : state.currentZone;
+    const activeZoneName = currentResolvedZone?.name || null;
+    const activeIngredientName = currentResolvedZone?.ingredient || activeZoneName;
 
     // ДЕБАУНС СМЕНЫ ЗОНЫ (бизнес-логика)
     const confirmedZoneName = state.confirmedZoneName || null;
@@ -273,13 +339,46 @@ export class TelemetryProcessor {
     }
 
     // Пиковый вес
+    // ===== ШАГ 4: Детекция загрузки =====
+    if (zoneResolution.changed) {
+      this._flushCurrentSegment(state, currentWeight, thresholds, result, {
+        suppressLoading,
+        packetTimeMs
+      });
+
+      state.currentZone = currentResolvedZone
+        ? { ...currentResolvedZone, ingredient: activeIngredientName }
+        : null;
+      state.zoneStartWeight = currentWeight;
+    }
+
+    // Запоминаем последнюю зону загрузки после обработки смены зоны,
+    // чтобы при входе в новую зону не перетереть предыдущий компонент до flush.
+    if (state.currentZone?.name) {
+      state.lastLoadingZone = {
+        ...state.currentZone,
+        ingredient: state.currentZone.ingredient || state.currentZone.name
+      };
+      state.lastLoadingZoneAtMs = packetTimeMs;
+    }
+
+    if (activeZoneName !== state.lastZoneName) {
+      if (activeZoneName) {
+        result.banner = {
+          type: 'zone_enter',
+          message: `Въезд в зону ${activeZoneName}`
+        };
+      }
+      state.lastZoneName = activeZoneName;
+    }
+
     if (currentWeight > state.peakWeight) {
       state.peakWeight = currentWeight;
     }
 
     // ЯВНАЯ ДЕТЕКЦИЯ UNKNOWN ВНЕ ЗОН
     if (
-      !activeZone &&
+      !state.currentZone &&
       !suppressLoading &&
       !state.isUnloading &&
       !state.isBatchStarted &&
