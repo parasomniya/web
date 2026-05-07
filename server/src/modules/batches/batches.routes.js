@@ -42,7 +42,7 @@ router.delete('/admin/truncate', authenticate, requireAdmin, requireWriteAccess,
     }
 });
 
-async function getBatchWeightContext(batch) {
+async function getBatchWeightContext(batch, prismaClient = prisma) {
     const telemetryWhere = {
         deviceId: batch.deviceId,
         timestamp: {
@@ -52,12 +52,12 @@ async function getBatchWeightContext(batch) {
     };
 
     const [latestTelemetry, peakTelemetry] = await Promise.all([
-        prisma.telemetry.findFirst({
+        prismaClient.telemetry.findFirst({
             where: telemetryWhere,
             orderBy: { timestamp: 'desc' },
             select: { weight: true, timestamp: true }
         }),
-        prisma.telemetry.aggregate({
+        prismaClient.telemetry.aggregate({
             where: telemetryWhere,
             _max: { weight: true }
         })
@@ -77,6 +77,85 @@ async function getBatchWeightContext(batch) {
         peakWeight,
         remainingWeight: round1(Math.max(0, currentWeight)),
         latestTelemetryAt: latestTelemetry?.timestamp || null
+    };
+}
+
+async function getDetailedBatchById(batchId, prismaClient = prisma) {
+    const batch = await prismaClient.batch.findUnique({
+        where: { id: batchId },
+        include: {
+            group: {
+                include: {
+                    ration: {
+                        include: {
+                            ingredients: true
+                        }
+                    }
+                }
+            },
+            ration: {
+                include: { ingredients: true }
+            },
+            actualIngredients: {
+                orderBy: { addedAt: 'asc' }
+            }
+        }
+    });
+
+    if (!batch) {
+        return null;
+    }
+
+    const [weightContext, telemetrySettings] = await Promise.all([
+        getBatchWeightContext(batch, prismaClient),
+        getTelemetrySettings(prismaClient)
+    ]);
+
+    return {
+        id: batch.id,
+        deviceId: batch.deviceId,
+        startTime: batch.startTime,
+        endTime: batch.endTime,
+        rationId: batch.rationId,
+        groupId: batch.groupId,
+        rationName: batch.ration?.name || 'Без рациона',
+        groupName: batch.group?.name || 'Без группы',
+        ration: batch.ration ? {
+            id: batch.ration.id,
+            name: batch.ration.name,
+            isActive: batch.ration.isActive,
+            ingredients: batch.ration.ingredients.map((ing) => ({
+                id: ing.id,
+                name: ing.name,
+                plannedWeight: ing.plannedWeight,
+                dryMatterWeight: ing.dryMatterWeight
+            }))
+        } : null,
+        group: batch.group ? {
+            id: batch.group.id,
+            name: batch.group.name,
+            headcount: batch.group.headcount,
+            rationId: batch.group.rationId,
+            lat: batch.group.lat,
+            lon: batch.group.lon,
+            radius: batch.group.radius
+        } : null,
+        unloadingInfo: {
+            barnName: batch.group?.name || 'Коровник не выбран',
+            remainingWeight: weightContext.remainingWeight,
+            latestTelemetryAt: weightContext.latestTelemetryAt,
+            progress: buildUnloadProgress(batch, weightContext.currentWeight, { peakWeight: weightContext.peakWeight })
+        },
+        actualIngredients: batch.actualIngredients.map((ing) => ({
+            id: ing.id,
+            name: toDisplayIngredientName(ing.ingredientName),
+            time: ing.addedAt,
+            plan: ing.plannedWeight || 0,
+            fact: ing.actualWeight,
+            deviation: ing.plannedWeight ? (ing.actualWeight - ing.plannedWeight) : 0,
+            isViolation: ing.isViolation
+        })),
+        ingredients: buildIngredientSummary(batch, telemetrySettings)
     };
 }
 
@@ -168,87 +247,10 @@ router.get('/:id', authenticate, requireReadAccess, async (req, res) => {
             return res.status(400).json({ error: 'Некорректный ID замеса' });
         }
 
-        const batch = await prisma.batch.findUnique({
-            where: { id: batchId },
-            include: {
-                group: {
-                    include: {
-                        ration: {
-                            include: {
-                                ingredients: true
-                            }
-                        }
-                    }
-                },
-                ration: {
-                    include: { ingredients: true }
-                },
-                actualIngredients: {
-                    orderBy: { addedAt: 'asc' } // Сортируем по времени добавления
-                }
-            }
-        });
-
-        if (!batch) {
+        const detailedBatch = await getDetailedBatchById(batchId);
+        if (!detailedBatch) {
             return res.status(404).json({ error: 'Замес не найден' });
         }
-
-        const [weightContext, telemetrySettings] = await Promise.all([
-            getBatchWeightContext(batch),
-            getTelemetrySettings(prisma)
-        ]);
-
-        // Форматируем ответ строго под нужды интерфейса Сони
-        const detailedBatch = {
-            id: batch.id,
-            deviceId: batch.deviceId,
-            startTime: batch.startTime,
-            endTime: batch.endTime,
-            rationId: batch.rationId,
-            groupId: batch.groupId,
-            rationName: batch.ration?.name || 'Без рациона',
-            groupName: batch.group?.name || 'Без группы',
-            ration: batch.ration ? {
-                id: batch.ration.id,
-                name: batch.ration.name,
-                isActive: batch.ration.isActive,
-                ingredients: batch.ration.ingredients.map(ing => ({
-                    id: ing.id,
-                    name: ing.name,
-                    plannedWeight: ing.plannedWeight,
-                    dryMatterWeight: ing.dryMatterWeight
-                }))
-            } : null,
-            group: batch.group ? {
-                id: batch.group.id,
-                name: batch.group.name,
-                headcount: batch.group.headcount,
-                rationId: batch.group.rationId,
-                lat: batch.group.lat,
-                lon: batch.group.lon,
-                radius: batch.group.radius
-            } : null,
-            
-            // Данные для ПЛАШКИ ВЫГРУЗКИ (пункт 4)
-            unloadingInfo: {
-                barnName: batch.group?.name || 'Коровник не выбран',
-                remainingWeight: weightContext.remainingWeight,
-                latestTelemetryAt: weightContext.latestTelemetryAt,
-                progress: buildUnloadProgress(batch, weightContext.currentWeight, { peakWeight: weightContext.peakWeight })
-            },
-
-            // СПИСОК ИНГРЕДИЕНТОВ И ПЛАН/ФАКТ (пункты 2 и 3)
-            actualIngredients: batch.actualIngredients.map(ing => ({
-                id: ing.id,
-                name: toDisplayIngredientName(ing.ingredientName),
-                time: ing.addedAt,
-                plan: ing.plannedWeight || 0,
-                fact: ing.actualWeight,
-                deviation: ing.plannedWeight ? (ing.actualWeight - ing.plannedWeight) : 0,
-                isViolation: ing.isViolation
-            })),
-            ingredients: buildIngredientSummary(batch, telemetrySettings)
-        };
 
         res.json(detailedBatch);
     } catch (error) {
@@ -513,11 +515,13 @@ router.delete('/:batchId/ingredients/:ingredientId', authenticate, requireWriteA
         });
 
         const recalculation = await recalculateBatchViolations(prisma, batchId);
+        const updatedBatch = await getDetailedBatchById(batchId);
 
         res.json({
             status: 'ok',
             message: `Компонент "${toDisplayIngredientName(batchIngredient.ingredientName)}" удалён`,
-            recalculation
+            recalculation,
+            batch: updatedBatch
         });
     } catch (error) {
         console.error('[Ошибка удаления ингредиента замеса]:', error);
