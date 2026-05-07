@@ -13,10 +13,10 @@ const ZONE_BANNER_DISPLAY_MS = 4500;
 const DEFAULT_ZONE_RADIUS = 20;
 const DEFAULT_SQUARE_SIDE = 40;
 const ZONE_TYPE_BARN = "BARN";
-const HOST_TRACK_COLOR = "#4e73df";
-const RTK_GPS_FIX_COLOR = "#e74a3b";
-const RTK_FIX_COLOR = "#1cc88a";
-const OFFLINE_MARKER_COLOR = "#858796";
+const HOST_TRACK_COLOR = "#3F6FAE";
+const RTK_GPS_FIX_COLOR = "#B65F55";
+const RTK_FIX_COLOR = "#5F8A6B";
+const OFFLINE_MARKER_COLOR = "#8A8F93";
 const HOST_MARKER_IMAGE_URL = "img/host.svg";
 const RTK_MARKER_IMAGE_URL = "img/rtk.svg";
 
@@ -185,7 +185,7 @@ function escapeHtml(value) {
 }
 
 function buildMapBalloonContent({ title, accentColor, rows }) {
-    const safeAccent = /^#[0-9a-f]{6}$/i.test(accentColor) ? accentColor : "#4e73df";
+    const safeAccent = /^#[0-9a-f]{6}$/i.test(accentColor) ? accentColor : HOST_TRACK_COLOR;
     const safeRows = Array.isArray(rows) ? rows : [];
     const rowMarkup = safeRows
         .filter((row) => row && row.label)
@@ -575,8 +575,8 @@ function getZoneTypeLabel(zone) {
 
 function getZoneTypeColors(zone) {
     return normalizeZoneType(zone?.zoneType) === "BARN"
-        ? { fillColor: "#36b9cc44", strokeColor: "#138496" }
-        : { fillColor: "#00c85355", strokeColor: "#1e88e5" };
+        ? { fillColor: "rgba(63,111,174,0.34)", strokeColor: "#3F6FAE" }
+        : { fillColor: "rgba(47,159,85,0.36)", strokeColor: "#18B35B" };
 }
 
 function parseZoneNumber(value) {
@@ -1342,7 +1342,7 @@ function renderZones() {
                     fillColor: zoneColors.fillColor,
                     strokeColor: zoneColors.strokeColor,
                     strokeOpacity: 0.9,
-                    strokeWidth: 2,
+                    strokeWidth: 4,
                 }
             )
             : new ymaps.Circle([
@@ -1354,7 +1354,7 @@ function renderZones() {
                 fillColor: zoneColors.fillColor,
                 strokeColor: zoneColors.strokeColor,
                 strokeOpacity: 0.9,
-                strokeWidth: 2,
+                strokeWidth: 4,
             });
 
         map.geoObjects.add(zoneObject);
@@ -1927,12 +1927,12 @@ function ensureBannerStyles() {
             white-space: nowrap;
         }
         .dashboard-zone-banner--host {
-            background-color: #4e73df;
-            box-shadow: 0 5px 12px rgba(34, 74, 190, 0.35);
+            background-color: #3F6FAE;
+            box-shadow: 0 5px 12px rgba(63, 111, 174, 0.28);
         }
         .dashboard-zone-banner--rtk {
-            background-color: #1cc88a;
-            box-shadow: 0 5px 12px rgba(28, 200, 138, 0.35);
+            background-color: #5F8A6B;
+            box-shadow: 0 5px 12px rgba(95, 138, 107, 0.28);
         }
         @media (max-width: 576px) {
             #banner-container {
