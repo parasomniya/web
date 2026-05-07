@@ -1638,6 +1638,7 @@ function getTrackConfig(track) {
         historyApi: getHistoryApiUrl(),
         buttonId: "clearHostTelemetryButton",
         label: "Хозяин",
+        enableUndo: false,
         buildRestorePayload: buildTelemetryRestorePayload,
         afterClear: (snapshotRows = []) => {
             clearRoutePolyline();
@@ -1802,7 +1803,8 @@ async function clearTelemetryHistory(track = "host") {
     }
 
     try {
-        const snapshotRows = await fetchTelemetrySnapshot(track);
+        const shouldEnableUndo = config.enableUndo !== false;
+        const snapshotRows = shouldEnableUndo ? await fetchTelemetrySnapshot(track) : [];
         const response = await fetch(config.clearApi, {
             method: "DELETE",
             headers: getHeaders(),
@@ -1825,8 +1827,14 @@ async function clearTelemetryHistory(track = "host") {
 
         trackHistoryVersion[track] += 1;
         config.afterClear(snapshotRows);
-        pendingTelemetryUndo = { rows: snapshotRows, track };
-        showTelemetryUndoAlert(config.label);
+        if (shouldEnableUndo) {
+            pendingTelemetryUndo = { rows: snapshotRows, track };
+            showTelemetryUndoAlert(config.label);
+        } else {
+            removeUndoAlert();
+            pendingTelemetryUndo = null;
+            window.AppAuth?.showAlert?.(`Трек (${config.label}) очищен`, "success");
+        }
     } catch (error) {
         console.error("Error clearing telemetry history:", error);
         window.AppAuth?.showAlert?.(error.message || `Не удалось очистить трек (${config.label})`, "danger");
