@@ -258,7 +258,7 @@ router.get('/:id', authenticate, requireReadAccess, async (req, res) => {
 });
 
 // ============================================================================
-// 2. GET /:id/telemetry - Детальная инфа (time/weight) для графика
+// 2. GET /:id/telemetry - Детальная инфа (time/weight + lat/lon) для графика и трека
 // ============================================================================
 router.get('/:id/telemetry', authenticate, requireReadAccess, async (req, res) => {
     try {
@@ -284,7 +284,9 @@ router.get('/:id/telemetry', authenticate, requireReadAccess, async (req, res) =
             },
             select: {
                 timestamp: true,
-                weight: true
+                weight: true,
+                lat: true,
+                lon: true
             },
             orderBy: { timestamp: 'asc' }
         });
@@ -473,6 +475,54 @@ router.patch('/:batchId/ingredients/:ingredientId', authenticate, requireWriteAc
         console.error('[Ошибка обновления ингредиента]:', error);
         if (error.code === 'P2025') return res.status(404).json({ error: 'Ингредиент замеса не найден' });
         res.status(500).json({ error: 'Не удалось обновить ингредиент замеса' });
+    }
+});
+
+// ============================================================================
+// 6. DELETE /:batchId/ingredients/:ingredientId - Удаление компонента из замеса
+// ============================================================================
+router.delete('/:batchId/ingredients/:ingredientId', authenticate, requireWriteAccess, async (req, res) => {
+    try {
+        const batchId = parseInt(req.params.batchId, 10);
+        const ingredientId = parseInt(req.params.ingredientId, 10);
+
+        if (!Number.isInteger(batchId) || !Number.isInteger(ingredientId)) {
+            return res.status(400).json({ error: 'Некорректный ID замеса или ингредиента' });
+        }
+
+        const batch = await prisma.batch.findUnique({
+            where: { id: batchId },
+            select: { id: true }
+        });
+
+        if (!batch) {
+            return res.status(404).json({ error: 'Замес не найден' });
+        }
+
+        const batchIngredient = await prisma.batchIngredient.findFirst({
+            where: { id: ingredientId, batchId },
+            select: { id: true, ingredientName: true }
+        });
+
+        if (!batchIngredient) {
+            return res.status(404).json({ error: 'Ингредиент замеса не найден' });
+        }
+
+        await prisma.batchIngredient.delete({
+            where: { id: ingredientId }
+        });
+
+        const recalculation = await recalculateBatchViolations(prisma, batchId);
+
+        res.json({
+            status: 'ok',
+            message: `Компонент "${toDisplayIngredientName(batchIngredient.ingredientName)}" удалён`,
+            recalculation
+        });
+    } catch (error) {
+        console.error('[Ошибка удаления ингредиента замеса]:', error);
+        if (error.code === 'P2025') return res.status(404).json({ error: 'Ингредиент замеса не найден' });
+        res.status(500).json({ error: 'Не удалось удалить ингредиент замеса' });
     }
 });
 
