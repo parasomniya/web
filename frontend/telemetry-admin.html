@@ -486,6 +486,11 @@
                                         <small class="form-text text-muted">Сколько подряд пакетов нужно, чтобы принять резкий переход как реальный.</small>
                                     </div>
                                     <div class="col-xl-4 col-md-6 mb-3">
+                                        <label class="small font-weight-bold text-primary text-uppercase" for="telemetryZoneChangeConfirmPackets">Подтверждение смены зоны, пакетов</label>
+                                        <input type="number" min="1" step="1" class="form-control" id="telemetryZoneChangeConfirmPackets" name="zoneChangeConfirmPackets" required>
+                                        <small class="form-text text-muted">Сколько подряд пакетов нужно для перехода между близкими зонами без дребезга на границе.</small>
+                                    </div>
+                                    <div class="col-xl-4 col-md-6 mb-3">
                                         <label class="small font-weight-bold text-primary text-uppercase" for="telemetryDeviationPercentThreshold">Порог отклонения, %</label>
                                         <input type="number" min="1" step="1" class="form-control" id="telemetryDeviationPercentThreshold" name="deviationPercentThreshold" required>
                                         <small class="form-text text-muted">Процент отклонения от плана. Используется в формуле max(% от плана, минимум кг).</small>
@@ -641,7 +646,7 @@
     <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
     <script src="js/sb-admin-2.min.js"></script>
     <script src="js/sidebar-enhancements.js?v=20260429d"></script>
-    <script src="js/telemetry.js?v=20260506a"></script>
+    <script src="js/telemetry.js?v=20260506b"></script>
     <script src="js/admin-users.js?v=20260501a"></script>
 
 </body>
