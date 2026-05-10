@@ -7,6 +7,7 @@ import { processRationRows } from '../../../../module-2/rationManager.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+const RATION_UPLOAD_EXTENSIONS = ['.xlsx', '.xls'];
 
 function normalizeRationName(value) {
   return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
@@ -29,6 +30,11 @@ function parseStrictBoolean(value) {
 
 function normalizeText(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function hasAllowedRationUploadExtension(filename) {
+  const normalized = String(filename || '').trim().toLowerCase();
+  return RATION_UPLOAD_EXTENSIONS.some((extension) => normalized.endsWith(extension));
 }
 
 function parseNumber(value) {
@@ -270,6 +276,9 @@ router.post('/upload', requireWriteAccess, upload.single('file'), async (req, re
     
     if (!rationName) return res.status(400).json({ error: 'Необходимо указать название рациона' });
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+    if (!hasAllowedRationUploadExtension(req.file.originalname)) {
+      return res.status(400).json({ error: 'Можно загружать только файлы .xlsx или .xls' });
+    }
     if (req.body.groupId !== undefined) {
       return res.status(400).json({ error: 'Используйте единый формат groups: JSON-массив ID групп' });
     }

@@ -1,5 +1,6 @@
 src/generated/prisma
 prisma/dev.db
+prisma/dev.db.backup*
 node_modules/
 .env
-EOF
+*.log

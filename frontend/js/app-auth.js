@@ -476,6 +476,12 @@
             return;
         }
 
+        if (isLoginPage() && (errorCode === "auth-required" || errorCode === "session-invalid")) {
+            url.searchParams.delete("error");
+            window.history.replaceState({}, document.title, url.toString());
+            return;
+        }
+
         const messages = {
             "auth-required": { type: "warning", text: "Войдите в систему." },
             "session-invalid": { type: "warning", text: "Сессия недействительна. Войдите снова." },
