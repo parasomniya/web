@@ -3,10 +3,15 @@ const RTK_API_BASE = window.AppAuth?.getApiUrl?.("/api/telemetry/rtk") || "/api/
 const ZONES_API = window.AppAuth?.getApiUrl?.("/api/telemetry/zones") || "/api/telemetry/zones";
 const CLEAR_HOST_HISTORY_API = `${API_BASE}/admin/truncate`;
 const CLEAR_RTK_HISTORY_API = `${RTK_API_BASE}/admin/truncate`;
-const HISTORY_LIMIT = 100000;
+const HISTORY_LIMIT = 3000;
 const DEFAULT_COORDS = [54.84, 83.09];
-const LATEST_POLL_INTERVAL_MS = 1000;
-const ZONES_POLL_INTERVAL_MS = 10000;
+const POLL_TICK_INTERVAL_MS = 1000;
+const LATEST_POLL_VISIBLE_MS = 2000;
+const LATEST_POLL_HIDDEN_MS = 7000;
+const HISTORY_POLL_VISIBLE_MS = 12000;
+const HISTORY_POLL_HIDDEN_MS = 30000;
+const ZONES_POLL_VISIBLE_MS = 20000;
+const ZONES_POLL_HIDDEN_MS = 60000;
 const OFFLINE_THRESHOLD_MS = 15000;
 const DEFAULT_MAP_TYPE = "yandex#satellite";
 const ZONE_BANNER_DISPLAY_MS = 4500;
@@ -58,6 +63,9 @@ let mapFullscreenButton = null;
 let mapWrapElement = null;
 let hasTelemetryAutoFocus = false;
 let pinnedMapActionMenu = null;
+let lastLatestFetchStartedAt = 0;
+let lastHistoryFetchStartedAt = 0;
+let lastZonesFetchStartedAt = 0;
 
 function isAdmin() {
     return Boolean(window.AppAuth?.isAdmin && window.AppAuth.isAdmin());
@@ -100,6 +108,24 @@ function getHeaders() {
     return window.AppAuth?.getAuthHeaders?.({ includeJson: true }) || {
         "Content-Type": "application/json",
     };
+}
+
+function isPageVisible() {
+    return document.visibilityState === "visible";
+}
+
+function getPollInterval(visibleMs, hiddenMs) {
+    return isPageVisible() ? visibleMs : hiddenMs;
+}
+
+function shouldPoll(lastStartedAt, visibleMs, hiddenMs, force = false) {
+    if (force) {
+        return true;
+    }
+
+    const now = Date.now();
+    const interval = getPollInterval(visibleMs, hiddenMs);
+    return now - Number(lastStartedAt || 0) >= interval;
 }
 
 function setText(id, value) {
@@ -1459,7 +1485,13 @@ function getRetainableTelemetry(track, snapshotRows = []) {
         : null;
 }
 
-async function fetchLatest() {
+async function fetchLatest(options = {}) {
+    if (!shouldPoll(lastLatestFetchStartedAt, LATEST_POLL_VISIBLE_MS, LATEST_POLL_HIDDEN_MS, Boolean(options?.force))) {
+        return;
+    }
+
+    lastLatestFetchStartedAt = Date.now();
+
     try {
         const [hostResponse, rtkResponse] = await Promise.all([
             fetch(getLatestApiUrl(), { headers: getHeaders() }),
@@ -1508,11 +1540,16 @@ async function fetchLatest() {
     }
 }
 
-async function fetchHistory() {
+async function fetchHistory(options = {}) {
+    if (!shouldPoll(lastHistoryFetchStartedAt, HISTORY_POLL_VISIBLE_MS, HISTORY_POLL_HIDDEN_MS, Boolean(options?.force))) {
+        return;
+    }
+
     if (isFetchingHistory) {
         return;
     }
 
+    lastHistoryFetchStartedAt = Date.now();
     isFetchingHistory = true;
     const requestedTrackHistoryVersion = { ...trackHistoryVersion };
 
@@ -1729,7 +1766,7 @@ async function restoreTelemetryHistory(context) {
 
         removeUndoAlert();
 
-        await Promise.all([fetchLatest(), fetchHistory(), fetchZones()]);
+        await Promise.all([fetchLatest({ force: true }), fetchHistory({ force: true }), fetchZones({ force: true })]);
         window.AppAuth?.showAlert?.(`Очистка трека (${config.label}) отменена`, "success");
     } catch (error) {
         pendingTelemetryUndo = snapshot;
@@ -1845,11 +1882,16 @@ async function clearTelemetryHistory(track = "host") {
     }
 }
 
-async function fetchZones() {
+async function fetchZones(options = {}) {
+    if (!shouldPoll(lastZonesFetchStartedAt, ZONES_POLL_VISIBLE_MS, ZONES_POLL_HIDDEN_MS, Boolean(options?.force))) {
+        return;
+    }
+
     if (isFetchingZones) {
         return;
     }
 
+    lastZonesFetchStartedAt = Date.now();
     isFetchingZones = true;
 
     try {
@@ -1875,9 +1917,9 @@ function handleVisibilityChange() {
         return;
     }
 
-    fetchZones();
-    fetchLatest();
-    fetchHistory();
+    fetchZones({ force: true });
+    fetchLatest({ force: true });
+    fetchHistory({ force: true });
 }
 
 function getBannerOffsetTop() {
@@ -2224,12 +2266,14 @@ function init() {
     map.events.add("actionbreak", handleMapActionEnd);
 
     renderDashboard(null);
-    fetchZones();
-    setInterval(fetchZones, ZONES_POLL_INTERVAL_MS);
-    fetchLatest();
-    setInterval(fetchLatest, LATEST_POLL_INTERVAL_MS);
-    fetchHistory();
-    setInterval(fetchHistory, LATEST_POLL_INTERVAL_MS);
+    fetchZones({ force: true });
+    fetchLatest({ force: true });
+    fetchHistory({ force: true });
+    setInterval(() => {
+        void fetchLatest();
+        void fetchHistory();
+        void fetchZones();
+    }, POLL_TICK_INTERVAL_MS);
 
     const clearHostTelemetryButton = document.getElementById("clearHostTelemetryButton");
     if (clearHostTelemetryButton) {
