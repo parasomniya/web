@@ -808,6 +808,20 @@
     height: 100%;
     display: flex;
     align-items: flex-end;
+    justify-content: flex-end;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+
+.batch-edit-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    min-width: 7.75rem;
+    min-height: 2.375rem;
+    margin-top: 0 !important;
+    white-space: nowrap;
 }
 
 .batch-edit-meta {
@@ -1016,6 +1030,20 @@ span.batch-ingredient-editor__trigger {
     border-color: #76BA1B;
     box-shadow: 0 0 0 0.2rem rgba(118, 186, 27, 0.22);
     outline: none;
+}
+
+.ration-upload-file-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.ration-upload-clear-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
 }
 
 .ration-groups-preview {
@@ -1509,6 +1537,8 @@ span.batch-ingredient-editor__trigger {
 
     .batch-edit-actions {
         align-items: stretch;
+        flex-direction: column;
+        justify-content: flex-start;
     }
 
     .batch-unloading-card {
@@ -3226,8 +3256,7 @@ ul.sidebar.bg-gradient-primary,
   color: rgba(255, 255, 255, 0.92) !important;
 }
 
-.sidebar-dark .nav-item.active .nav-link,
-.sidebar-dark .nav-item.active .nav-link span {
+.sidebar-dark .nav-item.active .nav-link {
   background: rgba(214, 184, 74, 0.18) !important;
   color: var(--text-inverse) !important;
 }

@@ -24,6 +24,7 @@ $(document).ready(function () {
     const uploadDropzone = document.getElementById("rationUploadDropzone");
     const uploadFileInput = document.getElementById("rationUploadFile");
     const uploadFileMeta = document.getElementById("rationUploadFileMeta");
+    const uploadClearFileButton = document.getElementById("rationUploadClearFileButton");
     const uploadSubmitButton = document.getElementById("rationUploadSubmitButton");
     const selectedGroupsPreview = document.getElementById("rationSelectedGroupsPreview");
 
@@ -35,6 +36,12 @@ $(document).ready(function () {
     const RATIONS_UPLOAD_URL = window.AppAuth?.getApiUrl?.("/api/rations/upload") || "/api/rations/upload";
     const GROUPS_API_URL = window.AppAuth?.getApiUrl?.("/api/groups") || "/api/groups";
     const canWrite = Boolean(window.AppAuth?.hasWriteAccess?.());
+    const EXCEL_FILE_ACCEPT = ".xlsx,.xls";
+    const EXCEL_FILE_EXTENSIONS = [".xlsx", ".xls"];
+    const EXCEL_FILE_MIME_TYPES = new Set([
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+    ]);
 
     const weightFormatter = new Intl.NumberFormat("ru-RU", {
         minimumFractionDigits: 0,
@@ -78,6 +85,16 @@ $(document).ready(function () {
         return normalizeText(value).toLowerCase();
     }
 
+    function configureUploadFileInput() {
+        if (!uploadFileInput) {
+            return;
+        }
+
+        uploadFileInput.setAttribute("accept", EXCEL_FILE_ACCEPT);
+        uploadFileInput.removeAttribute("capture");
+        uploadFileInput.removeAttribute("multiple");
+    }
+
     function isExcelFile(file) {
         if (!file) {
             return false;
@@ -85,12 +102,8 @@ $(document).ready(function () {
 
         const name = String(file.name || "").toLowerCase();
         const type = String(file.type || "").toLowerCase();
-        return (
-            name.endsWith(".xlsx") ||
-            name.endsWith(".xls") ||
-            type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-            type === "application/vnd.ms-excel"
-        );
+        return EXCEL_FILE_EXTENSIONS.some((extension) => name.endsWith(extension)) ||
+            EXCEL_FILE_MIME_TYPES.has(type);
     }
 
     function clearUploadFileInput() {
@@ -154,7 +167,7 @@ $(document).ready(function () {
 
     function formatFileMeta(file) {
         if (!file) {
-            return "Файл не выбран";
+            return "";
         }
 
         const sizeKb = Math.max(Math.round(file.size / 102.4) / 10, 0.1);
@@ -259,7 +272,7 @@ $(document).ready(function () {
 
         const selectedGroups = state.groups.filter((group) => selectedIds.includes(Number(group?.id)));
         if (!selectedGroups.length) {
-            host.innerHTML = '<span class="text-muted small">Группы не выбраны</span>';
+            host.innerHTML = "";
             return;
         }
 
@@ -292,6 +305,11 @@ $(document).ready(function () {
 
         if (uploadFileMeta) {
             uploadFileMeta.textContent = formatFileMeta(state.selectedFile);
+        }
+
+        if (uploadClearFileButton) {
+            uploadClearFileButton.classList.toggle("d-none", !state.selectedFile);
+            uploadClearFileButton.disabled = !canWrite || state.isUploading || state.isManualSaving || !state.selectedFile;
         }
 
         renderGroupsPreview(selectedGroupsPreview, state.uploadSelectedGroupIds);
@@ -884,6 +902,13 @@ $(document).ready(function () {
         updateUploadState();
     }
 
+    function clearSelectedUploadFile() {
+        state.selectedFile = null;
+        clearUploadFileInput();
+        updateUploadState();
+        uploadFileInput?.focus();
+    }
+
     function resetUploadForm() {
         state.selectedFile = null;
         state.uploadSelectedGroupIds = [];
@@ -1099,11 +1124,20 @@ $(document).ready(function () {
         handleSelectedFile(uploadFileInput.files?.[0] || null);
     });
 
+    uploadClearFileButton?.addEventListener("click", function () {
+        if (state.isUploading || state.isManualSaving) {
+            return;
+        }
+
+        clearSelectedUploadFile();
+    });
+
     uploadDropzone?.addEventListener("click", function () {
         if (!canWrite || state.isUploading || state.isManualSaving) {
             return;
         }
 
+        configureUploadFileInput();
         uploadFileInput?.click();
     });
 
@@ -1117,6 +1151,7 @@ $(document).ready(function () {
             return;
         }
 
+        configureUploadFileInput();
         uploadFileInput?.click();
     });
 
@@ -1182,6 +1217,7 @@ $(document).ready(function () {
         }
     });
 
+    configureUploadFileInput();
     resetManualForm();
     updateUploadState();
     loadPageData({ silentError: true });
