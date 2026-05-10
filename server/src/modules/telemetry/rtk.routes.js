@@ -6,6 +6,7 @@ import { calculateHaversine, detectZoneObject } from '../../../../module-1/geo.j
 const router = Router()
 const DEFAULT_RECENT_LIMIT = 5
 const DEFAULT_HISTORY_LIMIT = 20
+const MAX_RTK_HISTORY_LIMIT = 5000
 const DEFAULT_ZONE_SECONDS = 30
 const MAX_ZONE_SECONDS = 3600
 const MAX_ZONE_SCAN_ROWS = 5000
@@ -389,9 +390,7 @@ router.get('/recent', authenticate, requireReadAccess, async (req, res) => {
 router.get('/history', authenticate, requireReadAccess, async (req, res) => {
   try {
     const deviceId = getRequestedDeviceId(req)
-    // Для отрисовки трека на главной странице не ограничиваем верхний cap:
-    // фронт сам задает разумный limit (сейчас 100000).
-    const limit = parseLimit(req.query.limit, DEFAULT_HISTORY_LIMIT, { max: 0 })
+    const limit = parseLimit(req.query.limit, DEFAULT_HISTORY_LIMIT, { max: MAX_RTK_HISTORY_LIMIT })
     const zones = await loadActiveZones()
     const rows = await prisma.rtkTelemetry.findMany({
       where: deviceId ? { deviceId } : undefined,
@@ -480,7 +479,7 @@ router.get('/admin/latest', authenticate, requireAdmin, async (req, res) => {
 router.get('/admin/history', authenticate, requireAdmin, async (req, res) => {
   try {
     const deviceId = getRequestedDeviceId(req)
-    const limit = parseLimit(req.query.limit, DEFAULT_HISTORY_LIMIT, { max: 0 })
+    const limit = parseLimit(req.query.limit, DEFAULT_HISTORY_LIMIT, { max: MAX_RTK_HISTORY_LIMIT })
     const zones = await loadActiveZones()
     const rows = await prisma.rtkTelemetry.findMany({
       where: deviceId ? { deviceId } : undefined,

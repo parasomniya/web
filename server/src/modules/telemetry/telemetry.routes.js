@@ -9,6 +9,9 @@ import { recordLeftoverViolation } from '../violations/violation-service.js'
 import { getHostTrackClearSince, setHostTrackClearSince } from './track-state-store.js'
 
 const router = Router()
+const DEFAULT_RECENT_LIMIT = 5
+const DEFAULT_ADMIN_HISTORY_LIMIT = 10
+const MAX_TELEMETRY_HISTORY_LIMIT = 5000
 
 function normalizeZoneType(value) {
   if (!value) return ''
@@ -39,6 +42,19 @@ function parseBoolean(value) {
     if (normalized === 'false' || normalized === '0') return false
   }
   return Boolean(value)
+}
+
+function parseLimit(rawValue, fallback, maxLimit = MAX_TELEMETRY_HISTORY_LIMIT) {
+  const parsed = Number.parseInt(rawValue, 10)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return fallback
+  }
+
+  if (Number.isInteger(maxLimit) && maxLimit > 0) {
+    return Math.min(parsed, maxLimit)
+  }
+
+  return parsed
 }
 
 function normalizeTelemetryPacket(packet) {
@@ -683,7 +699,7 @@ router.get('/current', authenticate, requireReadAccess, async (req, res) => {
 // ============================================================================
 router.get('/recent', authenticate, requireReadAccess, async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 5;
+    const limit = parseLimit(req.query.limit, DEFAULT_RECENT_LIMIT);
     const requestedDeviceId = getRequestedDeviceId(req)
     const clearSince = await getHostTrackClearSince(prisma)
     const where = {
@@ -717,7 +733,7 @@ router.get('/admin/latest', authenticate, requireAdmin, async (req, res) => {
 
 router.get('/admin/history', authenticate, requireAdmin, async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = parseLimit(req.query.limit, DEFAULT_ADMIN_HISTORY_LIMIT);
     const requestedDeviceId = getRequestedDeviceId(req)
     const clearSince = await getHostTrackClearSince(prisma)
     const where = {
