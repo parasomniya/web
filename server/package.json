@@ -8,7 +8,8 @@
     "start": "node src/index.js",
     "migrate:db": "prisma migrate dev",
     "migrate:users": "node migrate-users.js",
-    "create-admin": "node create-admin.js"
+    "create-admin": "node create-admin.js",
+    "capacity:test": "node scripts/capacity-test.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.8.1",
